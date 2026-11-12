@@ -44,9 +44,11 @@ async function main() {
 
   // Compare against ground truth for a quick read (the eval harness formalizes this in Phase 3).
   const top = result.verdict?.hypotheses[0]?.rootCause;
-  console.log(
-    `\n[ground truth] rootCause=${incident.label.rootCause}  ->  agent top-1=${top ?? "none"}  ${top === incident.label.rootCause ? "✓ MATCH" : "✗ miss"}`,
-  );
+  const { rootCause, acceptableCauses } = incident.label;
+  const outcome =
+    top === rootCause ? "✓ MATCH" : top && acceptableCauses.includes(top) ? "~ acceptable (defensible alternative)" : "✗ miss";
+  const alt = acceptableCauses.length ? ` (also acceptable: ${acceptableCauses.join(", ")})` : "";
+  console.log(`\n[ground truth] rootCause=${rootCause}${alt}  ->  agent top-1=${top ?? "none"}  ${outcome}`);
 
   process.exit(result.verdict ? 0 : 1);
 }

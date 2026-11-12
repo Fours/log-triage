@@ -44,6 +44,15 @@ export const IncidentLabel = z.object({
   explanation: z.string(),
   /** Optional difficulty tag so the eval can slice easy vs. adversarial cases. */
   difficulty: z.enum(["easy", "medium", "hard"]).default("medium"),
+  /**
+   * Other categories a careful engineer could defend for an ambiguous or
+   * multi-cause incident (e.g. a config error that shipped inside a deploy).
+   * `rootCause` stays the single best answer; the scorer can give partial
+   * credit for these. Empty for unambiguous incidents.
+   */
+  acceptableCauses: z.array(RootCauseCategory).default([]),
+  /** Generator scenario key (e.g. "dependency_timeout/db-lock-wait"), for slicing results. */
+  scenario: z.string().optional(),
 });
 export type IncidentLabel = z.infer<typeof IncidentLabel>;
 
