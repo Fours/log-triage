@@ -1,0 +1,159 @@
+{
+  "score": {
+    "incidentId": "gen-004",
+    "difficulty": "easy",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.6,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 9,
+      "correct": 4,
+      "precision": 0.4444444444444444,
+      "recall": 1,
+      "f1": 0.6153846153846153
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0459954,
+    "durationMs": 14058,
+    "iterations": 3,
+    "toolCalls": 3,
+    "tokens": {
+      "input": 8,
+      "output": 1171,
+      "cacheRead": 5492,
+      "cacheWrite": 4289
+    }
+  },
+  "result": {
+    "incidentId": "gen-004",
+    "model": "claude-opus-5-5",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.6,
+          "evidenceLines": [
+            108,
+            115,
+            123,
+            124,
+            133,
+            139,
+            138,
+            142,
+            159
+          ],
+          "reasoning": "Before 02:28 the cache was healthy (#108 hits=14814) and logins took about 100ms. At 02:28:13 session-cache was restarted after a node replacement with no RDB snapshot and came back empty (#115). Its miss ratio then jumped to 95% (baseline 2%) and account-svc fell back to accounts-db for every request (#123). This flood of reads saturated accounts-db: connections reached 484-493 of 500 and CPU 95-98% (#124, #133). Simple primary-key lookups slowed to 7-8s (#139, #161), account-svc queries hit their 5s timeout (#138, #181), and edge-proxy returned 504s (#142, #159, #163, #184). The failure started at the cache and spread to the database, then to the gateway."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.3,
+          "evidenceLines": [
+            124,
+            133,
+            139
+          ],
+          "reasoning": "The direct cause of the timeouts is accounts-db running out of connections and CPU. However, that overload was triggered by the empty cache, so it is a step in the chain rather than the origin."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.05,
+          "evidenceLines": [
+            138,
+            142
+          ],
+          "reasoning": "The timeouts to the dependency are what users see, not what started the incident."
+        }
+      ],
+      "recommendedAction": "Short term: cap the load on accounts-db while the cache refills. Rate-limit or coalesce cache-miss loads in account-svc (single-flight / request collapsing), add a cap on concurrent DB loads, and consider briefly shedding /login traffic. Warm session-cache with hot account keys. Long term: turn on RDB/AOF persistence or replicas for session-cache so a replaced node doesn't come back empty, warm the cache before putting a replacement node into service, and add stampede protection (jittered TTLs, request coalescing)."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "14 match(es):\n#14 2026-10-21T02:15:45Z WARN audit-consumer GC pause 706ms (G1 Old Gen), heap 59% after collection\n#115 2026-10-21T02:28:13Z WARN session-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#123 2026-10-21T02:29:03Z WARN account-svc session-cache miss ratio 95% over last 30s (baseline 2%), loading from accounts-db\n#124 2026-10-21T02:29:09Z WARN accounts-db connections 484/500 (active 422), CPU 98%\n#133 2026-10-21T02:30:16Z WARN accounts-db connections 493/500 (active 439), CPU 95%\n#138 2026-10-21T02:31:02Z ERROR account-svc [t-2657] query on accounts timed out after 5000ms (u-8675)\n#139 2026-10-21T02:31:26Z WARN accounts-db slow query 7838ms: SELECT * FROM accounts WHERE id = $1\n#142 2026-10-21T02:32:24Z ERROR edge-proxy [t-2661] POST /login 504 13054ms: upstream account-svc timed out\n#159 2026-10-21T02:35:31Z ERROR edge-proxy [t-2669] POST /login 504 25974ms: upstream account-svc timed out\n#161 2026-10-21T02:36:06Z WARN accounts-db slow query 8786ms: SELECT * FROM accounts WHERE id = $1\n#163 2026-10-21T02:36:48Z ERROR edge-proxy [t-2670] POST /login 504 25178ms: upstream account-svc timed out\n#180 2026-10-21T02:40:26Z WARN accounts-db slow query 2725ms: SELECT * FROM accounts WHERE id = $1\n#181 2026-10-21T02:40:28Z ERROR account-svc [t-2679] query on accounts timed out after 5000ms (u-8685)\n#184 2026-10-21T02:40:50Z ERROR edge-proxy [t-2684] POST /login 504 25340ms: upstream account-svc timed out"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 115,
+          "before": 8,
+          "after": 8
+        },
+        "output": "#107 2026-10-21T02:27:18Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#108 2026-10-21T02:27:24Z INFO session-cache stats: hits=14814 misses=810 evicted=0 connected_clients=39\n#109 2026-10-21T02:27:24Z INFO account-svc [t-2639] user u-8660 accepted, calling auth-svc POST /tokens\n#110 2026-10-21T02:27:25Z INFO edge-proxy [t-2639] POST /login 200 143ms\n#111 2026-10-21T02:27:25Z DEBUG account-svc GC pause 21ms (young), heap 32%\n#112 2026-10-21T02:27:33Z INFO audit-consumer processed batch of 43 messages from audit.events (lag 105ms)\n#113 2026-10-21T02:28:00Z INFO account-svc [t-2642] user u-8661 accepted, calling auth-svc POST /tokens\n#114 2026-10-21T02:28:00Z INFO edge-proxy [t-2642] POST /login 200 116ms\n#115 2026-10-21T02:28:13Z WARN session-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#116 2026-10-21T02:28:27Z INFO audit-consumer processed batch of 111 messages from audit.events (lag 97ms)\n#117 2026-10-21T02:28:29Z INFO account-svc [t-2644] user u-8663 accepted, calling auth-svc POST /tokens\n#118 2026-10-21T02:28:30Z INFO edge-proxy [t-2644] POST /login 200 157ms\n#119 2026-10-21T02:28:49Z INFO accounts-db checkpoint complete: wrote 1330 buffers (2.8%)\n#120 2026-10-21T02:28:57Z INFO account-svc [t-2647] user u-8666 accepted, calling auth-svc POST /tokens\n#121 2026-10-21T02:28:57Z INFO edge-proxy [t-2647] POST /login 200 103ms\n#122 2026-10-21T02:29:01Z INFO audit-consumer processed batch of 108 messages from audit.events (lag 400ms)\n#123 2026-10-21T02:29:03Z WARN account-svc session-cache miss ratio 95% over last 30s (baseline 2%), loading from accounts-db"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.6,
+              "evidenceLines": [
+                108,
+                115,
+                123,
+                124,
+                133,
+                139,
+                138,
+                142,
+                159
+              ],
+              "reasoning": "Before 02:28 the cache was healthy (#108 hits=14814) and logins took about 100ms. At 02:28:13 session-cache was restarted after a node replacement with no RDB snapshot and came back empty (#115). Its miss ratio then jumped to 95% (baseline 2%) and account-svc fell back to accounts-db for every request (#123). This flood of reads saturated accounts-db: connections reached 484-493 of 500 and CPU 95-98% (#124, #133). Simple primary-key lookups slowed to 7-8s (#139, #161), account-svc queries hit their 5s timeout (#138, #181), and edge-proxy returned 504s (#142, #159, #163, #184). The failure started at the cache and spread to the database, then to the gateway."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.3,
+              "evidenceLines": [
+                124,
+                133,
+                139
+              ],
+              "reasoning": "The direct cause of the timeouts is accounts-db running out of connections and CPU. However, that overload was triggered by the empty cache, so it is a step in the chain rather than the origin."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.05,
+              "evidenceLines": [
+                138,
+                142
+              ],
+              "reasoning": "The timeouts to the dependency are what users see, not what started the incident."
+            }
+          ],
+          "recommendedAction": "Short term: cap the load on accounts-db while the cache refills. Rate-limit or coalesce cache-miss loads in account-svc (single-flight / request collapsing), add a cap on concurrent DB loads, and consider briefly shedding /login traffic. Warm session-cache with hot account keys. Long term: turn on RDB/AOF persistence or replicas for session-cache so a replaced node doesn't come back empty, warm the cache before putting a replacement node into service, and add stampede protection (jittered TTLs, request coalescing)."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 3,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 1171,
+      "cacheReadTokens": 5492,
+      "cacheWriteTokens": 4289
+    },
+    "durationMs": 14058,
+    "stopReason": "tool_use"
+  }
+}

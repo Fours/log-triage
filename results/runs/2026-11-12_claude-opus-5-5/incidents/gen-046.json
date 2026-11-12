@@ -1,0 +1,176 @@
+{
+  "score": {
+    "incidentId": "gen-046",
+    "difficulty": "hard",
+    "scenario": "poison_message/consumer-crash-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "poison_message",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 12,
+      "correct": 8,
+      "precision": 0.6666666666666666,
+      "recall": 1,
+      "f1": 0.8
+    },
+    "herringsCited": 2,
+    "costUsd": 0.06654260000000001,
+    "durationMs": 16893,
+    "iterations": 5,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 12,
+      "output": 1291,
+      "cacheRead": 14473,
+      "cacheWrite": 7556
+    }
+  },
+  "result": {
+    "incidentId": "gen-046",
+    "model": "claude-opus-5-5",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.85,
+          "evidenceLines": [
+            235,
+            236,
+            239,
+            240,
+            241,
+            245,
+            246,
+            249,
+            264,
+            266,
+            267,
+            292
+          ],
+          "reasoning": "Every crash is on the same message, msg-453808 at offset 495220, with the same error: RangeError: Maximum call stack size exceeded in expandReferences. That points to a self-referencing or deeply nested payload causing runaway recursion. The worker's offset is never committed past this message, so each restart resumes at 495220 (#240, #246, #264, #292) and crashes again within seconds. The crash still happens after restarts that log v3.4.1 (#239, #245, #263), so it does not depend on the code version. Other services log no errors."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.12,
+          "evidenceLines": [
+            205,
+            216,
+            222,
+            233,
+            235
+          ],
+          "reasoning": "v4.20.8 rolled out at 04:41:40 and the first crash came about a minute later. But the new build processed batches without trouble (#222, #233), and restarts reporting v3.4.1 still crash on the same message. So the deploy is most likely a coincidence, or at most made the worker more fragile."
+        }
+      ],
+      "recommendedAction": "Move msg-453808 (offset 495220) on notifications.outbound to a dead-letter queue, or skip past it, so the worker can resume and work off the lag. Then look at the payload for circular or self-referencing template references. Fix expandReferences to detect cycles and cap recursion depth, and wrap per-message processing so a bad message goes to the DLQ instead of crashing the process."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-worker",
+          "level": "WARN",
+          "limit": 50
+        },
+        "output": "9 match(es):\n#227 2026-10-02T04:42:57Z WARN notif-worker GC pause 650ms (G1 Old Gen), heap 58% after collection\n#235 2026-10-02T04:43:26Z FATAL notif-worker unhandled exception processing msg-453808 (offset 495220): RangeError: Maximum call stack size exceeded at expandReferences\n#236 2026-10-02T04:43:26Z ERROR notif-worker process exited with code 1, restarting (restart 1, backoff 10s)\n#241 2026-10-02T04:43:39Z FATAL notif-worker unhandled exception processing msg-453808 (offset 495220): RangeError: Maximum call stack size exceeded at expandReferences\n#242 2026-10-02T04:43:39Z ERROR notif-worker process exited with code 1, restarting (restart 2, backoff 20s)\n#249 2026-10-02T04:44:05Z FATAL notif-worker unhandled exception processing msg-453808 (offset 495220): RangeError: Maximum call stack size exceeded at expandReferences\n#250 2026-10-02T04:44:05Z ERROR notif-worker process exited with code 1, restarting (restart 3, backoff 40s)\n#266 2026-10-02T04:44:49Z FATAL notif-worker unhandled exception processing msg-453808 (offset 495220): RangeError: Maximum call stack size exceeded at expandReferences\n#267 2026-10-02T04:44:49Z ERROR notif-worker process exited with code 1, restarting (restart 4, backoff 80s)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 235,
+          "before": 10,
+          "after": 2
+        },
+        "output": "#225 2026-10-02T04:42:40Z INFO api-gateway [t-2972] POST /v1/notify 200 113ms\n#226 2026-10-02T04:42:40Z WARN notif-db slow query 1360ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#227 2026-10-02T04:42:57Z WARN notif-worker GC pause 650ms (G1 Old Gen), heap 58% after collection\n#228 2026-10-02T04:42:58Z INFO notification-svc [t-2973] message m-6506 accepted, calling template-svc POST /render\n#229 2026-10-02T04:42:59Z INFO template-svc [t-2973] POST /render m-6506 ok 34ms\n#230 2026-10-02T04:42:59Z INFO api-gateway [t-2973] POST /v1/notify 200 170ms\n#231 2026-10-02T04:43:12Z INFO notification-svc [t-2975] message m-6507 accepted, calling template-svc POST /render\n#232 2026-10-02T04:43:12Z INFO api-gateway [t-2975] POST /v1/notify 200 187ms\n#233 2026-10-02T04:43:16Z INFO notif-worker processed batch of 33 messages from notifications.outbound (lag 217ms)\n#234 2026-10-02T04:43:23Z INFO redis stats: hits=9231 misses=502 evicted=0 connected_clients=41\n#235 2026-10-02T04:43:26Z FATAL notif-worker unhandled exception processing msg-453808 (offset 495220): RangeError: Maximum call stack size exceeded at expandReferences\n#236 2026-10-02T04:43:26Z ERROR notif-worker process exited with code 1, restarting (restart 1, backoff 10s)\n#237 2026-10-02T04:43:31Z INFO notification-svc [t-2979] message m-6510 accepted, calling template-svc POST /render"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "1 match(es):\n#205 2026-10-02T04:41:40Z INFO notif-worker deploy: rolling out notif-worker v4.20.8 (build df96c4a)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "453808"
+        },
+        "output": "4 match(es):\n#235 2026-10-02T04:43:26Z FATAL notif-worker unhandled exception processing msg-453808 (offset 495220): RangeError: Maximum call stack size exceeded at expandReferences\n#241 2026-10-02T04:43:39Z FATAL notif-worker unhandled exception processing msg-453808 (offset 495220): RangeError: Maximum call stack size exceeded at expandReferences\n#249 2026-10-02T04:44:05Z FATAL notif-worker unhandled exception processing msg-453808 (offset 495220): RangeError: Maximum call stack size exceeded at expandReferences\n#266 2026-10-02T04:44:49Z FATAL notif-worker unhandled exception processing msg-453808 (offset 495220): RangeError: Maximum call stack size exceeded at expandReferences"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 205,
+          "before": 2,
+          "after": 12
+        },
+        "output": "#203 2026-10-02T04:41:21Z INFO notification-svc [t-2959] message m-6494 accepted, calling template-svc POST /render\n#204 2026-10-02T04:41:21Z INFO api-gateway [t-2959] POST /v1/notify 200 99ms\n#205 2026-10-02T04:41:40Z INFO notif-worker deploy: rolling out notif-worker v4.20.8 (build df96c4a)\n#206 2026-10-02T04:41:40Z INFO notification-svc [t-2962] message m-6496 accepted, calling template-svc POST /render\n#207 2026-10-02T04:41:40Z INFO api-gateway [t-2962] POST /v1/notify 200 147ms\n#208 2026-10-02T04:41:43Z DEBUG notification-svc GC pause 10ms (young), heap 30%\n#209 2026-10-02T04:41:48Z INFO notif-worker processed batch of 77 messages from notifications.outbound (lag 93ms)\n#210 2026-10-02T04:41:56Z INFO notification-svc [t-2963] message m-6498 accepted, calling template-svc POST /render\n#211 2026-10-02T04:41:56Z INFO api-gateway [t-2963] POST /v1/notify 200 163ms\n#212 2026-10-02T04:42:02Z INFO redis stats: hits=18757 misses=304 evicted=0 connected_clients=30\n#213 2026-10-02T04:42:06Z INFO notification-svc [t-2966] message m-6499 accepted, calling template-svc POST /render\n#214 2026-10-02T04:42:06Z INFO template-svc [t-2966] POST /render m-6499 ok 40ms\n#215 2026-10-02T04:42:06Z INFO api-gateway [t-2966] POST /v1/notify 200 145ms\n#216 2026-10-02T04:42:16Z INFO notif-worker started notif-worker v4.20.8, pid 1, ready\n#217 2026-10-02T04:42:23Z INFO notification-svc [t-2970] message m-6502 accepted, calling template-svc POST /render"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-worker",
+          "limit": 50
+        },
+        "output": "41 match(es):\n#1 2026-10-02T04:28:11Z INFO notif-worker processed batch of 86 messages from notifications.outbound (lag 362ms)\n#14 2026-10-02T04:29:04Z INFO notif-worker processed batch of 34 messages from notifications.outbound (lag 313ms)\n#25 2026-10-02T04:29:58Z INFO notif-worker processed batch of 53 messages from notifications.outbound (lag 354ms)\n#40 2026-10-02T04:30:41Z INFO notif-worker processed batch of 59 messages from notifications.outbound (lag 345ms)\n#49 2026-10-02T04:31:16Z INFO notif-worker processed batch of 43 messages from notifications.outbound (lag 65ms)\n#59 2026-10-02T04:31:57Z INFO notif-worker processed batch of 68 messages from notifications.outbound (lag 367ms)\n#72 2026-10-02T04:32:39Z INFO notif-worker processed batch of 23 messages from notifications.outbound (lag 129ms)\n#81 2026-10-02T04:33:19Z INFO notif-worker processed batch of 25 messages from notifications.outbound (lag 286ms)\n#97 2026-10-02T04:34:09Z INFO notif-worker processed batch of 35 messages from notifications.outbound (lag 375ms)\n#108 2026-10-02T04:34:46Z INFO notif-worker processed batch of 43 messages from notifications.outbound (lag 253ms)\n#123 2026-10-02T04:35:37Z INFO notif-worker processed batch of 54 messages from notifications.outbound (lag 398ms)\n#134 2026-10-02T04:36:20Z INFO notif-worker processed batch of 98 messages from notifications.outbound (lag 228ms)\n#145 2026-10-02T04:36:58Z INFO notif-worker processed batch of 116 messages from notifications.outbound (lag 158ms)\n#151 2026-10-02T04:37:33Z INFO notif-worker processed batch of 118 messages from notifications.outbound (lag 276ms)\n#161 2026-10-02T04:38:10Z INFO notif-worker processed batch of 22 messages from notifications.outbound (lag 165ms)\n#172 2026-10-02T04:38:47Z INFO notif-worker processed batch of 71 messages from notifications.outbound (lag 64ms)\n#182 2026-10-02T04:39:35Z INFO notif-worker processed batch of 30 messages from notifications.outbound (lag 110ms)\n#191 2026-10-02T04:40:15Z INFO notif-worker processed batch of 95 messages from notifications.outbound (lag 305ms)\n#200 2026-10-02T04:40:55Z INFO notif-worker processed batch of 74 messages from notifications.outbound (lag 109ms)\n#205 2026-10-02T04:41:40Z INFO notif-worker deploy: rolling out notif-worker v4.20.8 (build df96c4a)\n#209 2026-10-02T04:41:48Z INFO notif-worker processed batch of 77 messages from notifications.outbound (lag 93ms)\n#216 2026-10-02T04:42:16Z INFO notif-worker started notif-worker v4.20.8, pid 1, ready\n#222 2026-10-02T04:42:38Z INFO notif-worker processed batch of 114 messages from notifications.outbound (lag 48ms)\n#227 2026-10-02T04:42:57Z WARN notif-worker GC pause 650ms (G1 Old Gen), heap 58% after collection\n#233 2026-10-02T04:43:16Z INFO notif-worker processed batch of 33 messages from notifications.outbound (lag 217ms)\n#235 2026-10-02T04:43:26Z FATAL notif-worker unhandled exception processing msg-453808 (offset 495220): RangeError: Maximum call stack size exceeded at expandReferences\n#236 2026-10-02T04:43:26Z ERROR notif-worker process exited with code 1, restarting (restart 1, backoff 10s)\n#239 2026-10-02T04:43:36Z INFO notif-worker started notif-worker v3.4.1, pid 1\n#240 2026-10-02T04:43:37Z INFO notif-worker resuming notifications.outbound at committed offset 495220\n#241 2026-10-02T04:43:39Z FATAL notif-worker unhandled exception processing msg-453808 (offset 495220): RangeError: Maximum call stack size exceeded at expandReferences\n#242 2026-10-02T04:43:39Z ERROR notif-worker process exited with code 1, restarting (restart 2, backoff 20s)\n#245 2026-10-02T04:43:59Z INFO notif-worker started notif-worker v3.4.1, pid 1\n#246 2026-10-02T04:44:00Z INFO notif-worker resuming notifications.outbound at committed offset 495220\n#249 2026-10-02T04:44:05Z FATAL notif-worker unhandled exception processing msg-453808 (offset 495220): RangeError: Maximum call stack size exceeded at expandReferences\n#250 2026-10-02T04:44:05Z ERROR notif-worker process exited with code 1, restarting (restart 3, backoff 40s)\n#263 2026-10-02T04:44:45Z INFO notif-worker started notif-worker v3.4.1, pid 1\n#264 2026-10-02T04:44:46Z INFO notif-worker resuming notifications.outbound at committed offset 495220\n#266 2026-10-02T04:44:49Z FATAL notif-worker unhandled exception processing msg-453808 (offset 495220): RangeError: Maximum call stack size exceeded at expandReferences\n#267 2026-10-02T04:44:49Z ERROR notif-worker process exited with code 1, restarting (restart 4, backoff 80s)\n#291 2026-10-02T04:46:09Z INFO notif-worker started notif-worker v3.4.1, pid 1\n#292 2026-10-02T04:46:10Z INFO notif-worker resuming notifications.outbound at committed offset 495220"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.85,
+              "evidenceLines": [
+                235,
+                236,
+                239,
+                240,
+                241,
+                245,
+                246,
+                249,
+                264,
+                266,
+                267,
+                292
+              ],
+              "reasoning": "Every crash is on the same message, msg-453808 at offset 495220, with the same error: RangeError: Maximum call stack size exceeded in expandReferences. That points to a self-referencing or deeply nested payload causing runaway recursion. The worker's offset is never committed past this message, so each restart resumes at 495220 (#240, #246, #264, #292) and crashes again within seconds. The crash still happens after restarts that log v3.4.1 (#239, #245, #263), so it does not depend on the code version. Other services log no errors."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.12,
+              "evidenceLines": [
+                205,
+                216,
+                222,
+                233,
+                235
+              ],
+              "reasoning": "v4.20.8 rolled out at 04:41:40 and the first crash came about a minute later. But the new build processed batches without trouble (#222, #233), and restarts reporting v3.4.1 still crash on the same message. So the deploy is most likely a coincidence, or at most made the worker more fragile."
+            }
+          ],
+          "recommendedAction": "Move msg-453808 (offset 495220) on notifications.outbound to a dead-letter queue, or skip past it, so the worker can resume and work off the lag. Then look at the payload for circular or self-referencing template references. Fix expandReferences to detect cycles and cap recursion depth, and wrap per-message processing so a bad message goes to the DLQ instead of crashing the process."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1291,
+      "cacheReadTokens": 14473,
+      "cacheWriteTokens": 7556
+    },
+    "durationMs": 16893,
+    "stopReason": "tool_use"
+  }
+}

@@ -51,6 +51,8 @@ export const IncidentLabel = z.object({
    * credit for these. Empty for unambiguous incidents.
    */
   acceptableCauses: z.array(RootCauseCategory).default([]),
+  /** Lines planted as red herrings, so the scorer can count how often the agent cites them. */
+  herringLines: z.array(z.number().int().positive()).default([]),
   /** Generator scenario key (e.g. "dependency_timeout/db-lock-wait"), for slicing results. */
   scenario: z.string().optional(),
 });

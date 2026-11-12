@@ -94,6 +94,7 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
       explanation: b.resolve(result.explain() + herrings.note()),
       difficulty: spec.difficulty,
       acceptableCauses: result.acceptableCauses ?? [],
+      herringLines: logs.filter((_, i) => roles[i] === "herring").map((l) => l.n),
       scenario: spec.scenario.key,
     },
   });

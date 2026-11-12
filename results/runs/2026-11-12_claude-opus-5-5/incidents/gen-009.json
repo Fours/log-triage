@@ -1,0 +1,170 @@
+{
+  "score": {
+    "incidentId": "gen-009",
+    "difficulty": "easy",
+    "scenario": "dependency_timeout/db-lock-wait",
+    "truth": "dependency_timeout",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.7,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 10,
+      "correct": 7,
+      "precision": 0.7,
+      "recall": 1,
+      "f1": 0.8235294117647058
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0463926,
+    "durationMs": 13573,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 1126,
+      "cacheRead": 9838,
+      "cacheWrite": 4373
+    }
+  },
+  "result": {
+    "incidentId": "gen-009",
+    "model": "claude-opus-5-5",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.7,
+          "evidenceLines": [
+            104,
+            113,
+            119,
+            117,
+            127,
+            118,
+            128,
+            133,
+            142,
+            134
+          ],
+          "reasoning": "The earliest anomaly is at 20:34:56: transaction 98979 from payment-svc-reconciler sat idle in a transaction while holding RowExclusiveLock on orders (#104). After that, UPDATE orders statements waited on its ShareLock (#113, #119). payment-svc /charge queries then hit the 10s statement timeout (#117, #127), and order-service's PaymentClient calls timed out at 15s (#118, #128). That filled the order-service connection pool to payment-svc (50/50, 32 queued, #133) and caused pool checkout timeouts (#142). The gateway's 504s (#134 and later) are the downstream symptom. Checkouts were healthy before #104, and I found no deploy lines."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.2,
+          "evidenceLines": [
+            133,
+            142
+          ],
+          "reasoning": "The order-service connection pool to payment-svc filled up and amplified the 504s. This is a result of the slow payment calls, not the trigger."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.1,
+          "evidenceLines": [
+            134,
+            148,
+            158,
+            173
+          ],
+          "reasoning": "Gateway 504s spread across services. This is the overall shape of the incident, but it started with the lock holder."
+        }
+      ],
+      "recommendedAction": "Kill the idle-in-transaction reconciler session: run pg_terminate_backend on the backend for txn 98979 / payment-svc-reconciler. Set idle_in_transaction_session_timeout and a lock_timeout for the reconciler role. Fix the reconciler so it commits or rolls back promptly and doesn't hold a transaction open across slow work. Once the lock clears, watch for the payment-svc pool to drain and gateway latency to recover. Consider shorter client timeouts or circuit breaking in order-service."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "13 match(es):\n#104 2026-11-17T20:34:56Z WARN postgres transaction 98979 (application_name=payment-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"orders\"\n#113 2026-11-17T20:36:04Z WARN postgres process 15071 still waiting for ShareLock on transaction 98979 after 1000.000 ms (UPDATE orders SET ...)\n#117 2026-11-17T20:37:07Z ERROR payment-svc [t-4341] query canceled: statement timeout 10000ms (UPDATE orders WHERE id = o-8849)\n#118 2026-11-17T20:37:12Z ERROR order-service [t-4341] PaymentClient.charge timed out after 15000ms calling payment-svc POST /charge (o-8849)\n#119 2026-11-17T20:37:25Z WARN postgres process 47608 still waiting for ShareLock on transaction 98979 after 1000.000 ms (UPDATE orders SET ...)\n#127 2026-11-17T20:38:50Z ERROR payment-svc [t-4344] query canceled: statement timeout 10000ms (UPDATE orders WHERE id = o-8850)\n#128 2026-11-17T20:38:55Z ERROR order-service [t-4344] PaymentClient.charge timed out after 15000ms calling payment-svc POST /charge (o-8850)\n#133 2026-11-17T20:39:28Z WARN order-service HTTP connection pool to payment-svc at capacity (50/50 in use), 32 requests queued\n#134 2026-11-17T20:39:45Z ERROR api-gateway [t-4349] POST /checkout 504 23216ms: upstream order-service timed out\n#142 2026-11-17T20:41:10Z ERROR order-service pool checkout timeout: no connection to payment-svc available after 5000ms\n#148 2026-11-17T20:42:28Z ERROR api-gateway [t-4352] POST /checkout 504 15908ms: upstream order-service timed out\n#158 2026-11-17T20:44:39Z ERROR api-gateway [t-4357] POST /checkout 504 17348ms: upstream order-service timed out\n#173 2026-11-17T20:47:30Z ERROR api-gateway [t-4360] POST /checkout 504 22268ms: upstream order-service timed out"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "reconcil"
+        },
+        "output": "1 match(es):\n#104 2026-11-17T20:34:56Z WARN postgres transaction 98979 (application_name=payment-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"orders\""
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 104,
+          "before": 12,
+          "after": 3
+        },
+        "output": "#92 2026-11-17T20:33:46Z DEBUG api-gateway upstream health: order-service ok, payment-svc ok\n#93 2026-11-17T20:33:52Z INFO order-consumer processed batch of 87 messages from orders.events (lag 215ms)\n#94 2026-11-17T20:33:58Z INFO order-service [t-4330] order o-8842 accepted, calling payment-svc POST /charge\n#95 2026-11-17T20:33:58Z INFO payment-svc [t-4330] POST /charge o-8842 ok 58ms\n#96 2026-11-17T20:33:58Z INFO api-gateway [t-4330] POST /checkout 200 111ms\n#97 2026-11-17T20:34:20Z INFO order-service [t-4333] order o-8844 accepted, calling payment-svc POST /charge\n#98 2026-11-17T20:34:20Z INFO api-gateway [t-4333] POST /checkout 200 210ms\n#99 2026-11-17T20:34:43Z INFO order-service [t-4336] order o-8845 accepted, calling payment-svc POST /charge\n#100 2026-11-17T20:34:43Z INFO payment-svc [t-4336] POST /charge o-8845 ok 29ms\n#101 2026-11-17T20:34:43Z INFO api-gateway [t-4336] POST /checkout 200 189ms\n#102 2026-11-17T20:34:43Z INFO order-consumer processed batch of 111 messages from orders.events (lag 78ms)\n#103 2026-11-17T20:34:47Z INFO redis stats: hits=9407 misses=395 evicted=0 connected_clients=49\n#104 2026-11-17T20:34:56Z WARN postgres transaction 98979 (application_name=payment-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"orders\"\n#105 2026-11-17T20:35:03Z INFO postgres checkpoint complete: wrote 481 buffers (4.9%)\n#106 2026-11-17T20:35:09Z INFO order-service [t-4340] order o-8847 accepted, calling payment-svc POST /charge\n#107 2026-11-17T20:35:09Z INFO api-gateway [t-4340] POST /checkout 200 135ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.7,
+              "evidenceLines": [
+                104,
+                113,
+                119,
+                117,
+                127,
+                118,
+                128,
+                133,
+                142,
+                134
+              ],
+              "reasoning": "The earliest anomaly is at 20:34:56: transaction 98979 from payment-svc-reconciler sat idle in a transaction while holding RowExclusiveLock on orders (#104). After that, UPDATE orders statements waited on its ShareLock (#113, #119). payment-svc /charge queries then hit the 10s statement timeout (#117, #127), and order-service's PaymentClient calls timed out at 15s (#118, #128). That filled the order-service connection pool to payment-svc (50/50, 32 queued, #133) and caused pool checkout timeouts (#142). The gateway's 504s (#134 and later) are the downstream symptom. Checkouts were healthy before #104, and I found no deploy lines."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.2,
+              "evidenceLines": [
+                133,
+                142
+              ],
+              "reasoning": "The order-service connection pool to payment-svc filled up and amplified the 504s. This is a result of the slow payment calls, not the trigger."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.1,
+              "evidenceLines": [
+                134,
+                148,
+                158,
+                173
+              ],
+              "reasoning": "Gateway 504s spread across services. This is the overall shape of the incident, but it started with the lock holder."
+            }
+          ],
+          "recommendedAction": "Kill the idle-in-transaction reconciler session: run pg_terminate_backend on the backend for txn 98979 / payment-svc-reconciler. Set idle_in_transaction_session_timeout and a lock_timeout for the reconciler role. Fix the reconciler so it commits or rolls back promptly and doesn't hold a transaction open across slow work. Once the lock clears, watch for the payment-svc pool to drain and gateway latency to recover. Consider shorter client timeouts or circuit breaking in order-service."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1126,
+      "cacheReadTokens": 9838,
+      "cacheWriteTokens": 4373
+    },
+    "durationMs": 13573,
+    "stopReason": "tool_use"
+  }
+}

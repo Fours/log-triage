@@ -1,0 +1,142 @@
+{
+  "score": {
+    "incidentId": "gen-040",
+    "difficulty": "medium",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 12,
+      "correct": 9,
+      "precision": 0.75,
+      "recall": 1,
+      "f1": 0.8571428571428571
+    },
+    "herringsCited": 0,
+    "costUsd": 0.03558,
+    "durationMs": 9726,
+    "iterations": 3,
+    "toolCalls": 3,
+    "tokens": {
+      "input": 8,
+      "output": 740,
+      "cacheRead": 5740,
+      "cacheWrite": 3920
+    }
+  },
+  "result": {
+    "incidentId": "gen-040",
+    "model": "claude-opus-5-5",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.88,
+          "evidenceLines": [
+            39,
+            84,
+            101,
+            135,
+            136,
+            154,
+            155,
+            176,
+            178,
+            140,
+            149,
+            158
+          ],
+          "reasoning": "order-service heap climbs steadily after full GC (78%→84%→90%, GC overhead 20→50%), meaning old gen is not being freed. That ends in OutOfMemoryError at orderCache.put, and order-service-2 gets OOMKilled at the 2Gi limit again and again (restarts 1–3). Each crash or restart lines up with a burst of gateway 502s ('connection reset, no healthy upstream'). The cause looks like an unbounded in-memory orderCache. No deploy appears in the window, payment, postgres and redis show no errors, and the TLS cert warning is unrelated."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.08,
+          "evidenceLines": [
+            139
+          ],
+          "reasoning": "v4.15.0 may have added the unbounded cache, but no deploy event appears in the window."
+        }
+      ],
+      "recommendedAction": "Short term: raise the order-service memory limit or scale out replicas to stop the crash loop, and take a heap dump before the next OOM. Fix: put a size cap and eviction (LRU/TTL) on orderCache, and check whether the cache leak came with v4.15.0; if so, roll back. Add alerts on heap usage after GC."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "17 match(es):\n#34 2026-11-24T22:57:21Z WARN api-gateway TLS certificate for *.internal.example expires in 12 days\n#39 2026-11-24T22:57:46Z WARN order-service heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#84 2026-11-24T23:01:04Z WARN order-service heap usage 84% after full GC (old gen not reclaimed), GC overhead 35%\n#101 2026-11-24T23:02:49Z WARN order-service heap usage 90% after full GC (old gen not reclaimed), GC overhead 50%\n#135 2026-11-24T23:05:12Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#136 2026-11-24T23:05:13Z ERROR order-service container order-service-2 killed: OOMKilled (memory limit 2Gi), restart count 1\n#140 2026-11-24T23:05:51Z ERROR api-gateway [t-5076] POST /checkout 502 29510ms: upstream order-service connection reset (no healthy upstream)\n#149 2026-11-24T23:07:15Z ERROR api-gateway [t-5083] POST /checkout 502 24662ms: upstream order-service connection reset (no healthy upstream)\n#154 2026-11-24T23:08:28Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#155 2026-11-24T23:08:29Z ERROR order-service container order-service-2 killed: OOMKilled (memory limit 2Gi), restart count 2\n#158 2026-11-24T23:09:00Z ERROR api-gateway [t-5086] POST /checkout 502 20195ms: upstream order-service connection reset (no healthy upstream)\n#172 2026-11-24T23:11:09Z ERROR api-gateway [t-5095] POST /checkout 502 17002ms: upstream order-service connection reset (no healthy upstream)\n#176 2026-11-24T23:11:19Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#178 2026-11-24T23:11:20Z ERROR order-service container order-service-2 killed: OOMKilled (memory limit 2Gi), restart count 3\n#193 2026-11-24T23:12:59Z ERROR api-gateway [t-5108] POST /checkout 502 26328ms: upstream order-service connection reset (no healthy upstream)\n#204 2026-11-24T23:14:39Z ERROR api-gateway [t-5113] POST /checkout 502 26556ms: upstream order-service connection reset (no healthy upstream)\n#216 2026-11-24T23:16:53Z ERROR api-gateway [t-5118] POST /checkout 502 26954ms: upstream order-service connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "cache",
+          "service": "order-service"
+        },
+        "output": "6 match(es):\n#135 2026-11-24T23:05:12Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#139 2026-11-24T23:05:36Z INFO order-service started order-service v4.15.0, pid 1, warming order cache\n#154 2026-11-24T23:08:28Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#157 2026-11-24T23:08:54Z INFO order-service started order-service v4.15.0, pid 1, warming order cache\n#176 2026-11-24T23:11:19Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#184 2026-11-24T23:11:45Z INFO order-service started order-service v4.15.0, pid 1, warming order cache"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.88,
+              "evidenceLines": [
+                39,
+                84,
+                101,
+                135,
+                136,
+                154,
+                155,
+                176,
+                178,
+                140,
+                149,
+                158
+              ],
+              "reasoning": "order-service heap climbs steadily after full GC (78%→84%→90%, GC overhead 20→50%), meaning old gen is not being freed. That ends in OutOfMemoryError at orderCache.put, and order-service-2 gets OOMKilled at the 2Gi limit again and again (restarts 1–3). Each crash or restart lines up with a burst of gateway 502s ('connection reset, no healthy upstream'). The cause looks like an unbounded in-memory orderCache. No deploy appears in the window, payment, postgres and redis show no errors, and the TLS cert warning is unrelated."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.08,
+              "evidenceLines": [
+                139
+              ],
+              "reasoning": "v4.15.0 may have added the unbounded cache, but no deploy event appears in the window."
+            }
+          ],
+          "recommendedAction": "Short term: raise the order-service memory limit or scale out replicas to stop the crash loop, and take a heap dump before the next OOM. Fix: put a size cap and eviction (LRU/TTL) on orderCache, and check whether the cache leak came with v4.15.0; if so, roll back. Add alerts on heap usage after GC."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 3,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 740,
+      "cacheReadTokens": 5740,
+      "cacheWriteTokens": 3920
+    },
+    "durationMs": 9726,
+    "stopReason": "tool_use"
+  }
+}

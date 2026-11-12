@@ -1,0 +1,130 @@
+{
+  "score": {
+    "incidentId": "gen-041",
+    "difficulty": "medium",
+    "scenario": "data_integrity/sequence-collision",
+    "truth": "data_integrity",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 9,
+      "correct": 5,
+      "precision": 0.5555555555555556,
+      "recall": 1,
+      "f1": 0.7142857142857143
+    },
+    "herringsCited": 0,
+    "costUsd": 0.036161599999999995,
+    "durationMs": 9386,
+    "iterations": 3,
+    "toolCalls": 2,
+    "tokens": {
+      "input": 8,
+      "output": 724,
+      "cacheRead": 5748,
+      "cacheWrite": 4100
+    }
+  },
+  "result": {
+    "incidentId": "gen-041",
+    "model": "claude-opus-5-5",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.9,
+          "evidenceLines": [
+            150,
+            168,
+            173,
+            180,
+            196,
+            187,
+            205,
+            160,
+            179
+          ],
+          "reasoning": "At 18:11:50 a restore reloaded the orders table from a snapshot (3,345,334 rows), but orders_id_seq stayed at 3,327,483, which is below ids already in the table. Every new INSERT now gets an id that already exists, so postgres throws duplicate key errors on orders_pkey (ids 3341735 and up) and order-service fails to create orders. The gateway's 500s on /checkout begin right after the restore. Checkouts were succeeding up to 18:12. The slow audit_log query at 18:05 is unrelated."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.07,
+          "evidenceLines": [
+            150
+          ],
+          "reasoning": "The restore procedure may be missing its step to reset the sequence, which could be called an operational or config mistake rather than a data fault."
+        }
+      ],
+      "recommendedAction": "Reset the sequence past the highest existing id: SELECT setval('orders_id_seq', (SELECT max(id) FROM orders)+1). Then confirm new checkouts go through. Retry or reconcile orders that failed from 18:12 onward. Add a sequence-reset step to the restore runbook, and fix order-service so it doesn't return 409 for this, which the gateway turns into a 500."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "17 match(es):\n#71 2026-11-01T18:05:30Z WARN postgres slow query 2527ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#150 2026-11-01T18:11:50Z WARN postgres restore: table orders reloaded from snapshot (3345334 rows); sequence orders_id_seq left at 3327483\n#160 2026-11-01T18:13:05Z ERROR api-gateway [t-4778] POST /checkout 500 12538ms: upstream order-service returned 500 (create failed)\n#168 2026-11-01T18:13:41Z ERROR postgres duplicate key value violates unique constraint \"orders_pkey\" DETAIL: Key (id)=(3341735) already exists.\n#173 2026-11-01T18:14:21Z ERROR postgres duplicate key value violates unique constraint \"orders_pkey\" DETAIL: Key (id)=(3341738) already exists.\n#179 2026-11-01T18:15:03Z ERROR api-gateway [t-4787] POST /checkout 500 22737ms: upstream order-service returned 500 (create failed)\n#180 2026-11-01T18:15:17Z ERROR postgres duplicate key value violates unique constraint \"orders_pkey\" DETAIL: Key (id)=(3341742) already exists.\n#187 2026-11-01T18:15:46Z ERROR order-service [t-4791] create order failed: unique violation on orders.id, returning 409\n#196 2026-11-01T18:16:59Z ERROR postgres duplicate key value violates unique constraint \"orders_pkey\" DETAIL: Key (id)=(3341743) already exists.\n#205 2026-11-01T18:18:06Z ERROR order-service [t-4804] create order failed: unique violation on orders.id, returning 409\n#211 2026-11-01T18:18:20Z ERROR api-gateway [t-4808] POST /checkout 500 17334ms: upstream order-service returned 500 (create failed)\n#218 2026-11-01T18:19:42Z ERROR api-gateway [t-4813] POST /checkout 500 11947ms: upstream order-service returned 500 (create failed)\n#231 2026-11-01T18:21:19Z ERROR api-gateway [t-4826] POST /checkout 500 11698ms: upstream order-service returned 500 (create failed)\n#235 2026-11-01T18:21:44Z ERROR order-service [t-4829] create order failed: unique violation on orders.id, returning 409\n#241 2026-11-01T18:22:47Z ERROR order-service [t-4834] create order failed: unique violation on orders.id, returning 409\n#243 2026-11-01T18:23:03Z ERROR api-gateway [t-4838] POST /checkout 500 24482ms: upstream order-service returned 500 (create failed)\n#253 2026-11-01T18:24:23Z ERROR api-gateway [t-4843] POST /checkout 500 11331ms: upstream order-service returned 500 (create failed)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 150,
+          "before": 5,
+          "after": 5
+        },
+        "output": "#145 2026-11-01T18:11:34Z DEBUG order-service GC pause 5ms (young), heap 35%\n#146 2026-11-01T18:11:35Z INFO order-consumer processed batch of 45 messages from orders.events (lag 263ms)\n#147 2026-11-01T18:11:45Z INFO order-service [t-4772] order o-2558 accepted, calling payment-svc POST /charge\n#148 2026-11-01T18:11:45Z INFO payment-svc [t-4772] POST /charge o-2558 ok 55ms\n#149 2026-11-01T18:11:45Z INFO api-gateway [t-4772] POST /checkout 200 129ms\n#150 2026-11-01T18:11:50Z WARN postgres restore: table orders reloaded from snapshot (3345334 rows); sequence orders_id_seq left at 3327483\n#151 2026-11-01T18:11:57Z DEBUG payment-svc GC pause 14ms (young), heap 35%\n#152 2026-11-01T18:12:05Z INFO order-consumer processed batch of 55 messages from orders.events (lag 241ms)\n#153 2026-11-01T18:12:14Z INFO order-service [t-4773] order o-2559 accepted, calling payment-svc POST /charge\n#154 2026-11-01T18:12:14Z INFO payment-svc [t-4773] POST /charge o-2559 ok 28ms\n#155 2026-11-01T18:12:14Z INFO api-gateway [t-4773] POST /checkout 200 109ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                150,
+                168,
+                173,
+                180,
+                196,
+                187,
+                205,
+                160,
+                179
+              ],
+              "reasoning": "At 18:11:50 a restore reloaded the orders table from a snapshot (3,345,334 rows), but orders_id_seq stayed at 3,327,483, which is below ids already in the table. Every new INSERT now gets an id that already exists, so postgres throws duplicate key errors on orders_pkey (ids 3341735 and up) and order-service fails to create orders. The gateway's 500s on /checkout begin right after the restore. Checkouts were succeeding up to 18:12. The slow audit_log query at 18:05 is unrelated."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.07,
+              "evidenceLines": [
+                150
+              ],
+              "reasoning": "The restore procedure may be missing its step to reset the sequence, which could be called an operational or config mistake rather than a data fault."
+            }
+          ],
+          "recommendedAction": "Reset the sequence past the highest existing id: SELECT setval('orders_id_seq', (SELECT max(id) FROM orders)+1). Then confirm new checkouts go through. Retry or reconcile orders that failed from 18:12 onward. Add a sequence-reset step to the restore runbook, and fix order-service so it doesn't return 409 for this, which the gateway turns into a 500."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 2,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 724,
+      "cacheReadTokens": 5748,
+      "cacheWriteTokens": 4100
+    },
+    "durationMs": 9386,
+    "stopReason": "tool_use"
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "score": {
+    "incidentId": "gen-042",
+    "difficulty": "hard",
+    "scenario": "external_outage/provider-5xx",
+    "truth": "external_outage",
+    "acceptable": [
+      "dependency_timeout"
+    ],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 9,
+      "correct": 7,
+      "precision": 0.7777777777777778,
+      "recall": 1,
+      "f1": 0.8750000000000001
+    },
+    "herringsCited": 0,
+    "costUsd": 0.047113800000000004,
+    "durationMs": 13005,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 929,
+      "cacheRead": 11594,
+      "cacheWrite": 5235
+    }
+  },
+  "result": {
+    "incidentId": "gen-042",
+    "model": "claude-opus-5-5",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.88,
+          "evidenceLines": [
+            143,
+            146,
+            151,
+            153,
+            159,
+            180,
+            190,
+            158,
+            144
+          ],
+          "reasoning": "Traffic was healthy until 22:45:45 (#139, #142). The first anomaly is template-svc getting 503/502s and 10s timeouts from the third-party email provider api.mailer.example (#143, #146, #151, #153). template-svc's circuit breaker then opened at a 93% failure rate (#159), and its half-open probes kept failing with 503 (#180, #190), so the provider was still down. notification-svc then failed with 'template-svc returned 503 (circuit open)' (#158), and the gateway returned 503s (#144 onward). The notif-db slow audit_log query (#135), the config reload with 0 keys changed (#149) and the rate-limiter 429 (#147) don't explain this and are red herrings."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.08,
+          "evidenceLines": [
+            158,
+            160,
+            163
+          ],
+          "reasoning": "The gateway latency (up to 30s) and the 503s are the downstream spread of the template-svc failures. That's a symptom, not the root cause."
+        }
+      ],
+      "recommendedAction": "Check the status of the email provider api.mailer.example and open a ticket with them. If there's a backup provider, fail over to it. Decouple sending from the sync POST /v1/notify path: queue messages for retry through notif-worker and return 202, instead of making callers wait on render/send. Lower the timeout to the provider and to template-svc so gateway requests stop hanging for up to 30s."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "27 match(es):\n#135 2026-11-07T22:45:20Z WARN notif-db slow query 1848ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#143 2026-11-07T22:45:55Z ERROR template-svc [t-5228] email provider returned 503 Bad Gateway POST https://api.mailer.example/v3/send (x-request-id af81903)\n#144 2026-11-07T22:45:56Z ERROR api-gateway [t-5230] POST /v1/notify 503 7830ms: upstream notification-svc returned 503 Service Unavailable\n#146 2026-11-07T22:46:13Z ERROR template-svc [t-5234] email provider call FAILED: upstream timeout after 10000ms POST https://api.mailer.example/v3/send\n#147 2026-11-07T22:46:25Z WARN api-gateway rate limiter: client key k-3499 throttled (429), 111 req/s over quota\n#150 2026-11-07T22:46:50Z ERROR api-gateway [t-5236] POST /v1/notify 503 6762ms: upstream notification-svc returned 503 Service Unavailable\n#151 2026-11-07T22:46:52Z ERROR template-svc [t-5238] email provider returned 502 Bad Gateway POST https://api.mailer.example/v3/send (x-request-id fdff0cb)\n#153 2026-11-07T22:47:03Z ERROR template-svc [t-5239] email provider call FAILED: upstream timeout after 10000ms POST https://api.mailer.example/v3/send\n#158 2026-11-07T22:47:37Z ERROR notification-svc [t-5241] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#159 2026-11-07T22:47:44Z WARN template-svc circuit breaker OPEN for api.mailer.example (failure rate 93% over 20 calls), failing fast for 30s\n#160 2026-11-07T22:47:45Z ERROR api-gateway [t-5242] POST /v1/notify 503 26562ms: upstream notification-svc returned 503 Service Unavailable\n#163 2026-11-07T22:48:48Z ERROR api-gateway [t-5245] POST /v1/notify 503 18359ms: upstream notification-svc returned 503 Service Unavailable\n#164 2026-11-07T22:48:49Z ERROR notification-svc [t-5247] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#167 2026-11-07T22:49:10Z ERROR api-gateway [t-5250] POST /v1/notify 503 23114ms: upstream notification-svc returned 503 Service Unavailable\n#168 2026-11-07T22:49:44Z ERROR api-gateway [t-5251] POST /v1/notify 503 15351ms: upstream notification-svc returned 503 Service Unavailable\n#177 2026-11-07T22:50:29Z ERROR api-gateway [t-5257] POST /v1/notify 503 6145ms: upstream notification-svc returned 503 Service Unavailable\n#180 2026-11-07T22:50:44Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 503, re-opening\n#182 2026-11-07T22:51:03Z ERROR notification-svc [t-5263] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#185 2026-11-07T22:51:30Z ERROR api-gateway [t-5266] POST /v1/notify 503 29671ms: upstream notification-svc returned 503 Service Unavailable\n#186 2026-11-07T22:51:32Z ERROR notification-svc [t-5267] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#189 2026-11-07T22:52:28Z ERROR api-gateway [t-5269] POST /v1/notify 503 5246ms: upstream notification-svc returned 503 Service Unavailable\n#190 2026-11-07T22:52:32Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 503, re-opening\n#194 2026-11-07T22:52:46Z ERROR notification-svc [t-5277] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#198 2026-11-07T22:53:12Z ERROR api-gateway [t-5280] POST /v1/notify 503 30013ms: upstream notification-svc returned 503 Service Unavailable\n#202 2026-11-07T22:53:46Z ERROR notification-svc [t-5285] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#204 2026-11-07T22:54:03Z ERROR api-gateway [t-5286] POST /v1/notify 503 20561ms: upstream notification-svc returned 503 Service Unavailable\n#207 2026-11-07T22:54:51Z ERROR api-gateway [t-5287] POST /v1/notify 503 6299ms: upstream notification-svc returned 503 Service Unavailable"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 143,
+          "before": 10,
+          "after": 2
+        },
+        "output": "#133 2026-11-07T22:45:12Z INFO api-gateway [t-5222] POST /v1/notify 200 111ms\n#134 2026-11-07T22:45:18Z DEBUG template-svc GC pause 24ms (young), heap 31%\n#135 2026-11-07T22:45:20Z WARN notif-db slow query 1848ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#136 2026-11-07T22:45:21Z INFO notif-worker processed batch of 61 messages from notifications.outbound (lag 311ms)\n#137 2026-11-07T22:45:27Z INFO notification-svc [t-5223] message m-1201 accepted, calling template-svc POST /render\n#138 2026-11-07T22:45:28Z INFO template-svc [t-5223] POST /render m-1201 ok 21ms\n#139 2026-11-07T22:45:28Z INFO api-gateway [t-5223] POST /v1/notify 200 103ms\n#140 2026-11-07T22:45:41Z INFO redis stats: hits=9292 misses=350 evicted=0 connected_clients=58\n#141 2026-11-07T22:45:44Z INFO notification-svc [t-5225] message m-1202 accepted, calling template-svc POST /render\n#142 2026-11-07T22:45:45Z INFO api-gateway [t-5225] POST /v1/notify 200 101ms\n#143 2026-11-07T22:45:55Z ERROR template-svc [t-5228] email provider returned 503 Bad Gateway POST https://api.mailer.example/v3/send (x-request-id af81903)\n#144 2026-11-07T22:45:56Z ERROR api-gateway [t-5230] POST /v1/notify 503 7830ms: upstream notification-svc returned 503 Service Unavailable\n#145 2026-11-07T22:46:02Z INFO notif-worker processed batch of 61 messages from notifications.outbound (lag 152ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "config"
+        },
+        "output": "1 match(es):\n#149 2026-11-07T22:46:48Z INFO template-svc config reloaded from config-service (revision 773): 0 keys changed"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.88,
+              "evidenceLines": [
+                143,
+                146,
+                151,
+                153,
+                159,
+                180,
+                190,
+                158,
+                144
+              ],
+              "reasoning": "Traffic was healthy until 22:45:45 (#139, #142). The first anomaly is template-svc getting 503/502s and 10s timeouts from the third-party email provider api.mailer.example (#143, #146, #151, #153). template-svc's circuit breaker then opened at a 93% failure rate (#159), and its half-open probes kept failing with 503 (#180, #190), so the provider was still down. notification-svc then failed with 'template-svc returned 503 (circuit open)' (#158), and the gateway returned 503s (#144 onward). The notif-db slow audit_log query (#135), the config reload with 0 keys changed (#149) and the rate-limiter 429 (#147) don't explain this and are red herrings."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.08,
+              "evidenceLines": [
+                158,
+                160,
+                163
+              ],
+              "reasoning": "The gateway latency (up to 30s) and the 503s are the downstream spread of the template-svc failures. That's a symptom, not the root cause."
+            }
+          ],
+          "recommendedAction": "Check the status of the email provider api.mailer.example and open a ticket with them. If there's a backup provider, fail over to it. Decouple sending from the sync POST /v1/notify path: queue messages for retry through notif-worker and return 202, instead of making callers wait on render/send. Lower the timeout to the provider and to template-svc so gateway requests stop hanging for up to 30s."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 929,
+      "cacheReadTokens": 11594,
+      "cacheWriteTokens": 5235
+    },
+    "durationMs": 13005,
+    "stopReason": "tool_use"
+  }
+}
