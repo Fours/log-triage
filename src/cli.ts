@@ -2,7 +2,7 @@ import "./env.js"; // load .env before the Anthropic client resolves credentials
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { loadIncident } from "./tools.js";
-import { triage, DEFAULT_MODEL } from "./agent.js";
+import { triage, DEFAULT_EFFORT, DEFAULT_MODEL } from "./agent.js";
 import { toIncidentView } from "./types.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -12,7 +12,7 @@ async function main() {
   const path = process.argv[2] ? resolve(process.cwd(), process.argv[2]) : DEFAULT_INCIDENT;
   const incident = loadIncident(path);
 
-  console.log(`\n=== Triaging ${incident.id} on ${DEFAULT_MODEL} ===`);
+  console.log(`\n=== Triaging ${incident.id} on ${DEFAULT_MODEL}${DEFAULT_EFFORT ? ` (effort ${DEFAULT_EFFORT})` : ""} ===`);
   console.log(`Alert: ${incident.alert}\n`);
 
   const result = await triage(toIncidentView(incident));
@@ -20,7 +20,8 @@ async function main() {
   console.log("--- Investigation trace ---");
   for (const step of result.trace) {
     const input = step.tool === "list_services" ? "" : ` ${JSON.stringify(step.input)}`;
-    console.log(`\n[${step.tool}]${input}`);
+    const flags = [step.isError ? "error" : "", step.repeated ? "repeat" : ""].filter(Boolean).join(", ");
+    console.log(`\n[${step.tool}]${input}${flags ? `  (${flags})` : ""}`);
     console.log(step.output.split("\n").map((l) => `  ${l}`).join("\n"));
   }
 
@@ -34,12 +35,14 @@ async function main() {
     });
     console.log(`\nRecommended action: ${result.verdict.recommendedAction}`);
   } else {
-    console.log(`No verdict. ${result.error ?? ""}`);
+    console.log(`No verdict (${result.outcome}). ${result.error ?? ""}`);
   }
 
+  const u = result.usage;
   console.log(
-    `\n--- Run: ${result.iterations} iteration(s), ${result.trace.length} tool call(s), ` +
-      `${result.usage.inputTokens} in / ${result.usage.outputTokens} out tokens, stop=${result.stopReason} ---`,
+    `\n--- Run: ${result.outcome}${result.budgetHit ? ` (budget: ${result.budgetHit})` : ""} · ${result.iterations} turn(s), ${result.toolCalls} tool call(s) · ` +
+      `${u.inputTokens} in + ${u.cacheReadTokens} cache-read + ${u.cacheWriteTokens} cache-write / ${u.outputTokens} out tokens · ` +
+      `${(result.durationMs / 1000).toFixed(1)}s · stop=${result.stopReason} ---`,
   );
 
   // Compare against ground truth for a quick read (the eval harness formalizes this in Phase 3).
