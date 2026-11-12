@@ -1,0 +1,1621 @@
+[
+  {
+    "incidentId": "test-008",
+    "title": "A held row lock",
+    "why": "With the Phase 3 prompt, Opus found the lock holder and still called it resource exhaustion. Once the prompt defined the categories, it classified the same evidence correctly.",
+    "incident": {
+      "title": "POST /v1/notify latency spike and 504s",
+      "alert": "api-gateway: p95 latency on POST /v1/notify above 10s and 504 rate over 15% for 5 minutes.",
+      "services": [
+        "api-gateway",
+        "notification-svc",
+        "template-svc",
+        "notif-db",
+        "redis",
+        "notif-worker"
+      ],
+      "lineCount": 173,
+      "overview": "window 2026-10-15T14:35:16Z .. 2026-10-15T14:59:59Z, 173 lines total\n- api-gateway: 38 lines, 4 error+ (2026-10-15T14:35:16Z .. 2026-10-15T14:59:33Z)\n- notification-svc: 43 lines, 3 error+ (2026-10-15T14:35:16Z .. 2026-10-15T14:59:32Z)\n- template-svc: 25 lines, 2 error+ (2026-10-15T14:35:16Z .. 2026-10-15T14:59:59Z)\n- notif-db: 15 lines, 2 error+ (2026-10-15T14:36:16Z .. 2026-10-15T14:59:13Z)\n- notif-worker: 34 lines, 0 error+ (2026-10-15T14:35:49Z .. 2026-10-15T14:59:16Z)\n- redis: 18 lines, 0 error+ (2026-10-15T14:36:39Z .. 2026-10-15T14:59:24Z)"
+    },
+    "label": {
+      "rootCause": "dependency_timeout",
+      "acceptableCauses": [],
+      "difficulty": "easy",
+      "evidenceLines": [
+        104,
+        111,
+        112,
+        115,
+        117,
+        126,
+        127
+      ],
+      "herringLines": [],
+      "explanation": "A template-svc reconciler session opened transaction 99588 on notif-db and left it open holding a row lock on notifications (line 104). Subsequent updates queued behind that lock (lines 115, 117), so template-svc's queries hit their statement timeout and notification-svc's calls to template-svc timed out (lines 111, 112, 126, 127). notification-svc's connection pool to template-svc saturating (lines 134, 139) and the api-gateway 504s (lines 131, 140, 153, 169) are downstream symptoms. The fix is to kill the idle-in-transaction session, not to add capacity."
+    },
+    "lines": [
+      {
+        "n": 104,
+        "ts": "2026-10-15T14:48:57Z",
+        "service": "notif-db",
+        "level": "WARN",
+        "msg": "TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1"
+      },
+      {
+        "n": 111,
+        "ts": "2026-10-15T14:49:49Z",
+        "service": "template-svc",
+        "level": "ERROR",
+        "traceId": "t-1292",
+        "msg": "query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-5849)"
+      },
+      {
+        "n": 112,
+        "ts": "2026-10-15T14:49:54Z",
+        "service": "notification-svc",
+        "level": "ERROR",
+        "traceId": "t-1292",
+        "msg": "TemplateClient.render timed out after 15000ms calling template-svc POST /render (m-5849)"
+      },
+      {
+        "n": 115,
+        "ts": "2026-10-15T14:50:06Z",
+        "service": "notif-db",
+        "level": "ERROR",
+        "msg": "Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)"
+      },
+      {
+        "n": 117,
+        "ts": "2026-10-15T14:50:28Z",
+        "service": "notif-db",
+        "level": "ERROR",
+        "msg": "Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)"
+      },
+      {
+        "n": 126,
+        "ts": "2026-10-15T14:51:57Z",
+        "service": "template-svc",
+        "level": "ERROR",
+        "traceId": "t-1295",
+        "msg": "query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-5855)"
+      },
+      {
+        "n": 127,
+        "ts": "2026-10-15T14:52:02Z",
+        "service": "notification-svc",
+        "level": "ERROR",
+        "traceId": "t-1295",
+        "msg": "TemplateClient.render timed out after 15000ms calling template-svc POST /render (m-5855)"
+      },
+      {
+        "n": 131,
+        "ts": "2026-10-15T14:52:39Z",
+        "service": "api-gateway",
+        "level": "ERROR",
+        "traceId": "t-1297",
+        "msg": "POST /v1/notify 504 24369ms: upstream notification-svc timed out"
+      },
+      {
+        "n": 134,
+        "ts": "2026-10-15T14:52:49Z",
+        "service": "notification-svc",
+        "level": "WARN",
+        "msg": "HTTP connection pool to template-svc at capacity (50/50 in use), 38 requests queued"
+      },
+      {
+        "n": 139,
+        "ts": "2026-10-15T14:54:20Z",
+        "service": "notification-svc",
+        "level": "ERROR",
+        "msg": "pool checkout timeout: no connection to template-svc available after 5000ms"
+      },
+      {
+        "n": 140,
+        "ts": "2026-10-15T14:54:22Z",
+        "service": "api-gateway",
+        "level": "ERROR",
+        "traceId": "t-1298",
+        "msg": "POST /v1/notify 504 28176ms: upstream notification-svc timed out"
+      }
+    ],
+    "runs": [
+      {
+        "key": "opusV1Test",
+        "modelName": "Opus 5.5",
+        "prompt": "v1",
+        "effort": "medium",
+        "steps": [
+          {
+            "tool": "search_logs",
+            "input": {
+              "level": "WARN",
+              "limit": 60
+            },
+            "output": "13 match(es):\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#111 2026-10-15T14:49:49Z ERROR template-svc [t-1292] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-5849)\n#112 2026-10-15T14:49:54Z ERROR notification-svc [t-1292] TemplateClient.render timed out after 15000ms calling template-svc POST /render (m-5849)\n#115 2026-10-15T14:50:06Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#117 2026-10-15T14:50:28Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#126 2026-10-15T14:51:57Z ERROR template-svc [t-1295] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-5855)\n#127 2026-10-15T14:52:02Z ERROR notification-svc [t-1295] TemplateClient.render timed out after 15000ms calling template-svc POST /render (m-5855)\n#131 2026-10-15T14:52:39Z ERROR api-gateway [t-1297] POST /v1/notify 504 24369ms: upstream notification-svc timed out\n#134 2026-10-15T14:52:49Z WARN notification-svc HTTP connection pool to template-svc at capacity (50/50 in use), 38 requests queued\n#139 2026-10-15T14:54:20Z ERROR notification-svc pool checkout timeout: no connection to template-svc available after 5000ms\n#140 2026-10-15T14:54:22Z ERROR api-gateway [t-1298] POST /v1/notify 504 28176ms: upstream notification-svc timed out\n#153 2026-10-15T14:56:56Z ERROR api-gateway [t-1303] POST /v1/notify 504 22820ms: upstream notification-svc timed out\n#169 2026-10-15T14:59:28Z ERROR api-gateway [t-1312] POST /v1/notify 504 12609ms: upstream notification-svc timed out",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "query": "reconciler"
+            },
+            "output": "1 match(es):\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1",
+            "isError": false
+          },
+          {
+            "tool": "get_context",
+            "input": {
+              "line": 104,
+              "before": 20,
+              "after": 3
+            },
+            "output": "#84 2026-10-15T14:46:28Z INFO notification-svc [t-1275] message m-5840 accepted, calling template-svc POST /render\n#85 2026-10-15T14:46:28Z INFO template-svc [t-1275] POST /render m-5840 ok 44ms\n#86 2026-10-15T14:46:28Z INFO api-gateway [t-1275] POST /v1/notify 200 145ms\n#87 2026-10-15T14:46:44Z INFO notif-worker processed batch of 82 messages from notifications.outbound (lag 270ms)\n#88 2026-10-15T14:46:52Z DEBUG api-gateway upstream health: notification-svc ok, template-svc ok\n#89 2026-10-15T14:47:02Z DEBUG template-svc GC pause 8ms (young), heap 44%\n#90 2026-10-15T14:47:03Z INFO notif-db InnoDB: page cleaner flushed 834 pages, buffer pool hit rate 98.9%\n#91 2026-10-15T14:47:10Z INFO notification-svc [t-1278] message m-5841 accepted, calling template-svc POST /render\n#92 2026-10-15T14:47:10Z INFO template-svc [t-1278] POST /render m-5841 ok 78ms\n#93 2026-10-15T14:47:10Z INFO api-gateway [t-1278] POST /v1/notify 200 139ms\n#94 2026-10-15T14:47:34Z INFO notif-worker processed batch of 54 messages from notifications.outbound (lag 380ms)\n#95 2026-10-15T14:47:38Z INFO redis stats: hits=11435 misses=733 evicted=0 connected_clients=36\n#96 2026-10-15T14:47:46Z DEBUG notification-svc GC pause 17ms (young), heap 34%\n#97 2026-10-15T14:47:48Z INFO notification-svc [t-1282] message m-5842 accepted, calling template-svc POST /render\n#98 2026-10-15T14:47:48Z INFO api-gateway [t-1282] POST /v1/notify 200 103ms\n#99 2026-10-15T14:48:10Z INFO notification-svc [t-1284] message m-5844 accepted, calling template-svc POST /render\n#100 2026-10-15T14:48:10Z INFO api-gateway [t-1284] POST /v1/notify 200 191ms\n#101 2026-10-15T14:48:25Z INFO notif-worker processed batch of 88 messages from notifications.outbound (lag 42ms)\n#102 2026-10-15T14:48:45Z INFO notification-svc [t-1287] message m-5847 accepted, calling template-svc POST /render\n#103 2026-10-15T14:48:46Z INFO api-gateway [t-1287] POST /v1/notify 200 132ms\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#105 2026-10-15T14:48:59Z INFO notif-db InnoDB: page cleaner flushed 160 pages, buffer pool hit rate 99%\n#106 2026-10-15T14:49:03Z INFO redis stats: hits=17000 misses=893 evicted=0 connected_clients=33\n#107 2026-10-15T14:49:14Z INFO notification-svc [t-1289] message m-5848 accepted, calling template-svc POST /render",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "query": "deploy"
+            },
+            "output": "no matching log lines",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "service": "template-svc",
+              "limit": 30
+            },
+            "output": "25 match(es):\n#2 2026-10-15T14:35:16Z INFO template-svc [t-1235] POST /render m-5807 ok 87ms\n#13 2026-10-15T14:36:56Z DEBUG template-svc GC pause 16ms (young), heap 42%\n#23 2026-10-15T14:38:08Z INFO template-svc [t-1242] POST /render m-5814 ok 74ms\n#29 2026-10-15T14:38:49Z DEBUG template-svc GC pause 21ms (young), heap 28%\n#33 2026-10-15T14:39:21Z INFO template-svc [t-1246] POST /render m-5818 ok 64ms\n#41 2026-10-15T14:40:11Z INFO template-svc [t-1250] POST /render m-5823 ok 53ms\n#55 2026-10-15T14:42:03Z DEBUG template-svc GC pause 5ms (young), heap 32%\n#61 2026-10-15T14:42:45Z INFO template-svc [t-1259] POST /render m-5831 ok 24ms\n#66 2026-10-15T14:43:28Z INFO template-svc [t-1261] POST /render m-5832 ok 85ms\n#75 2026-10-15T14:44:51Z DEBUG template-svc GC pause 20ms (young), heap 29%\n#85 2026-10-15T14:46:28Z INFO template-svc [t-1275] POST /render m-5840 ok 44ms\n#89 2026-10-15T14:47:02Z DEBUG template-svc GC pause 8ms (young), heap 44%\n#92 2026-10-15T14:47:10Z INFO template-svc [t-1278] POST /render m-5841 ok 78ms\n#108 2026-10-15T14:49:15Z INFO template-svc [t-1289] POST /render m-5848 ok 53ms\n#111 2026-10-15T14:49:49Z ERROR template-svc [t-1292] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-5849)\n#113 2026-10-15T14:49:56Z DEBUG template-svc GC pause 9ms (young), heap 36%\n#122 2026-10-15T14:51:12Z INFO template-svc [t-1293] POST /render m-5852 ok 50ms\n#126 2026-10-15T14:51:57Z ERROR template-svc [t-1295] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-5855)\n#128 2026-10-15T14:52:14Z DEBUG template-svc GC pause 22ms (young), heap 36%\n#137 2026-10-15T14:54:08Z DEBUG template-svc GC pause 24ms (young), heap 45%\n#144 2026-10-15T14:54:58Z INFO template-svc [t-1300] POST /render m-5857 ok 61ms\n#155 2026-10-15T14:57:08Z DEBUG template-svc GC pause 19ms (young), heap 35%\n#163 2026-10-15T14:58:46Z INFO template-svc [t-1308] POST /render m-5861 ok 68ms\n#171 2026-10-15T14:59:32Z INFO template-svc [t-1316] POST /render m-5864 ok 90ms\n#173 2026-10-15T14:59:59Z DEBUG template-svc GC pause 25ms (young), heap 28%",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "service": "notif-db"
+            },
+            "output": "15 match(es):\n#8 2026-10-15T14:36:16Z INFO notif-db InnoDB: page cleaner flushed 203 pages, buffer pool hit rate 98.6%\n#25 2026-10-15T14:38:13Z INFO notif-db InnoDB: page cleaner flushed 832 pages, buffer pool hit rate 98.9%\n#44 2026-10-15T14:40:22Z INFO notif-db InnoDB: page cleaner flushed 191 pages, buffer pool hit rate 99.8%\n#59 2026-10-15T14:42:33Z INFO notif-db InnoDB: page cleaner flushed 870 pages, buffer pool hit rate 99.1%\n#72 2026-10-15T14:44:43Z INFO notif-db InnoDB: page cleaner flushed 113 pages, buffer pool hit rate 98.5%\n#90 2026-10-15T14:47:03Z INFO notif-db InnoDB: page cleaner flushed 834 pages, buffer pool hit rate 98.9%\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#105 2026-10-15T14:48:59Z INFO notif-db InnoDB: page cleaner flushed 160 pages, buffer pool hit rate 99%\n#115 2026-10-15T14:50:06Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#117 2026-10-15T14:50:28Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#119 2026-10-15T14:50:40Z INFO notif-db InnoDB: page cleaner flushed 241 pages, buffer pool hit rate 99.4%\n#130 2026-10-15T14:52:25Z INFO notif-db InnoDB: page cleaner flushed 478 pages, buffer pool hit rate 98.8%\n#142 2026-10-15T14:54:43Z INFO notif-db InnoDB: page cleaner flushed 684 pages, buffer pool hit rate 98.8%\n#154 2026-10-15T14:57:02Z INFO notif-db InnoDB: page cleaner flushed 601 pages, buffer pool hit rate 99.7%\n#165 2026-10-15T14:59:13Z INFO notif-db InnoDB: page cleaner flushed 716 pages, buffer pool hit rate 99.1%",
+            "isError": false
+          },
+          {
+            "tool": "submit_triage",
+            "input": {
+              "hypotheses": [
+                {
+                  "rootCause": "resource_exhaustion",
+                  "confidence": 0.55,
+                  "evidenceLines": [
+                    104,
+                    111,
+                    115,
+                    117,
+                    126,
+                    112,
+                    127,
+                    134,
+                    139,
+                    131,
+                    140
+                  ],
+                  "reasoning": "Earliest anomaly is #104: notif-db transaction 99588 from template-svc-reconciler has been open 97s (started around 14:47:20) and still holds a row lock on notifications. After that, template-svc's UPDATE notifications statements hit the 10s statement timeout (#111, #126) and the DB logs lock wait timeouts (#115, #117). Because of that, notification-svc's TemplateClient.render calls time out at 15s (#112, #127), its 50-connection pool to template-svc fills up and checkouts start timing out (#134, #139), and the gateway returns 504s (#131, #140, #153, #169). The contended resource is the row lock held by an idle open transaction. No deploys or config changes appear in the window."
+                },
+                {
+                  "rootCause": "dependency_timeout",
+                  "confidence": 0.3,
+                  "evidenceLines": [
+                    111,
+                    112,
+                    127,
+                    115
+                  ],
+                  "reasoning": "Another way to read it: requests time out because template-svc's DB writes block on locks in notif-db (statement and lock wait timeouts). The mechanism is the same: the reconciler's open transaction blocks writers."
+                },
+                {
+                  "rootCause": "cascading_failure",
+                  "confidence": 0.15,
+                  "evidenceLines": [
+                    134,
+                    139,
+                    131
+                  ],
+                  "reasoning": "Pool saturation in notification-svc and the gateway 504s are cascade symptoms. They sit downstream of the DB lock contention."
+                }
+              ],
+              "recommendedAction": "Kill the long-running transaction 99588 held by template-svc-reconciler in notif-db to release the row lock on notifications. Then fix the reconciler so it commits or rolls back promptly: keep transactions short, set a timeout for idle-in-transaction sessions, and don't hold locks across external calls. Consider lowering lock_wait_timeout and the template-svc client timeout so requests fail fast instead of filling notification-svc's connection pool, and alert on transactions that stay active longer than N seconds."
+            },
+            "output": "triage recorded",
+            "isError": false
+          }
+        ],
+        "verdict": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.55,
+              "evidenceLines": [
+                104,
+                111,
+                115,
+                117,
+                126,
+                112,
+                127,
+                134,
+                139,
+                131,
+                140
+              ],
+              "reasoning": "Earliest anomaly is #104: notif-db transaction 99588 from template-svc-reconciler has been open 97s (started around 14:47:20) and still holds a row lock on notifications. After that, template-svc's UPDATE notifications statements hit the 10s statement timeout (#111, #126) and the DB logs lock wait timeouts (#115, #117). Because of that, notification-svc's TemplateClient.render calls time out at 15s (#112, #127), its 50-connection pool to template-svc fills up and checkouts start timing out (#134, #139), and the gateway returns 504s (#131, #140, #153, #169). The contended resource is the row lock held by an idle open transaction. No deploys or config changes appear in the window."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.3,
+              "evidenceLines": [
+                111,
+                112,
+                127,
+                115
+              ],
+              "reasoning": "Another way to read it: requests time out because template-svc's DB writes block on locks in notif-db (statement and lock wait timeouts). The mechanism is the same: the reconciler's open transaction blocks writers."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.15,
+              "evidenceLines": [
+                134,
+                139,
+                131
+              ],
+              "reasoning": "Pool saturation in notification-svc and the gateway 504s are cascade symptoms. They sit downstream of the DB lock contention."
+            }
+          ],
+          "recommendedAction": "Kill the long-running transaction 99588 held by template-svc-reconciler in notif-db to release the row lock on notifications. Then fix the reconciler so it commits or rolls back promptly: keep transactions short, set a timeout for idle-in-transaction sessions, and don't hold locks across external calls. Consider lowering lock_wait_timeout and the template-svc client timeout so requests fail fast instead of filling notification-svc's connection pool, and alert on transactions that stay active longer than N seconds."
+        },
+        "score": {
+          "top1": false,
+          "top1Lenient": false,
+          "predicted": "resource_exhaustion",
+          "confidence": 0.55,
+          "precision": 0.6363636363636364,
+          "recall": 1,
+          "cited": 11,
+          "correct": 7
+        },
+        "costUsd": 0.06888939999999999,
+        "durationMs": 18763
+      },
+      {
+        "key": "opusMediumTest",
+        "modelName": "Opus 5.5",
+        "prompt": "v3",
+        "effort": "medium",
+        "steps": [
+          {
+            "tool": "search_logs",
+            "input": {
+              "level": "WARN",
+              "limit": 60
+            },
+            "output": "13 match(es):\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#111 2026-10-15T14:49:49Z ERROR template-svc [t-1292] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-5849)\n#112 2026-10-15T14:49:54Z ERROR notification-svc [t-1292] TemplateClient.render timed out after 15000ms calling template-svc POST /render (m-5849)\n#115 2026-10-15T14:50:06Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#117 2026-10-15T14:50:28Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#126 2026-10-15T14:51:57Z ERROR template-svc [t-1295] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-5855)\n#127 2026-10-15T14:52:02Z ERROR notification-svc [t-1295] TemplateClient.render timed out after 15000ms calling template-svc POST /render (m-5855)\n#131 2026-10-15T14:52:39Z ERROR api-gateway [t-1297] POST /v1/notify 504 24369ms: upstream notification-svc timed out\n#134 2026-10-15T14:52:49Z WARN notification-svc HTTP connection pool to template-svc at capacity (50/50 in use), 38 requests queued\n#139 2026-10-15T14:54:20Z ERROR notification-svc pool checkout timeout: no connection to template-svc available after 5000ms\n#140 2026-10-15T14:54:22Z ERROR api-gateway [t-1298] POST /v1/notify 504 28176ms: upstream notification-svc timed out\n#153 2026-10-15T14:56:56Z ERROR api-gateway [t-1303] POST /v1/notify 504 22820ms: upstream notification-svc timed out\n#169 2026-10-15T14:59:28Z ERROR api-gateway [t-1312] POST /v1/notify 504 12609ms: upstream notification-svc timed out",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "query": "reconciler"
+            },
+            "output": "1 match(es):\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "query": "deploy"
+            },
+            "output": "no matching log lines",
+            "isError": false
+          },
+          {
+            "tool": "get_context",
+            "input": {
+              "line": 104,
+              "before": 20,
+              "after": 3
+            },
+            "output": "#84 2026-10-15T14:46:28Z INFO notification-svc [t-1275] message m-5840 accepted, calling template-svc POST /render\n#85 2026-10-15T14:46:28Z INFO template-svc [t-1275] POST /render m-5840 ok 44ms\n#86 2026-10-15T14:46:28Z INFO api-gateway [t-1275] POST /v1/notify 200 145ms\n#87 2026-10-15T14:46:44Z INFO notif-worker processed batch of 82 messages from notifications.outbound (lag 270ms)\n#88 2026-10-15T14:46:52Z DEBUG api-gateway upstream health: notification-svc ok, template-svc ok\n#89 2026-10-15T14:47:02Z DEBUG template-svc GC pause 8ms (young), heap 44%\n#90 2026-10-15T14:47:03Z INFO notif-db InnoDB: page cleaner flushed 834 pages, buffer pool hit rate 98.9%\n#91 2026-10-15T14:47:10Z INFO notification-svc [t-1278] message m-5841 accepted, calling template-svc POST /render\n#92 2026-10-15T14:47:10Z INFO template-svc [t-1278] POST /render m-5841 ok 78ms\n#93 2026-10-15T14:47:10Z INFO api-gateway [t-1278] POST /v1/notify 200 139ms\n#94 2026-10-15T14:47:34Z INFO notif-worker processed batch of 54 messages from notifications.outbound (lag 380ms)\n#95 2026-10-15T14:47:38Z INFO redis stats: hits=11435 misses=733 evicted=0 connected_clients=36\n#96 2026-10-15T14:47:46Z DEBUG notification-svc GC pause 17ms (young), heap 34%\n#97 2026-10-15T14:47:48Z INFO notification-svc [t-1282] message m-5842 accepted, calling template-svc POST /render\n#98 2026-10-15T14:47:48Z INFO api-gateway [t-1282] POST /v1/notify 200 103ms\n#99 2026-10-15T14:48:10Z INFO notification-svc [t-1284] message m-5844 accepted, calling template-svc POST /render\n#100 2026-10-15T14:48:10Z INFO api-gateway [t-1284] POST /v1/notify 200 191ms\n#101 2026-10-15T14:48:25Z INFO notif-worker processed batch of 88 messages from notifications.outbound (lag 42ms)\n#102 2026-10-15T14:48:45Z INFO notification-svc [t-1287] message m-5847 accepted, calling template-svc POST /render\n#103 2026-10-15T14:48:46Z INFO api-gateway [t-1287] POST /v1/notify 200 132ms\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#105 2026-10-15T14:48:59Z INFO notif-db InnoDB: page cleaner flushed 160 pages, buffer pool hit rate 99%\n#106 2026-10-15T14:49:03Z INFO redis stats: hits=17000 misses=893 evicted=0 connected_clients=33\n#107 2026-10-15T14:49:14Z INFO notification-svc [t-1289] message m-5848 accepted, calling template-svc POST /render",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "service": "notif-db"
+            },
+            "output": "15 match(es):\n#8 2026-10-15T14:36:16Z INFO notif-db InnoDB: page cleaner flushed 203 pages, buffer pool hit rate 98.6%\n#25 2026-10-15T14:38:13Z INFO notif-db InnoDB: page cleaner flushed 832 pages, buffer pool hit rate 98.9%\n#44 2026-10-15T14:40:22Z INFO notif-db InnoDB: page cleaner flushed 191 pages, buffer pool hit rate 99.8%\n#59 2026-10-15T14:42:33Z INFO notif-db InnoDB: page cleaner flushed 870 pages, buffer pool hit rate 99.1%\n#72 2026-10-15T14:44:43Z INFO notif-db InnoDB: page cleaner flushed 113 pages, buffer pool hit rate 98.5%\n#90 2026-10-15T14:47:03Z INFO notif-db InnoDB: page cleaner flushed 834 pages, buffer pool hit rate 98.9%\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#105 2026-10-15T14:48:59Z INFO notif-db InnoDB: page cleaner flushed 160 pages, buffer pool hit rate 99%\n#115 2026-10-15T14:50:06Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#117 2026-10-15T14:50:28Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#119 2026-10-15T14:50:40Z INFO notif-db InnoDB: page cleaner flushed 241 pages, buffer pool hit rate 99.4%\n#130 2026-10-15T14:52:25Z INFO notif-db InnoDB: page cleaner flushed 478 pages, buffer pool hit rate 98.8%\n#142 2026-10-15T14:54:43Z INFO notif-db InnoDB: page cleaner flushed 684 pages, buffer pool hit rate 98.8%\n#154 2026-10-15T14:57:02Z INFO notif-db InnoDB: page cleaner flushed 601 pages, buffer pool hit rate 99.7%\n#165 2026-10-15T14:59:13Z INFO notif-db InnoDB: page cleaner flushed 716 pages, buffer pool hit rate 99.1%",
+            "isError": false
+          },
+          {
+            "tool": "submit_triage",
+            "input": {
+              "hypotheses": [
+                {
+                  "rootCause": "dependency_timeout",
+                  "confidence": 0.92,
+                  "evidenceLines": [
+                    104,
+                    111,
+                    112,
+                    115,
+                    117,
+                    126,
+                    127
+                  ],
+                  "reasoning": "A long-running template-svc-reconciler transaction (99588, active 97s at 14:48:57) is holding a row lock on notifications. template-svc's UPDATEs on notifications are stuck behind it. They hit lock wait timeouts and the 10s statement timeout, so /render calls hang and notification-svc's TemplateClient times out after 15s. Because those calls hang, the 50-connection HTTP pool to template-svc fills up and checkouts time out (#134, #139), and that produces the 504s at the gateway. The logs show nothing wrong before this point. There are no deploys, and the DB, redis and worker look healthy."
+                },
+                {
+                  "rootCause": "resource_exhaustion",
+                  "confidence": 0.05,
+                  "evidenceLines": [
+                    134,
+                    139
+                  ],
+                  "reasoning": "The notification-svc pool to template-svc is saturated. But it only filled up after the lock-induced hangs started, so it is a symptom."
+                }
+              ],
+              "recommendedAction": "Find and kill the stuck template-svc-reconciler transaction 99588 in notif-db to release the row lock on notifications. Then fix the reconciler so it uses short transactions and a lock/statement timeout. Once the lock is released, the template-svc connection pool should drain."
+            },
+            "output": "triage recorded",
+            "isError": false
+          }
+        ],
+        "verdict": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.92,
+              "evidenceLines": [
+                104,
+                111,
+                112,
+                115,
+                117,
+                126,
+                127
+              ],
+              "reasoning": "A long-running template-svc-reconciler transaction (99588, active 97s at 14:48:57) is holding a row lock on notifications. template-svc's UPDATEs on notifications are stuck behind it. They hit lock wait timeouts and the 10s statement timeout, so /render calls hang and notification-svc's TemplateClient times out after 15s. Because those calls hang, the 50-connection HTTP pool to template-svc fills up and checkouts time out (#134, #139), and that produces the 504s at the gateway. The logs show nothing wrong before this point. There are no deploys, and the DB, redis and worker look healthy."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.05,
+              "evidenceLines": [
+                134,
+                139
+              ],
+              "reasoning": "The notification-svc pool to template-svc is saturated. But it only filled up after the lock-induced hangs started, so it is a symptom."
+            }
+          ],
+          "recommendedAction": "Find and kill the stuck template-svc-reconciler transaction 99588 in notif-db to release the row lock on notifications. Then fix the reconciler so it uses short transactions and a lock/statement timeout. Once the lock is released, the template-svc connection pool should drain."
+        },
+        "score": {
+          "top1": true,
+          "top1Lenient": true,
+          "predicted": "dependency_timeout",
+          "confidence": 0.92,
+          "precision": 1,
+          "recall": 1,
+          "cited": 7,
+          "correct": 7
+        },
+        "costUsd": 0.0551452,
+        "durationMs": 13146
+      },
+      {
+        "key": "haikuLowTest",
+        "modelName": "Haiku 5.5",
+        "prompt": "v3",
+        "effort": "low",
+        "steps": [
+          {
+            "tool": "search_logs",
+            "input": {
+              "level": "WARN",
+              "limit": 60
+            },
+            "output": "13 match(es):\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#111 2026-10-15T14:49:49Z ERROR template-svc [t-1292] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-5849)\n#112 2026-10-15T14:49:54Z ERROR notification-svc [t-1292] TemplateClient.render timed out after 15000ms calling template-svc POST /render (m-5849)\n#115 2026-10-15T14:50:06Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#117 2026-10-15T14:50:28Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#126 2026-10-15T14:51:57Z ERROR template-svc [t-1295] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-5855)\n#127 2026-10-15T14:52:02Z ERROR notification-svc [t-1295] TemplateClient.render timed out after 15000ms calling template-svc POST /render (m-5855)\n#131 2026-10-15T14:52:39Z ERROR api-gateway [t-1297] POST /v1/notify 504 24369ms: upstream notification-svc timed out\n#134 2026-10-15T14:52:49Z WARN notification-svc HTTP connection pool to template-svc at capacity (50/50 in use), 38 requests queued\n#139 2026-10-15T14:54:20Z ERROR notification-svc pool checkout timeout: no connection to template-svc available after 5000ms\n#140 2026-10-15T14:54:22Z ERROR api-gateway [t-1298] POST /v1/notify 504 28176ms: upstream notification-svc timed out\n#153 2026-10-15T14:56:56Z ERROR api-gateway [t-1303] POST /v1/notify 504 22820ms: upstream notification-svc timed out\n#169 2026-10-15T14:59:28Z ERROR api-gateway [t-1312] POST /v1/notify 504 12609ms: upstream notification-svc timed out",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "service": "notif-db",
+              "limit": 20
+            },
+            "output": "15 match(es):\n#8 2026-10-15T14:36:16Z INFO notif-db InnoDB: page cleaner flushed 203 pages, buffer pool hit rate 98.6%\n#25 2026-10-15T14:38:13Z INFO notif-db InnoDB: page cleaner flushed 832 pages, buffer pool hit rate 98.9%\n#44 2026-10-15T14:40:22Z INFO notif-db InnoDB: page cleaner flushed 191 pages, buffer pool hit rate 99.8%\n#59 2026-10-15T14:42:33Z INFO notif-db InnoDB: page cleaner flushed 870 pages, buffer pool hit rate 99.1%\n#72 2026-10-15T14:44:43Z INFO notif-db InnoDB: page cleaner flushed 113 pages, buffer pool hit rate 98.5%\n#90 2026-10-15T14:47:03Z INFO notif-db InnoDB: page cleaner flushed 834 pages, buffer pool hit rate 98.9%\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#105 2026-10-15T14:48:59Z INFO notif-db InnoDB: page cleaner flushed 160 pages, buffer pool hit rate 99%\n#115 2026-10-15T14:50:06Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#117 2026-10-15T14:50:28Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#119 2026-10-15T14:50:40Z INFO notif-db InnoDB: page cleaner flushed 241 pages, buffer pool hit rate 99.4%\n#130 2026-10-15T14:52:25Z INFO notif-db InnoDB: page cleaner flushed 478 pages, buffer pool hit rate 98.8%\n#142 2026-10-15T14:54:43Z INFO notif-db InnoDB: page cleaner flushed 684 pages, buffer pool hit rate 98.8%\n#154 2026-10-15T14:57:02Z INFO notif-db InnoDB: page cleaner flushed 601 pages, buffer pool hit rate 99.7%\n#165 2026-10-15T14:59:13Z INFO notif-db InnoDB: page cleaner flushed 716 pages, buffer pool hit rate 99.1%",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "query": "reconciler",
+              "limit": 50
+            },
+            "output": "1 match(es):\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1",
+            "isError": false
+          },
+          {
+            "tool": "get_context",
+            "input": {
+              "line": 104,
+              "before": 12,
+              "after": 4
+            },
+            "output": "#92 2026-10-15T14:47:10Z INFO template-svc [t-1278] POST /render m-5841 ok 78ms\n#93 2026-10-15T14:47:10Z INFO api-gateway [t-1278] POST /v1/notify 200 139ms\n#94 2026-10-15T14:47:34Z INFO notif-worker processed batch of 54 messages from notifications.outbound (lag 380ms)\n#95 2026-10-15T14:47:38Z INFO redis stats: hits=11435 misses=733 evicted=0 connected_clients=36\n#96 2026-10-15T14:47:46Z DEBUG notification-svc GC pause 17ms (young), heap 34%\n#97 2026-10-15T14:47:48Z INFO notification-svc [t-1282] message m-5842 accepted, calling template-svc POST /render\n#98 2026-10-15T14:47:48Z INFO api-gateway [t-1282] POST /v1/notify 200 103ms\n#99 2026-10-15T14:48:10Z INFO notification-svc [t-1284] message m-5844 accepted, calling template-svc POST /render\n#100 2026-10-15T14:48:10Z INFO api-gateway [t-1284] POST /v1/notify 200 191ms\n#101 2026-10-15T14:48:25Z INFO notif-worker processed batch of 88 messages from notifications.outbound (lag 42ms)\n#102 2026-10-15T14:48:45Z INFO notification-svc [t-1287] message m-5847 accepted, calling template-svc POST /render\n#103 2026-10-15T14:48:46Z INFO api-gateway [t-1287] POST /v1/notify 200 132ms\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#105 2026-10-15T14:48:59Z INFO notif-db InnoDB: page cleaner flushed 160 pages, buffer pool hit rate 99%\n#106 2026-10-15T14:49:03Z INFO redis stats: hits=17000 misses=893 evicted=0 connected_clients=33\n#107 2026-10-15T14:49:14Z INFO notification-svc [t-1289] message m-5848 accepted, calling template-svc POST /render\n#108 2026-10-15T14:49:15Z INFO template-svc [t-1289] POST /render m-5848 ok 53ms",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "service": "template-svc",
+              "limit": 30
+            },
+            "output": "25 match(es):\n#2 2026-10-15T14:35:16Z INFO template-svc [t-1235] POST /render m-5807 ok 87ms\n#13 2026-10-15T14:36:56Z DEBUG template-svc GC pause 16ms (young), heap 42%\n#23 2026-10-15T14:38:08Z INFO template-svc [t-1242] POST /render m-5814 ok 74ms\n#29 2026-10-15T14:38:49Z DEBUG template-svc GC pause 21ms (young), heap 28%\n#33 2026-10-15T14:39:21Z INFO template-svc [t-1246] POST /render m-5818 ok 64ms\n#41 2026-10-15T14:40:11Z INFO template-svc [t-1250] POST /render m-5823 ok 53ms\n#55 2026-10-15T14:42:03Z DEBUG template-svc GC pause 5ms (young), heap 32%\n#61 2026-10-15T14:42:45Z INFO template-svc [t-1259] POST /render m-5831 ok 24ms\n#66 2026-10-15T14:43:28Z INFO template-svc [t-1261] POST /render m-5832 ok 85ms\n#75 2026-10-15T14:44:51Z DEBUG template-svc GC pause 20ms (young), heap 29%\n#85 2026-10-15T14:46:28Z INFO template-svc [t-1275] POST /render m-5840 ok 44ms\n#89 2026-10-15T14:47:02Z DEBUG template-svc GC pause 8ms (young), heap 44%\n#92 2026-10-15T14:47:10Z INFO template-svc [t-1278] POST /render m-5841 ok 78ms\n#108 2026-10-15T14:49:15Z INFO template-svc [t-1289] POST /render m-5848 ok 53ms\n#111 2026-10-15T14:49:49Z ERROR template-svc [t-1292] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-5849)\n#113 2026-10-15T14:49:56Z DEBUG template-svc GC pause 9ms (young), heap 36%\n#122 2026-10-15T14:51:12Z INFO template-svc [t-1293] POST /render m-5852 ok 50ms\n#126 2026-10-15T14:51:57Z ERROR template-svc [t-1295] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-5855)\n#128 2026-10-15T14:52:14Z DEBUG template-svc GC pause 22ms (young), heap 36%\n#137 2026-10-15T14:54:08Z DEBUG template-svc GC pause 24ms (young), heap 45%\n#144 2026-10-15T14:54:58Z INFO template-svc [t-1300] POST /render m-5857 ok 61ms\n#155 2026-10-15T14:57:08Z DEBUG template-svc GC pause 19ms (young), heap 35%\n#163 2026-10-15T14:58:46Z INFO template-svc [t-1308] POST /render m-5861 ok 68ms\n#171 2026-10-15T14:59:32Z INFO template-svc [t-1316] POST /render m-5864 ok 90ms\n#173 2026-10-15T14:59:59Z DEBUG template-svc GC pause 25ms (young), heap 28%",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "query": "lock",
+              "limit": 30
+            },
+            "output": "3 match(es):\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#115 2026-10-15T14:50:06Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#117 2026-10-15T14:50:28Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)",
+            "isError": false
+          },
+          {
+            "tool": "submit_triage",
+            "input": {
+              "hypotheses": [
+                {
+                  "rootCause": "dependency_timeout",
+                  "confidence": 0.8,
+                  "evidenceLines": [
+                    104,
+                    111,
+                    115,
+                    117,
+                    112
+                  ],
+                  "reasoning": "Origin is a long-running open transaction in notif-db. At ~14:48:57 the notif-db warns that TRANSACTION 99588 has been ACTIVE 97s (started ~14:47:20) while template-svc-reconciler holds a row lock on notifications, with only 1 undo entry, i.e. it is idle and not committing. Starting at 14:49:49, template-svc UPDATE notifications statements (m-5849, m-5855) are canceled by the 10s statement timeout because they wait on that lock. notif-db then logs lock wait timeouts (#115, #117). notification-svc's render calls to template-svc time out after 15s (#112, #127). Those calls saturate notification-svc's template-svc connection pool (#134, #139), and api-gateway returns 504s (#131, #140, #153, #169). The pool saturation and 504s are downstream symptoms, not the cause. Before 14:47 the system was healthy (renders ok in 24-90ms, GC normal, no lock warnings). Redis and the worker show no errors, and the DB buffer pool hit rate is normal, so resource exhaustion in the DB is unlikely.",
+                  "recommendedAction": "Identify and kill the stuck template-svc-reconciler transaction (ID 99588) in notif-db, then confirm the lock is released. Fix the reconciler so it commits or rolls back promptly, and add idle-in-transaction timeouts. Consider a circuit breaker or shorter timeout on template-svc /render so notification-svc pool exhaustion does not cascade to the gateway. Once the lock clears, the 504s should stop."
+                },
+                {
+                  "rootCause": "cascading_failure",
+                  "confidence": 0.15,
+                  "evidenceLines": [
+                    134,
+                    139,
+                    131,
+                    140
+                  ],
+                  "reasoning": "The connection pool exhaustion in notification-svc and the gateway 504s amplify the lock stall. The trigger is the DB lock, so this is secondary. Listed only as a lower-ranked reading of the same impact lines."
+                }
+              ]
+            },
+            "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+            "isError": true
+          },
+          {
+            "tool": "submit_triage",
+            "input": {
+              "hypotheses": [
+                {
+                  "rootCause": "dependency_timeout",
+                  "confidence": 0.8,
+                  "evidenceLines": [
+                    104,
+                    111,
+                    115,
+                    117,
+                    112
+                  ],
+                  "reasoning": "Origin is a long-running open transaction in notif-db. At ~14:48:57 the notif-db warns that TRANSACTION 99588 has been ACTIVE 97s (started ~14:47:20) while template-svc-reconciler holds a row lock on notifications, with only 1 undo entry, i.e. it is idle and not committing. Starting at 14:49:49, template-svc UPDATE notifications statements are canceled by the 10s statement timeout because they wait on that lock (#111). notif-db then logs lock wait timeouts (#115, #117). notification-svc render calls to template-svc time out after 15s (#112). Those calls saturate notification-svc's template-svc connection pool (#134, #139), and api-gateway returns 504s (#131, #140, #153, #169). The pool saturation and 504s are downstream symptoms. Before 14:47 the system was healthy (renders 24-90ms, normal GC, no lock warnings). Redis and the worker show no errors, and the DB buffer pool hit rate is normal, so resource exhaustion is unlikely.",
+                  "recommendedAction": "Identify and kill the stuck template-svc-reconciler transaction (ID 99588) in notif-db and confirm the lock is released. Fix the reconciler so it commits or rolls back promptly, and add idle-in-transaction timeouts. Add a circuit breaker or shorter timeout on template-svc /render so notification-svc pool exhaustion does not cascade to the gateway. The 504s should stop once the lock clears."
+                },
+                {
+                  "rootCause": "cascading_failure",
+                  "confidence": 0.15,
+                  "evidenceLines": [
+                    134,
+                    139,
+                    131,
+                    140
+                  ],
+                  "reasoning": "Connection pool exhaustion in notification-svc and gateway 504s amplify the lock stall. The trigger is the DB lock, so this is secondary. Listed only as a lower-ranked reading of the same impact lines."
+                }
+              ]
+            },
+            "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+            "isError": true
+          },
+          {
+            "tool": "submit_triage",
+            "input": {
+              "hypotheses": [
+                {
+                  "rootCause": "dependency_timeout",
+                  "confidence": 0.8,
+                  "evidenceLines": [
+                    104,
+                    111,
+                    115,
+                    117,
+                    112
+                  ],
+                  "reasoning": "Origin is a long-running open transaction in notif-db. At ~14:48:57 notif-db warns that TRANSACTION 99588 has been ACTIVE 97s (started ~14:47:20) while template-svc-reconciler holds a row lock on notifications, with only 1 undo entry, i.e. it is idle and not committing. From 14:49:49 template-svc UPDATE notifications statements are canceled by the 10s statement timeout because they wait on that lock (#111). notif-db then logs lock wait timeouts (#115, #117). notification-svc render calls to template-svc time out after 15s (#112). Those calls saturate notification-svc's template-svc connection pool (#134, #139), and api-gateway returns 504s (#131, #140, #153, #169). The pool saturation and 504s are downstream symptoms. Before 14:47 the system was healthy (renders 24-90ms, normal GC, no lock warnings). Redis and the worker show no errors, and the DB buffer pool hit rate is normal, so resource exhaustion is unlikely."
+                },
+                {
+                  "rootCause": "cascading_failure",
+                  "confidence": 0.15,
+                  "evidenceLines": [
+                    134,
+                    139,
+                    131,
+                    140
+                  ],
+                  "reasoning": "Connection pool exhaustion in notification-svc and gateway 504s amplify the lock stall. The trigger is the DB lock, so this is secondary. Listed only as a lower-ranked reading of the same impact lines."
+                }
+              ],
+              "recommendedAction": "Identify and kill the stuck template-svc-reconciler transaction (ID 99588) in notif-db and confirm the lock is released. Fix the reconciler so it commits or rolls back promptly, and add idle-in-transaction timeouts. Add a circuit breaker or shorter timeout on template-svc /render so notification-svc pool exhaustion does not cascade to the gateway. The 504s should stop once the lock clears."
+            },
+            "output": "triage recorded",
+            "isError": false
+          }
+        ],
+        "verdict": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.8,
+              "evidenceLines": [
+                104,
+                111,
+                115,
+                117,
+                112
+              ],
+              "reasoning": "Origin is a long-running open transaction in notif-db. At ~14:48:57 notif-db warns that TRANSACTION 99588 has been ACTIVE 97s (started ~14:47:20) while template-svc-reconciler holds a row lock on notifications, with only 1 undo entry, i.e. it is idle and not committing. From 14:49:49 template-svc UPDATE notifications statements are canceled by the 10s statement timeout because they wait on that lock (#111). notif-db then logs lock wait timeouts (#115, #117). notification-svc render calls to template-svc time out after 15s (#112). Those calls saturate notification-svc's template-svc connection pool (#134, #139), and api-gateway returns 504s (#131, #140, #153, #169). The pool saturation and 504s are downstream symptoms. Before 14:47 the system was healthy (renders 24-90ms, normal GC, no lock warnings). Redis and the worker show no errors, and the DB buffer pool hit rate is normal, so resource exhaustion is unlikely."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.15,
+              "evidenceLines": [
+                134,
+                139,
+                131,
+                140
+              ],
+              "reasoning": "Connection pool exhaustion in notification-svc and gateway 504s amplify the lock stall. The trigger is the DB lock, so this is secondary. Listed only as a lower-ranked reading of the same impact lines."
+            }
+          ],
+          "recommendedAction": "Identify and kill the stuck template-svc-reconciler transaction (ID 99588) in notif-db and confirm the lock is released. Fix the reconciler so it commits or rolls back promptly, and add idle-in-transaction timeouts. Add a circuit breaker or shorter timeout on template-svc /render so notification-svc pool exhaustion does not cascade to the gateway. The 504s should stop once the lock clears."
+        },
+        "score": {
+          "top1": true,
+          "top1Lenient": true,
+          "predicted": "dependency_timeout",
+          "confidence": 0.8,
+          "precision": 1,
+          "recall": 0.7142857142857143,
+          "cited": 5,
+          "correct": 5
+        },
+        "costUsd": 0.0031613100000000005,
+        "durationMs": 14820
+      }
+    ]
+  },
+  {
+    "incidentId": "test-019",
+    "title": "A wrong endpoint, shipped with a release",
+    "why": "Genuinely ambiguous: the bad URL arrived in a deploy. Haiku gave the labeled answer; Opus and Sonnet chose the acceptable alternative.",
+    "incident": {
+      "title": "POST /v1/notify hard down",
+      "alert": "api-gateway: POST /v1/notify success rate dropped to 1% within one minute.",
+      "services": [
+        "api-gateway",
+        "notification-svc",
+        "template-svc",
+        "notif-db",
+        "redis",
+        "notif-worker"
+      ],
+      "lineCount": 313,
+      "overview": "window 2026-11-27T13:06:06Z .. 2026-11-27T13:34:37Z, 313 lines total\n- api-gateway: 90 lines, 12 error+ (2026-11-27T13:06:06Z .. 2026-11-27T13:34:10Z)\n- notification-svc: 91 lines, 4 error+ (2026-11-27T13:06:06Z .. 2026-11-27T13:32:58Z)\n- template-svc: 52 lines, 0 error+ (2026-11-27T13:06:53Z .. 2026-11-27T13:32:58Z)\n- notif-worker: 44 lines, 0 error+ (2026-11-27T13:06:40Z .. 2026-11-27T13:34:37Z)\n- redis: 21 lines, 0 error+ (2026-11-27T13:07:15Z .. 2026-11-27T13:33:59Z)\n- notif-db: 15 lines, 0 error+ (2026-11-27T13:06:27Z .. 2026-11-27T13:33:14Z)"
+    },
+    "label": {
+      "rootCause": "config_error",
+      "acceptableCauses": [
+        "bad_deploy"
+      ],
+      "difficulty": "hard",
+      "evidenceLines": [
+        236,
+        243,
+        248,
+        256,
+        258,
+        271
+      ],
+      "herringLines": [
+        64,
+        65,
+        226,
+        227,
+        234
+      ],
+      "explanation": "Notification-svc picked up config revision 645, which changed TEMPLATE_SVC_URL to port 8081 (lines 236, 243). template-svc doesn't listen there, so every call is refused immediately (lines 248, 256, 258, 271) — not a timeout, and template-svc itself is healthy (its routine logs continue). The api-gateway 503s are the symptom (lines 251, 255, 260, 265, 274, 281, 288, 291, 300, 303, 309, 312). The config revision shipped with the notification-svc v3.13.0 deploy, so bad_deploy is defensible, but the fault is the config value. Red herrings: lines 226, 234 (a deploy of notif-worker, which is not on the failing request path and kept processing normally); lines 64, 65 (a single email provider connection reset that succeeded on retry, minutes before onset); line 227 (a one-off slow reporting query on audit_log, not on the failing request path)."
+    },
+    "lines": [
+      {
+        "n": 64,
+        "ts": "2026-11-27T13:10:17Z",
+        "service": "template-svc",
+        "level": "WARN",
+        "traceId": "t-3368",
+        "msg": "email provider call failed: connection reset by peer POST https://api.mailer.example/v3/send, retry 1/3"
+      },
+      {
+        "n": 65,
+        "ts": "2026-11-27T13:10:18Z",
+        "service": "template-svc",
+        "level": "INFO",
+        "traceId": "t-3368",
+        "msg": "email provider call ok on retry 2/3 (138ms)"
+      },
+      {
+        "n": 226,
+        "ts": "2026-11-27T13:20:30Z",
+        "service": "notif-worker",
+        "level": "INFO",
+        "msg": "deploy: rolling out notif-worker v4.1.8 (build 7e3d893)"
+      },
+      {
+        "n": 227,
+        "ts": "2026-11-27T13:20:31Z",
+        "service": "notif-db",
+        "level": "WARN",
+        "msg": "slow query 2055ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)"
+      },
+      {
+        "n": 234,
+        "ts": "2026-11-27T13:20:52Z",
+        "service": "notif-worker",
+        "level": "INFO",
+        "msg": "started notif-worker v4.1.8, pid 1, ready"
+      },
+      {
+        "n": 236,
+        "ts": "2026-11-27T13:21:03Z",
+        "service": "notification-svc",
+        "level": "INFO",
+        "msg": "deploy: rolling out notification-svc v3.13.0 (build 1816aca) with config revision 645"
+      },
+      {
+        "n": 243,
+        "ts": "2026-11-27T13:21:28Z",
+        "service": "notification-svc",
+        "level": "INFO",
+        "msg": "config reloaded from config-service (revision 645): 1 key changed: TEMPLATE_SVC_URL=http://template-svc.internal:8081"
+      },
+      {
+        "n": 248,
+        "ts": "2026-11-27T13:21:59Z",
+        "service": "notification-svc",
+        "level": "ERROR",
+        "traceId": "t-3492",
+        "msg": "TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)"
+      },
+      {
+        "n": 256,
+        "ts": "2026-11-27T13:23:33Z",
+        "service": "notification-svc",
+        "level": "ERROR",
+        "traceId": "t-3499",
+        "msg": "TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)"
+      },
+      {
+        "n": 258,
+        "ts": "2026-11-27T13:23:45Z",
+        "service": "notification-svc",
+        "level": "ERROR",
+        "traceId": "t-3502",
+        "msg": "TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)"
+      },
+      {
+        "n": 271,
+        "ts": "2026-11-27T13:25:34Z",
+        "service": "notification-svc",
+        "level": "ERROR",
+        "traceId": "t-3513",
+        "msg": "TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)"
+      }
+    ],
+    "runs": [
+      {
+        "key": "haikuLowTest",
+        "modelName": "Haiku 5.5",
+        "prompt": "v3",
+        "effort": "low",
+        "steps": [
+          {
+            "tool": "search_logs",
+            "input": {
+              "level": "WARN",
+              "limit": 60
+            },
+            "output": "18 match(es):\n#64 2026-11-27T13:10:17Z WARN template-svc [t-3368] email provider call failed: connection reset by peer POST https://api.mailer.example/v3/send, retry 1/3\n#227 2026-11-27T13:20:31Z WARN notif-db slow query 2055ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#248 2026-11-27T13:21:59Z ERROR notification-svc [t-3492] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#251 2026-11-27T13:22:42Z ERROR api-gateway [t-3495] POST /v1/notify 503 16526ms: upstream notification-svc returned 503 Service Unavailable\n#255 2026-11-27T13:23:32Z ERROR api-gateway [t-3498] POST /v1/notify 503 5993ms: upstream notification-svc returned 503 Service Unavailable\n#256 2026-11-27T13:23:33Z ERROR notification-svc [t-3499] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#258 2026-11-27T13:23:45Z ERROR notification-svc [t-3502] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#260 2026-11-27T13:24:08Z ERROR api-gateway [t-3504] POST /v1/notify 503 12381ms: upstream notification-svc returned 503 Service Unavailable\n#265 2026-11-27T13:25:06Z ERROR api-gateway [t-3506] POST /v1/notify 503 21666ms: upstream notification-svc returned 503 Service Unavailable\n#271 2026-11-27T13:25:34Z ERROR notification-svc [t-3513] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#274 2026-11-27T13:26:16Z ERROR api-gateway [t-3516] POST /v1/notify 503 4921ms: upstream notification-svc returned 503 Service Unavailable\n#281 2026-11-27T13:27:29Z ERROR api-gateway [t-3520] POST /v1/notify 503 20816ms: upstream notification-svc returned 503 Service Unavailable\n#288 2026-11-27T13:28:48Z ERROR api-gateway [t-3523] POST /v1/notify 503 27016ms: upstream notification-svc returned 503 Service Unavailable\n#291 2026-11-27T13:29:40Z ERROR api-gateway [t-3526] POST /v1/notify 503 5061ms: upstream notification-svc returned 503 Service Unavailable\n#300 2026-11-27T13:31:32Z ERROR api-gateway [t-3527] POST /v1/notify 503 23374ms: upstream notification-svc returned 503 Service Unavailable\n#303 2026-11-27T13:32:33Z ERROR api-gateway [t-3531] POST /v1/notify 503 23932ms: upstream notification-svc returned 503 Service Unavailable\n#309 2026-11-27T13:33:45Z ERROR api-gateway [t-3533] POST /v1/notify 503 18325ms: upstream notification-svc returned 503 Service Unavailable\n#312 2026-11-27T13:34:10Z ERROR api-gateway [t-3537] POST /v1/notify 503 14445ms: upstream notification-svc returned 503 Service Unavailable",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "service": "notif-db",
+              "limit": 20
+            },
+            "output": "15 match(es):\n#5 2026-11-27T13:06:27Z INFO notif-db InnoDB: page cleaner flushed 400 pages, buffer pool hit rate 99.9%\n#38 2026-11-27T13:08:38Z INFO notif-db InnoDB: page cleaner flushed 145 pages, buffer pool hit rate 98.8%\n#69 2026-11-27T13:10:37Z INFO notif-db InnoDB: page cleaner flushed 258 pages, buffer pool hit rate 99.8%\n#93 2026-11-27T13:12:21Z INFO notif-db InnoDB: page cleaner flushed 153 pages, buffer pool hit rate 99.6%\n#132 2026-11-27T13:14:56Z INFO notif-db InnoDB: page cleaner flushed 675 pages, buffer pool hit rate 99.1%\n#169 2026-11-27T13:16:57Z INFO notif-db InnoDB: page cleaner flushed 205 pages, buffer pool hit rate 98.5%\n#204 2026-11-27T13:19:12Z INFO notif-db InnoDB: page cleaner flushed 421 pages, buffer pool hit rate 99.1%\n#227 2026-11-27T13:20:31Z WARN notif-db slow query 2055ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#240 2026-11-27T13:21:14Z INFO notif-db InnoDB: page cleaner flushed 262 pages, buffer pool hit rate 98.7%\n#257 2026-11-27T13:23:36Z INFO notif-db InnoDB: page cleaner flushed 814 pages, buffer pool hit rate 98.6%\n#266 2026-11-27T13:25:19Z INFO notif-db InnoDB: page cleaner flushed 375 pages, buffer pool hit rate 99.7%\n#276 2026-11-27T13:26:56Z INFO notif-db InnoDB: page cleaner flushed 785 pages, buffer pool hit rate 98.9%\n#290 2026-11-27T13:29:05Z INFO notif-db InnoDB: page cleaner flushed 133 pages, buffer pool hit rate 98.7%\n#297 2026-11-27T13:30:53Z INFO notif-db InnoDB: page cleaner flushed 484 pages, buffer pool hit rate 99.6%\n#307 2026-11-27T13:33:14Z INFO notif-db InnoDB: page cleaner flushed 843 pages, buffer pool hit rate 99.3%",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "service": "template-svc",
+              "limit": 60
+            },
+            "output": "52 match(es):\n#12 2026-11-27T13:06:53Z INFO template-svc [t-3330] POST /render m-3000 ok 80ms\n#15 2026-11-27T13:07:04Z INFO template-svc [t-3332] POST /render m-3002 ok 65ms\n#21 2026-11-27T13:07:22Z INFO template-svc [t-3335] POST /render m-3005 ok 47ms\n#29 2026-11-27T13:08:01Z INFO template-svc [t-3344] POST /render m-3012 ok 39ms\n#34 2026-11-27T13:08:37Z DEBUG template-svc GC pause 10ms (young), heap 32%\n#36 2026-11-27T13:08:37Z INFO template-svc [t-3350] POST /render m-3017 ok 38ms\n#41 2026-11-27T13:08:51Z INFO template-svc [t-3351] POST /render m-3020 ok 88ms\n#44 2026-11-27T13:08:59Z INFO template-svc [t-3352] POST /render m-3022 ok 80ms\n#47 2026-11-27T13:09:06Z INFO template-svc [t-3353] POST /render m-3025 ok 64ms\n#57 2026-11-27T13:09:52Z INFO template-svc [t-3364] POST /render m-3030 ok 83ms\n#62 2026-11-27T13:10:04Z INFO template-svc [t-3367] POST /render m-3032 ok 22ms\n#64 2026-11-27T13:10:17Z WARN template-svc [t-3368] email provider call failed: connection reset by peer POST https://api.mailer.example/v3/send, retry 1/3\n#65 2026-11-27T13:10:18Z INFO template-svc [t-3368] email provider call ok on retry 2/3 (138ms)\n#78 2026-11-27T13:11:14Z INFO template-svc [t-3380] POST /render m-3043 ok 56ms\n#81 2026-11-27T13:11:21Z INFO template-svc [t-3383] POST /render m-3046 ok 34ms\n#83 2026-11-27T13:11:36Z DEBUG template-svc GC pause 11ms (young), heap 40%\n#85 2026-11-27T13:11:40Z INFO template-svc [t-3386] POST /render m-3049 ok 52ms\n#95 2026-11-27T13:12:32Z INFO template-svc [t-3393] POST /render m-3054 ok 21ms\n#99 2026-11-27T13:12:41Z INFO template-svc [t-3395] POST /render m-3056 ok 35ms\n#102 2026-11-27T13:12:59Z INFO template-svc [t-3397] POST /render m-3057 ok 45ms\n#110 2026-11-27T13:13:32Z DEBUG template-svc GC pause 21ms (young), heap 32%\n#115 2026-11-27T13:13:51Z INFO template-svc [t-3405] POST /render m-3065 ok 75ms\n#118 2026-11-27T13:13:57Z INFO template-svc [t-3408] POST /render m-3068 ok 83ms\n#129 2026-11-27T13:14:50Z INFO template-svc [t-3414] POST /render m-3080 ok 84ms\n#135 2026-11-27T13:15:04Z INFO template-svc [t-3416] POST /render m-3082 ok 63ms\n#138 2026-11-27T13:15:15Z INFO template-svc [t-3417] POST /render m-3084 ok 59ms\n#142 2026-11-27T13:15:22Z INFO template-svc [t-3420] POST /render m-3086 ok 46ms\n#147 2026-11-27T13:15:40Z INFO template-svc [t-3426] POST /render m-3090 ok 79ms\n#150 2026-11-27T13:15:49Z INFO template-svc [t-3428] POST /render m-3093 ok 61ms\n#154 2026-11-27T13:16:06Z INFO template-svc [t-3432] POST /render m-3095 ok 80ms\n#159 2026-11-27T13:16:20Z INFO template-svc [t-3433] POST /render m-3096 ok 76ms\n#162 2026-11-27T13:16:34Z INFO template-svc [t-3435] POST /render m-3099 ok 22ms\n#168 2026-11-27T13:16:52Z DEBUG template-svc GC pause 21ms (young), heap 39%\n#171 2026-11-27T13:17:00Z INFO template-svc [t-3441] POST /render m-3103 ok 63ms\n#176 2026-11-27T13:17:21Z INFO template-svc [t-3448] POST /render m-3108 ok 72ms\n#182 2026-11-27T13:17:43Z INFO template-svc [t-3454] POST /render m-3113 ok 34ms\n#191 2026-11-27T13:18:14Z INFO template-svc [t-3462] POST /render m-3119 ok 48ms\n#198 2026-11-27T13:18:52Z INFO template-svc [t-3470] POST /render m-3124 ok 85ms\n#202 2026-11-27T13:19:04Z INFO template-svc [t-3471] POST /render m-3126 ok 35ms\n#214 2026-11-27T13:19:47Z INFO template-svc [t-3474] POST /render m-3131 ok 45ms\n#217 2026-11-27T13:20:05Z INFO template-svc [t-3475] POST /render m-3133 ok 59ms\n#219 2026-11-27T13:20:11Z DEBUG template-svc GC pause 12ms (young), heap 45%\n#224 2026-11-27T13:20:29Z INFO template-svc [t-3478] POST /render m-3135 ok 47ms\n#230 2026-11-27T13:20:37Z INFO template-svc [t-3479] POST /render m-3138 ok 57ms\n#238 2026-11-27T13:21:10Z INFO template-svc [t-3484] POST /render m-3143 ok 77ms\n#252 2026-11-27T13:22:49Z DEBUG template-svc GC pause 6ms (young), heap 45%\n#267 2026-11-27T13:25:19Z DEBUG template-svc GC pause 15ms (young), heap 33%\n#269 2026-11-27T13:25:28Z INFO template-svc [t-3509] POST /render m-3149 ok 45ms\n#279 2026-11-27T13:27:21Z DEBUG template-svc GC pause 18ms (young), heap 29%\n#285 2026-11-27T13:28:30Z INFO template-svc [t-3521] POST /render m-3151 ok 65ms\n#295 2026-11-27T13:30:30Z DEBUG template-svc GC pause 8ms (young), heap 34%\n#305 2026-11-27T13:32:58Z DEBUG template-svc GC pause 5ms (young), heap 31%",
+            "isError": false
+          },
+          {
+            "tool": "get_context",
+            "input": {
+              "line": 248,
+              "before": 10,
+              "after": 3
+            },
+            "output": "#238 2026-11-27T13:21:10Z INFO template-svc [t-3484] POST /render m-3143 ok 77ms\n#239 2026-11-27T13:21:10Z INFO api-gateway [t-3484] POST /v1/notify 200 168ms\n#240 2026-11-27T13:21:14Z INFO notif-db InnoDB: page cleaner flushed 262 pages, buffer pool hit rate 98.7%\n#241 2026-11-27T13:21:22Z INFO notification-svc [t-3487] message m-3146 accepted, calling template-svc POST /render\n#242 2026-11-27T13:21:22Z INFO api-gateway [t-3487] POST /v1/notify 200 145ms\n#243 2026-11-27T13:21:28Z INFO notification-svc config reloaded from config-service (revision 645): 1 key changed: TEMPLATE_SVC_URL=http://template-svc.internal:8081\n#244 2026-11-27T13:21:34Z INFO notification-svc [t-3491] message m-3147 accepted, calling template-svc POST /render\n#245 2026-11-27T13:21:35Z INFO api-gateway [t-3491] POST /v1/notify 200 98ms\n#246 2026-11-27T13:21:48Z INFO notif-worker processed batch of 65 messages from notifications.outbound (lag 168ms)\n#247 2026-11-27T13:21:48Z INFO redis stats: hits=17486 misses=243 evicted=0 connected_clients=53\n#248 2026-11-27T13:21:59Z ERROR notification-svc [t-3492] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#249 2026-11-27T13:22:12Z DEBUG notification-svc GC pause 6ms (young), heap 48%\n#250 2026-11-27T13:22:32Z INFO notif-worker processed batch of 76 messages from notifications.outbound (lag 86ms)\n#251 2026-11-27T13:22:42Z ERROR api-gateway [t-3495] POST /v1/notify 503 16526ms: upstream notification-svc returned 503 Service Unavailable",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "query": "TEMPLATE_SVC_URL"
+            },
+            "output": "1 match(es):\n#243 2026-11-27T13:21:28Z INFO notification-svc config reloaded from config-service (revision 645): 1 key changed: TEMPLATE_SVC_URL=http://template-svc.internal:8081",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "query": "config",
+              "limit": 30
+            },
+            "output": "2 match(es):\n#236 2026-11-27T13:21:03Z INFO notification-svc deploy: rolling out notification-svc v3.13.0 (build 1816aca) with config revision 645\n#243 2026-11-27T13:21:28Z INFO notification-svc config reloaded from config-service (revision 645): 1 key changed: TEMPLATE_SVC_URL=http://template-svc.internal:8081",
+            "isError": false
+          },
+          {
+            "tool": "correlate_trace",
+            "input": {
+              "traceId": "t-3492"
+            },
+            "output": "1 line(s) for t-3492:\n#248 2026-11-27T13:21:59Z ERROR notification-svc [t-3492] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "query": "v3.13.0"
+            },
+            "output": "1 match(es):\n#236 2026-11-27T13:21:03Z INFO notification-svc deploy: rolling out notification-svc v3.13.0 (build 1816aca) with config revision 645",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "service": "notification-svc",
+              "limit": 40
+            },
+            "output": "91 match(es), showing first 40:\n#1 2026-11-27T13:06:06Z INFO notification-svc [t-3318] message m-2991 accepted, calling template-svc POST /render\n#3 2026-11-27T13:06:21Z INFO notification-svc [t-3321] message m-2994 accepted, calling template-svc POST /render\n#6 2026-11-27T13:06:29Z INFO notification-svc [t-3324] message m-2995 accepted, calling template-svc POST /render\n#9 2026-11-27T13:06:41Z INFO notification-svc [t-3328] message m-2998 accepted, calling template-svc POST /render\n#11 2026-11-27T13:06:53Z INFO notification-svc [t-3330] message m-3000 accepted, calling template-svc POST /render\n#14 2026-11-27T13:07:04Z INFO notification-svc [t-3332] message m-3002 accepted, calling template-svc POST /render\n#17 2026-11-27T13:07:12Z DEBUG notification-svc GC pause 25ms (young), heap 38%\n#20 2026-11-27T13:07:22Z INFO notification-svc [t-3335] message m-3005 accepted, calling template-svc POST /render\n#23 2026-11-27T13:07:32Z INFO notification-svc [t-3338] message m-3007 accepted, calling template-svc POST /render\n#25 2026-11-27T13:07:51Z INFO notification-svc [t-3340] message m-3010 accepted, calling template-svc POST /render\n#28 2026-11-27T13:08:01Z INFO notification-svc [t-3344] message m-3012 accepted, calling template-svc POST /render\n#31 2026-11-27T13:08:19Z INFO notification-svc [t-3346] message m-3014 accepted, calling template-svc POST /render\n#35 2026-11-27T13:08:37Z INFO notification-svc [t-3350] message m-3017 accepted, calling template-svc POST /render\n#40 2026-11-27T13:08:51Z INFO notification-svc [t-3351] message m-3020 accepted, calling template-svc POST /render\n#43 2026-11-27T13:08:59Z INFO notification-svc [t-3352] message m-3022 accepted, calling template-svc POST /render\n#46 2026-11-27T13:09:06Z INFO notification-svc [t-3353] message m-3025 accepted, calling template-svc POST /render\n#49 2026-11-27T13:09:15Z INFO notification-svc [t-3357] message m-3026 accepted, calling template-svc POST /render\n#52 2026-11-27T13:09:23Z DEBUG notification-svc GC pause 8ms (young), heap 41%\n#54 2026-11-27T13:09:35Z INFO notification-svc [t-3360] message m-3027 accepted, calling template-svc POST /render\n#56 2026-11-27T13:09:51Z INFO notification-svc [t-3364] message m-3030 accepted, calling template-svc POST /render\n#61 2026-11-27T13:10:04Z INFO notification-svc [t-3367] message m-3032 accepted, calling template-svc POST /render\n#66 2026-11-27T13:10:19Z INFO notification-svc [t-3372] message m-3034 accepted, calling template-svc POST /render\n#70 2026-11-27T13:10:38Z INFO notification-svc [t-3376] message m-3037 accepted, calling template-svc POST /render\n#72 2026-11-27T13:10:56Z INFO notification-svc [t-3378] message m-3040 accepted, calling template-svc POST /render\n#74 2026-11-27T13:11:04Z DEBUG notification-svc GC pause 21ms (young), heap 35%\n#77 2026-11-27T13:11:14Z INFO notification-svc [t-3380] message m-3043 accepted, calling template-svc POST /render\n#80 2026-11-27T13:11:21Z INFO notification-svc [t-3383] message m-3046 accepted, calling template-svc POST /render\n#84 2026-11-27T13:11:40Z INFO notification-svc [t-3386] message m-3049 accepted, calling template-svc POST /render\n#87 2026-11-27T13:11:58Z INFO notification-svc [t-3388] message m-3050 accepted, calling template-svc POST /render\n#90 2026-11-27T13:12:14Z INFO notification-svc [t-3389] message m-3052 accepted, calling template-svc POST /render\n#94 2026-11-27T13:12:32Z INFO notification-svc [t-3393] message m-3054 accepted, calling template-svc POST /render\n#98 2026-11-27T13:12:41Z INFO notification-svc [t-3395] message m-3056 accepted, calling template-svc POST /render\n#101 2026-11-27T13:12:59Z INFO notification-svc [t-3397] message m-3057 accepted, calling template-svc POST /render\n#104 2026-11-27T13:13:06Z INFO notification-svc [t-3398] message m-3058 accepted, calling template-svc POST /render\n#106 2026-11-27T13:13:16Z INFO notification-svc [t-3399] message m-3060 accepted, calling template-svc POST /render\n#111 2026-11-27T13:13:32Z INFO notification-svc [t-3403] message m-3062 accepted, calling template-svc POST /render\n#114 2026-11-27T13:13:50Z INFO notification-svc [t-3405] message m-3065 accepted, calling template-svc POST /render\n#117 2026-11-27T13:13:57Z INFO notification-svc [t-3408] message m-3068 accepted, calling template-svc POST /render\n#120 2026-11-27T13:14:08Z INFO notification-svc [t-3410] message m-3071 accepted, calling template-svc POST /render\n#123 2026-11-27T13:14:14Z DEBUG notification-svc GC pause 23ms (young), heap 31%",
+            "isError": false
+          },
+          {
+            "tool": "get_context",
+            "input": {
+              "line": 236,
+              "before": 4,
+              "after": 6
+            },
+            "output": "#232 2026-11-27T13:20:51Z INFO notification-svc [t-3481] message m-3140 accepted, calling template-svc POST /render\n#233 2026-11-27T13:20:51Z INFO api-gateway [t-3481] POST /v1/notify 200 131ms\n#234 2026-11-27T13:20:52Z INFO notif-worker started notif-worker v4.1.8, pid 1, ready\n#235 2026-11-27T13:21:01Z INFO notif-worker processed batch of 86 messages from notifications.outbound (lag 381ms)\n#236 2026-11-27T13:21:03Z INFO notification-svc deploy: rolling out notification-svc v3.13.0 (build 1816aca) with config revision 645\n#237 2026-11-27T13:21:10Z INFO notification-svc [t-3484] message m-3143 accepted, calling template-svc POST /render\n#238 2026-11-27T13:21:10Z INFO template-svc [t-3484] POST /render m-3143 ok 77ms\n#239 2026-11-27T13:21:10Z INFO api-gateway [t-3484] POST /v1/notify 200 168ms\n#240 2026-11-27T13:21:14Z INFO notif-db InnoDB: page cleaner flushed 262 pages, buffer pool hit rate 98.7%\n#241 2026-11-27T13:21:22Z INFO notification-svc [t-3487] message m-3146 accepted, calling template-svc POST /render\n#242 2026-11-27T13:21:22Z INFO api-gateway [t-3487] POST /v1/notify 200 145ms",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "query": "ECONNREFUSED",
+              "limit": 50
+            },
+            "output": "4 match(es):\n#248 2026-11-27T13:21:59Z ERROR notification-svc [t-3492] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#256 2026-11-27T13:23:33Z ERROR notification-svc [t-3499] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#258 2026-11-27T13:23:45Z ERROR notification-svc [t-3502] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#271 2026-11-27T13:25:34Z ERROR notification-svc [t-3513] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)",
+            "isError": false
+          },
+          {
+            "tool": "submit_triage",
+            "input": {
+              "hypotheses": [
+                {
+                  "rootCause": "config_error",
+                  "confidence": 0.6,
+                  "evidenceLines": [
+                    243,
+                    236,
+                    248,
+                    256,
+                    271
+                  ],
+                  "reasoning": "Gateway 503s (#251, #255, #260 etc.) are downstream symptoms: notification-svc returns 503 because its render call to template-svc fails. The origin appears at 13:21:03 when notification-svc v3.13.0 (build 1816aca) began rolling out with config revision 645 (#236). At 13:21:28 config reloaded with TEMPLATE_SVC_URL=http://template-svc.internal:8081 changed (#243). From about 13:21:59 onward every TemplateClient.render from notification-svc fails with connect ECONNREFUSED 10.17.189.215:8081 (#248, #256, #258, #271). Template-svc itself logs no errors and keeps running (GC lines through 13:32), and it served successful /render calls up to 13:21:10 (#238), so the refusals are specific to notification-svc's new endpoint resolution. Caveat: the logged URL matches template-svc's port, so the exact wrong value (host or IP) is not visible in the logs; the change coincides with the config reload and rollout. Not a template-svc resource problem (no OOM or error lines, GC normal); not a notif-db issue (only a slow audit_log seq scan at #227, unrelated and not on the failing path).",
+                  "rootCause2": null
+                },
+                {
+                  "rootCause": "bad_deploy",
+                  "confidence": 0.3,
+                  "evidenceLines": [
+                    236,
+                    243,
+                    248
+                  ],
+                  "reasoning": "Alternative reading: the v3.13.0 rollout itself (build 1816aca) introduced a broken template-client connection behavior, and the config reload is just concurrent with it. Timing fits: refusals start within a minute of the rollout and config reload. Rolling back notification-svc to the prior version would confirm or rule this out.",
+                  "rootCause2": null
+                }
+              ],
+              "recommendedAction": "Roll back notification-svc to the pre-v3.13.0 build and/or revert config revision 645 so TEMPLATE_SVC_URL is restored to the previously working endpoint. Then verify notification-svc can reach template-svc (connect succeeds to template-svc.internal:8081) and that gateway POST /v1/notify success recovers. Compare the old and new TEMPLATE_SVC_URL values from config revision 644 vs 645, since the logs don't show the previous value. Follow up on the slow audit_log seq scan on notif-db (#227) separately as a non-blocking issue."
+            },
+            "output": "triage recorded",
+            "isError": false
+          }
+        ],
+        "verdict": {
+          "hypotheses": [
+            {
+              "rootCause": "config_error",
+              "confidence": 0.6,
+              "evidenceLines": [
+                243,
+                236,
+                248,
+                256,
+                271
+              ],
+              "reasoning": "Gateway 503s (#251, #255, #260 etc.) are downstream symptoms: notification-svc returns 503 because its render call to template-svc fails. The origin appears at 13:21:03 when notification-svc v3.13.0 (build 1816aca) began rolling out with config revision 645 (#236). At 13:21:28 config reloaded with TEMPLATE_SVC_URL=http://template-svc.internal:8081 changed (#243). From about 13:21:59 onward every TemplateClient.render from notification-svc fails with connect ECONNREFUSED 10.17.189.215:8081 (#248, #256, #258, #271). Template-svc itself logs no errors and keeps running (GC lines through 13:32), and it served successful /render calls up to 13:21:10 (#238), so the refusals are specific to notification-svc's new endpoint resolution. Caveat: the logged URL matches template-svc's port, so the exact wrong value (host or IP) is not visible in the logs; the change coincides with the config reload and rollout. Not a template-svc resource problem (no OOM or error lines, GC normal); not a notif-db issue (only a slow audit_log seq scan at #227, unrelated and not on the failing path)."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.3,
+              "evidenceLines": [
+                236,
+                243,
+                248
+              ],
+              "reasoning": "Alternative reading: the v3.13.0 rollout itself (build 1816aca) introduced a broken template-client connection behavior, and the config reload is just concurrent with it. Timing fits: refusals start within a minute of the rollout and config reload. Rolling back notification-svc to the prior version would confirm or rule this out."
+            }
+          ],
+          "recommendedAction": "Roll back notification-svc to the pre-v3.13.0 build and/or revert config revision 645 so TEMPLATE_SVC_URL is restored to the previously working endpoint. Then verify notification-svc can reach template-svc (connect succeeds to template-svc.internal:8081) and that gateway POST /v1/notify success recovers. Compare the old and new TEMPLATE_SVC_URL values from config revision 644 vs 645, since the logs don't show the previous value. Follow up on the slow audit_log seq scan on notif-db (#227) separately as a non-blocking issue."
+        },
+        "score": {
+          "top1": true,
+          "top1Lenient": true,
+          "predicted": "config_error",
+          "confidence": 0.6,
+          "precision": 1,
+          "recall": 0.8333333333333334,
+          "cited": 5,
+          "correct": 5
+        },
+        "costUsd": 0.0034928249999999997,
+        "durationMs": 14383
+      },
+      {
+        "key": "opusLowTest",
+        "modelName": "Opus 5.5",
+        "prompt": "v3",
+        "effort": "low",
+        "steps": [
+          {
+            "tool": "search_logs",
+            "input": {
+              "level": "WARN",
+              "limit": 40
+            },
+            "output": "18 match(es):\n#64 2026-11-27T13:10:17Z WARN template-svc [t-3368] email provider call failed: connection reset by peer POST https://api.mailer.example/v3/send, retry 1/3\n#227 2026-11-27T13:20:31Z WARN notif-db slow query 2055ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#248 2026-11-27T13:21:59Z ERROR notification-svc [t-3492] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#251 2026-11-27T13:22:42Z ERROR api-gateway [t-3495] POST /v1/notify 503 16526ms: upstream notification-svc returned 503 Service Unavailable\n#255 2026-11-27T13:23:32Z ERROR api-gateway [t-3498] POST /v1/notify 503 5993ms: upstream notification-svc returned 503 Service Unavailable\n#256 2026-11-27T13:23:33Z ERROR notification-svc [t-3499] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#258 2026-11-27T13:23:45Z ERROR notification-svc [t-3502] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#260 2026-11-27T13:24:08Z ERROR api-gateway [t-3504] POST /v1/notify 503 12381ms: upstream notification-svc returned 503 Service Unavailable\n#265 2026-11-27T13:25:06Z ERROR api-gateway [t-3506] POST /v1/notify 503 21666ms: upstream notification-svc returned 503 Service Unavailable\n#271 2026-11-27T13:25:34Z ERROR notification-svc [t-3513] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#274 2026-11-27T13:26:16Z ERROR api-gateway [t-3516] POST /v1/notify 503 4921ms: upstream notification-svc returned 503 Service Unavailable\n#281 2026-11-27T13:27:29Z ERROR api-gateway [t-3520] POST /v1/notify 503 20816ms: upstream notification-svc returned 503 Service Unavailable\n#288 2026-11-27T13:28:48Z ERROR api-gateway [t-3523] POST /v1/notify 503 27016ms: upstream notification-svc returned 503 Service Unavailable\n#291 2026-11-27T13:29:40Z ERROR api-gateway [t-3526] POST /v1/notify 503 5061ms: upstream notification-svc returned 503 Service Unavailable\n#300 2026-11-27T13:31:32Z ERROR api-gateway [t-3527] POST /v1/notify 503 23374ms: upstream notification-svc returned 503 Service Unavailable\n#303 2026-11-27T13:32:33Z ERROR api-gateway [t-3531] POST /v1/notify 503 23932ms: upstream notification-svc returned 503 Service Unavailable\n#309 2026-11-27T13:33:45Z ERROR api-gateway [t-3533] POST /v1/notify 503 18325ms: upstream notification-svc returned 503 Service Unavailable\n#312 2026-11-27T13:34:10Z ERROR api-gateway [t-3537] POST /v1/notify 503 14445ms: upstream notification-svc returned 503 Service Unavailable",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "service": "template-svc",
+              "query": ":80"
+            },
+            "output": "no matching log lines",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "query": "template-svc",
+              "limit": 15
+            },
+            "output": "83 match(es), showing first 15:\n#1 2026-11-27T13:06:06Z INFO notification-svc [t-3318] message m-2991 accepted, calling template-svc POST /render\n#3 2026-11-27T13:06:21Z INFO notification-svc [t-3321] message m-2994 accepted, calling template-svc POST /render\n#6 2026-11-27T13:06:29Z INFO notification-svc [t-3324] message m-2995 accepted, calling template-svc POST /render\n#9 2026-11-27T13:06:41Z INFO notification-svc [t-3328] message m-2998 accepted, calling template-svc POST /render\n#11 2026-11-27T13:06:53Z INFO notification-svc [t-3330] message m-3000 accepted, calling template-svc POST /render\n#14 2026-11-27T13:07:04Z INFO notification-svc [t-3332] message m-3002 accepted, calling template-svc POST /render\n#20 2026-11-27T13:07:22Z INFO notification-svc [t-3335] message m-3005 accepted, calling template-svc POST /render\n#23 2026-11-27T13:07:32Z INFO notification-svc [t-3338] message m-3007 accepted, calling template-svc POST /render\n#25 2026-11-27T13:07:51Z INFO notification-svc [t-3340] message m-3010 accepted, calling template-svc POST /render\n#28 2026-11-27T13:08:01Z INFO notification-svc [t-3344] message m-3012 accepted, calling template-svc POST /render\n#31 2026-11-27T13:08:19Z INFO notification-svc [t-3346] message m-3014 accepted, calling template-svc POST /render\n#35 2026-11-27T13:08:37Z INFO notification-svc [t-3350] message m-3017 accepted, calling template-svc POST /render\n#40 2026-11-27T13:08:51Z INFO notification-svc [t-3351] message m-3020 accepted, calling template-svc POST /render\n#43 2026-11-27T13:08:59Z INFO notification-svc [t-3352] message m-3022 accepted, calling template-svc POST /render\n#46 2026-11-27T13:09:06Z INFO notification-svc [t-3353] message m-3025 accepted, calling template-svc POST /render",
+            "isError": false
+          },
+          {
+            "tool": "get_context",
+            "input": {
+              "line": 248,
+              "before": 25,
+              "after": 3
+            },
+            "output": "#223 2026-11-27T13:20:29Z INFO notification-svc [t-3478] message m-3135 accepted, calling template-svc POST /render\n#224 2026-11-27T13:20:29Z INFO template-svc [t-3478] POST /render m-3135 ok 47ms\n#225 2026-11-27T13:20:29Z INFO api-gateway [t-3478] POST /v1/notify 200 162ms\n#226 2026-11-27T13:20:30Z INFO notif-worker deploy: rolling out notif-worker v4.1.8 (build 7e3d893)\n#227 2026-11-27T13:20:31Z WARN notif-db slow query 2055ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#228 2026-11-27T13:20:36Z INFO redis stats: hits=8670 misses=845 evicted=0 connected_clients=42\n#229 2026-11-27T13:20:37Z INFO notification-svc [t-3479] message m-3138 accepted, calling template-svc POST /render\n#230 2026-11-27T13:20:37Z INFO template-svc [t-3479] POST /render m-3138 ok 57ms\n#231 2026-11-27T13:20:37Z INFO api-gateway [t-3479] POST /v1/notify 200 151ms\n#232 2026-11-27T13:20:51Z INFO notification-svc [t-3481] message m-3140 accepted, calling template-svc POST /render\n#233 2026-11-27T13:20:51Z INFO api-gateway [t-3481] POST /v1/notify 200 131ms\n#234 2026-11-27T13:20:52Z INFO notif-worker started notif-worker v4.1.8, pid 1, ready\n#235 2026-11-27T13:21:01Z INFO notif-worker processed batch of 86 messages from notifications.outbound (lag 381ms)\n#236 2026-11-27T13:21:03Z INFO notification-svc deploy: rolling out notification-svc v3.13.0 (build 1816aca) with config revision 645\n#237 2026-11-27T13:21:10Z INFO notification-svc [t-3484] message m-3143 accepted, calling template-svc POST /render\n#238 2026-11-27T13:21:10Z INFO template-svc [t-3484] POST /render m-3143 ok 77ms\n#239 2026-11-27T13:21:10Z INFO api-gateway [t-3484] POST /v1/notify 200 168ms\n#240 2026-11-27T13:21:14Z INFO notif-db InnoDB: page cleaner flushed 262 pages, buffer pool hit rate 98.7%\n#241 2026-11-27T13:21:22Z INFO notification-svc [t-3487] message m-3146 accepted, calling template-svc POST /render\n#242 2026-11-27T13:21:22Z INFO api-gateway [t-3487] POST /v1/notify 200 145ms\n#243 2026-11-27T13:21:28Z INFO notification-svc config reloaded from config-service (revision 645): 1 key changed: TEMPLATE_SVC_URL=http://template-svc.internal:8081\n#244 2026-11-27T13:21:34Z INFO notification-svc [t-3491] message m-3147 accepted, calling template-svc POST /render\n#245 2026-11-27T13:21:35Z INFO api-gateway [t-3491] POST /v1/notify 200 98ms\n#246 2026-11-27T13:21:48Z INFO notif-worker processed batch of 65 messages from notifications.outbound (lag 168ms)\n#247 2026-11-27T13:21:48Z INFO redis stats: hits=17486 misses=243 evicted=0 connected_clients=53\n#248 2026-11-27T13:21:59Z ERROR notification-svc [t-3492] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#249 2026-11-27T13:22:12Z DEBUG notification-svc GC pause 6ms (young), heap 48%\n#250 2026-11-27T13:22:32Z INFO notif-worker processed batch of 76 messages from notifications.outbound (lag 86ms)\n#251 2026-11-27T13:22:42Z ERROR api-gateway [t-3495] POST /v1/notify 503 16526ms: upstream notification-svc returned 503 Service Unavailable",
+            "isError": false
+          },
+          {
+            "tool": "submit_triage",
+            "input": {
+              "hypotheses": [
+                {
+                  "rootCause": "bad_deploy",
+                  "confidence": 0.8,
+                  "evidenceLines": [
+                    236,
+                    243,
+                    248,
+                    256,
+                    271
+                  ],
+                  "reasoning": "At 13:21:03 notification-svc v3.13.0 rolled out with config revision 645. At 13:21:28 the config reload changed TEMPLATE_SVC_URL to port 8081. From 13:21:59 on, every render call fails with ECONNREFUSED on 10.17.189.215:8081. template-svc itself logs no errors, so it is still up, just not listening on that port. The gateway 503s that triggered the alert follow from these failures. The notif-worker deploy, the audit_log slow query and the provider reset at 13:10 are unrelated."
+                },
+                {
+                  "rootCause": "config_error",
+                  "confidence": 0.18,
+                  "evidenceLines": [
+                    243,
+                    248
+                  ],
+                  "reasoning": "The fault is a wrong endpoint value. If revision 645 was pushed from config-service on its own rather than as part of the release, this counts as config_error."
+                }
+              ],
+              "recommendedAction": "Roll back notification-svc to the previous release / config revision, restoring TEMPLATE_SVC_URL to template-svc's real port. Then add an endpoint check to the deploy pipeline."
+            },
+            "output": "triage recorded",
+            "isError": false
+          }
+        ],
+        "verdict": {
+          "hypotheses": [
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.8,
+              "evidenceLines": [
+                236,
+                243,
+                248,
+                256,
+                271
+              ],
+              "reasoning": "At 13:21:03 notification-svc v3.13.0 rolled out with config revision 645. At 13:21:28 the config reload changed TEMPLATE_SVC_URL to port 8081. From 13:21:59 on, every render call fails with ECONNREFUSED on 10.17.189.215:8081. template-svc itself logs no errors, so it is still up, just not listening on that port. The gateway 503s that triggered the alert follow from these failures. The notif-worker deploy, the audit_log slow query and the provider reset at 13:10 are unrelated."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.18,
+              "evidenceLines": [
+                243,
+                248
+              ],
+              "reasoning": "The fault is a wrong endpoint value. If revision 645 was pushed from config-service on its own rather than as part of the release, this counts as config_error."
+            }
+          ],
+          "recommendedAction": "Roll back notification-svc to the previous release / config revision, restoring TEMPLATE_SVC_URL to template-svc's real port. Then add an endpoint check to the deploy pipeline."
+        },
+        "score": {
+          "top1": false,
+          "top1Lenient": true,
+          "predicted": "bad_deploy",
+          "confidence": 0.8,
+          "precision": 1,
+          "recall": 0.8333333333333334,
+          "cited": 5,
+          "correct": 5
+        },
+        "costUsd": 0.0568122,
+        "durationMs": 11437
+      },
+      {
+        "key": "sonnetLowTest",
+        "modelName": "Sonnet 5.5",
+        "prompt": "v3",
+        "effort": "low",
+        "steps": [
+          {
+            "tool": "search_logs",
+            "input": {
+              "level": "WARN",
+              "limit": 50
+            },
+            "output": "18 match(es):\n#64 2026-11-27T13:10:17Z WARN template-svc [t-3368] email provider call failed: connection reset by peer POST https://api.mailer.example/v3/send, retry 1/3\n#227 2026-11-27T13:20:31Z WARN notif-db slow query 2055ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#248 2026-11-27T13:21:59Z ERROR notification-svc [t-3492] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#251 2026-11-27T13:22:42Z ERROR api-gateway [t-3495] POST /v1/notify 503 16526ms: upstream notification-svc returned 503 Service Unavailable\n#255 2026-11-27T13:23:32Z ERROR api-gateway [t-3498] POST /v1/notify 503 5993ms: upstream notification-svc returned 503 Service Unavailable\n#256 2026-11-27T13:23:33Z ERROR notification-svc [t-3499] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#258 2026-11-27T13:23:45Z ERROR notification-svc [t-3502] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#260 2026-11-27T13:24:08Z ERROR api-gateway [t-3504] POST /v1/notify 503 12381ms: upstream notification-svc returned 503 Service Unavailable\n#265 2026-11-27T13:25:06Z ERROR api-gateway [t-3506] POST /v1/notify 503 21666ms: upstream notification-svc returned 503 Service Unavailable\n#271 2026-11-27T13:25:34Z ERROR notification-svc [t-3513] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#274 2026-11-27T13:26:16Z ERROR api-gateway [t-3516] POST /v1/notify 503 4921ms: upstream notification-svc returned 503 Service Unavailable\n#281 2026-11-27T13:27:29Z ERROR api-gateway [t-3520] POST /v1/notify 503 20816ms: upstream notification-svc returned 503 Service Unavailable\n#288 2026-11-27T13:28:48Z ERROR api-gateway [t-3523] POST /v1/notify 503 27016ms: upstream notification-svc returned 503 Service Unavailable\n#291 2026-11-27T13:29:40Z ERROR api-gateway [t-3526] POST /v1/notify 503 5061ms: upstream notification-svc returned 503 Service Unavailable\n#300 2026-11-27T13:31:32Z ERROR api-gateway [t-3527] POST /v1/notify 503 23374ms: upstream notification-svc returned 503 Service Unavailable\n#303 2026-11-27T13:32:33Z ERROR api-gateway [t-3531] POST /v1/notify 503 23932ms: upstream notification-svc returned 503 Service Unavailable\n#309 2026-11-27T13:33:45Z ERROR api-gateway [t-3533] POST /v1/notify 503 18325ms: upstream notification-svc returned 503 Service Unavailable\n#312 2026-11-27T13:34:10Z ERROR api-gateway [t-3537] POST /v1/notify 503 14445ms: upstream notification-svc returned 503 Service Unavailable",
+            "isError": false
+          },
+          {
+            "tool": "get_context",
+            "input": {
+              "line": 248,
+              "before": 12,
+              "after": 2
+            },
+            "output": "#236 2026-11-27T13:21:03Z INFO notification-svc deploy: rolling out notification-svc v3.13.0 (build 1816aca) with config revision 645\n#237 2026-11-27T13:21:10Z INFO notification-svc [t-3484] message m-3143 accepted, calling template-svc POST /render\n#238 2026-11-27T13:21:10Z INFO template-svc [t-3484] POST /render m-3143 ok 77ms\n#239 2026-11-27T13:21:10Z INFO api-gateway [t-3484] POST /v1/notify 200 168ms\n#240 2026-11-27T13:21:14Z INFO notif-db InnoDB: page cleaner flushed 262 pages, buffer pool hit rate 98.7%\n#241 2026-11-27T13:21:22Z INFO notification-svc [t-3487] message m-3146 accepted, calling template-svc POST /render\n#242 2026-11-27T13:21:22Z INFO api-gateway [t-3487] POST /v1/notify 200 145ms\n#243 2026-11-27T13:21:28Z INFO notification-svc config reloaded from config-service (revision 645): 1 key changed: TEMPLATE_SVC_URL=http://template-svc.internal:8081\n#244 2026-11-27T13:21:34Z INFO notification-svc [t-3491] message m-3147 accepted, calling template-svc POST /render\n#245 2026-11-27T13:21:35Z INFO api-gateway [t-3491] POST /v1/notify 200 98ms\n#246 2026-11-27T13:21:48Z INFO notif-worker processed batch of 65 messages from notifications.outbound (lag 168ms)\n#247 2026-11-27T13:21:48Z INFO redis stats: hits=17486 misses=243 evicted=0 connected_clients=53\n#248 2026-11-27T13:21:59Z ERROR notification-svc [t-3492] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#249 2026-11-27T13:22:12Z DEBUG notification-svc GC pause 6ms (young), heap 48%\n#250 2026-11-27T13:22:32Z INFO notif-worker processed batch of 76 messages from notifications.outbound (lag 86ms)",
+            "isError": false
+          },
+          {
+            "tool": "submit_triage",
+            "input": {
+              "hypotheses": [
+                {
+                  "rootCause": "bad_deploy",
+                  "confidence": 0.7,
+                  "evidenceLines": [
+                    236,
+                    243,
+                    248,
+                    256
+                  ],
+                  "reasoning": "notification-svc v3.13.0 rolled out with config revision 645 at 13:21:03. The config reload changed TEMPLATE_SVC_URL to http://template-svc.internal:8081. From 13:21:59 every TemplateClient.render call fails with ECONNREFUSED to that address. template-svc logged no errors and handled requests fine before the change. The gateway 503s are downstream symptoms."
+                },
+                {
+                  "rootCause": "config_error",
+                  "confidence": 0.25,
+                  "evidenceLines": [
+                    243,
+                    248
+                  ],
+                  "reasoning": "The wrong TEMPLATE_SVC_URL came in through a config-service reload, so it may be a plain misconfiguration rather than a code change in the release."
+                }
+              ],
+              "recommendedAction": "Roll back notification-svc v3.13.0 and config revision 645, or restore the previous TEMPLATE_SVC_URL. Then confirm that /v1/notify recovers."
+            },
+            "output": "triage recorded",
+            "isError": false
+          }
+        ],
+        "verdict": {
+          "hypotheses": [
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.7,
+              "evidenceLines": [
+                236,
+                243,
+                248,
+                256
+              ],
+              "reasoning": "notification-svc v3.13.0 rolled out with config revision 645 at 13:21:03. The config reload changed TEMPLATE_SVC_URL to http://template-svc.internal:8081. From 13:21:59 every TemplateClient.render call fails with ECONNREFUSED to that address. template-svc logged no errors and handled requests fine before the change. The gateway 503s are downstream symptoms."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.25,
+              "evidenceLines": [
+                243,
+                248
+              ],
+              "reasoning": "The wrong TEMPLATE_SVC_URL came in through a config-service reload, so it may be a plain misconfiguration rather than a code change in the release."
+            }
+          ],
+          "recommendedAction": "Roll back notification-svc v3.13.0 and config revision 645, or restore the previous TEMPLATE_SVC_URL. Then confirm that /v1/notify recovers."
+        },
+        "score": {
+          "top1": false,
+          "top1Lenient": true,
+          "predicted": "bad_deploy",
+          "confidence": 0.7,
+          "precision": 1,
+          "recall": 0.6666666666666666,
+          "cited": 4,
+          "correct": 4
+        },
+        "costUsd": 0.0213116,
+        "durationMs": 6027
+      }
+    ]
+  },
+  {
+    "incidentId": "test-016",
+    "title": "A retry storm",
+    "why": "Same right answer, different diligence: Sonnet stopped after one search and cited under half the evidence; Haiku kept reading and found all of it.",
+    "incident": {
+      "title": "POST /login errors not recovering",
+      "alert": "edge-proxy: 503 rate on POST /login above 30% for 8 minutes and not recovering.",
+      "services": [
+        "edge-proxy",
+        "account-svc",
+        "auth-svc",
+        "accounts-db",
+        "session-cache",
+        "audit-consumer"
+      ],
+      "lineCount": 279,
+      "overview": "window 2026-10-23T05:06:05Z .. 2026-10-23T05:35:46Z, 279 lines total\n- edge-proxy: 70 lines, 7 error+ (2026-10-23T05:06:05Z .. 2026-10-23T05:35:42Z)\n- auth-svc: 52 lines, 5 error+ (2026-10-23T05:06:05Z .. 2026-10-23T05:34:50Z)\n- account-svc: 74 lines, 0 error+ (2026-10-23T05:06:05Z .. 2026-10-23T05:34:26Z)\n- audit-consumer: 44 lines, 0 error+ (2026-10-23T05:06:36Z .. 2026-10-23T05:35:46Z)\n- session-cache: 23 lines, 0 error+ (2026-10-23T05:07:26Z .. 2026-10-23T05:35:27Z)\n- accounts-db: 16 lines, 0 error+ (2026-10-23T05:07:17Z .. 2026-10-23T05:35:11Z)"
+    },
+    "label": {
+      "rootCause": "cascading_failure",
+      "acceptableCauses": [],
+      "difficulty": "medium",
+      "evidenceLines": [
+        189,
+        196,
+        197,
+        200,
+        201,
+        204,
+        209,
+        215,
+        217
+      ],
+      "herringLines": [
+        38,
+        96,
+        104
+      ],
+      "explanation": "auth-svc briefly lost one of four instances (line 189) and was back within a minute (line 197). But account-svc retries 503s immediately with backoff disabled (lines 196, 200, 204, 209), multiplying load on auth-svc past its capacity so it keeps shedding (lines 201, 215, 217). The overload sustains itself long after the trigger; the shed requests (lines 208, 225, 242, 259, 270) and edge 503s (lines 203, 218, 231, 244, 250, 269, 278) are symptoms. Fix the retry policy / add a retry budget. Red herrings: lines 96, 104 (a deploy of audit-consumer, which is not on the failing request path and kept processing normally); line 38 (a one-off slow reporting query on audit_log, not on the failing request path)."
+    },
+    "lines": [
+      {
+        "n": 38,
+        "ts": "2026-10-23T05:09:16Z",
+        "service": "accounts-db",
+        "level": "WARN",
+        "msg": "slow query 1552ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)"
+      },
+      {
+        "n": 96,
+        "ts": "2026-10-23T05:14:40Z",
+        "service": "audit-consumer",
+        "level": "INFO",
+        "msg": "deploy: rolling out audit-consumer v1.15.2 (build bebe25d)"
+      },
+      {
+        "n": 104,
+        "ts": "2026-10-23T05:15:06Z",
+        "service": "audit-consumer",
+        "level": "INFO",
+        "msg": "started audit-consumer v1.15.2, pid 1, ready"
+      },
+      {
+        "n": 189,
+        "ts": "2026-10-23T05:22:50Z",
+        "service": "auth-svc",
+        "level": "WARN",
+        "msg": "instance auth-svc-3 restarting (liveness probe failed), capacity 3/4"
+      },
+      {
+        "n": 192,
+        "ts": "2026-10-23T05:22:58Z",
+        "service": "auth-svc",
+        "level": "DEBUG",
+        "msg": "GC pause 25ms (young), heap 28%"
+      },
+      {
+        "n": 196,
+        "ts": "2026-10-23T05:23:27Z",
+        "service": "account-svc",
+        "level": "WARN",
+        "traceId": "t-1650",
+        "msg": "AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)"
+      },
+      {
+        "n": 197,
+        "ts": "2026-10-23T05:23:38Z",
+        "service": "auth-svc",
+        "level": "INFO",
+        "msg": "instance auth-svc-3 ready, capacity 4/4"
+      },
+      {
+        "n": 200,
+        "ts": "2026-10-23T05:24:10Z",
+        "service": "account-svc",
+        "level": "WARN",
+        "traceId": "t-1654",
+        "msg": "AuthClient.issueToken got 503, retrying immediately (attempt 3/4, backoff disabled)"
+      },
+      {
+        "n": 201,
+        "ts": "2026-10-23T05:24:31Z",
+        "service": "auth-svc",
+        "level": "WARN",
+        "msg": "inbound request rate 3.2x baseline (inflight 487), shedding load with 503"
+      },
+      {
+        "n": 203,
+        "ts": "2026-10-23T05:24:37Z",
+        "service": "edge-proxy",
+        "level": "ERROR",
+        "traceId": "t-1656",
+        "msg": "POST /login 503 5447ms: upstream account-svc returned 503 (retries exhausted)"
+      },
+      {
+        "n": 204,
+        "ts": "2026-10-23T05:24:59Z",
+        "service": "account-svc",
+        "level": "WARN",
+        "traceId": "t-1657",
+        "msg": "AuthClient.issueToken got 503, retrying immediately (attempt 4/4, backoff disabled)"
+      },
+      {
+        "n": 208,
+        "ts": "2026-10-23T05:25:32Z",
+        "service": "auth-svc",
+        "level": "ERROR",
+        "traceId": "t-1658",
+        "msg": "load shed: rejected POST /tokens with 503 (queue full)"
+      },
+      {
+        "n": 209,
+        "ts": "2026-10-23T05:25:36Z",
+        "service": "account-svc",
+        "level": "WARN",
+        "traceId": "t-1662",
+        "msg": "AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)"
+      },
+      {
+        "n": 215,
+        "ts": "2026-10-23T05:26:12Z",
+        "service": "auth-svc",
+        "level": "WARN",
+        "msg": "inbound request rate 4.1x baseline (inflight 663), shedding load with 503"
+      },
+      {
+        "n": 217,
+        "ts": "2026-10-23T05:26:29Z",
+        "service": "auth-svc",
+        "level": "WARN",
+        "msg": "inbound request rate 5.0x baseline (inflight 825), shedding load with 503"
+      },
+      {
+        "n": 218,
+        "ts": "2026-10-23T05:26:33Z",
+        "service": "edge-proxy",
+        "level": "ERROR",
+        "traceId": "t-1666",
+        "msg": "POST /login 503 14651ms: upstream account-svc returned 503 (retries exhausted)"
+      },
+      {
+        "n": 225,
+        "ts": "2026-10-23T05:27:09Z",
+        "service": "auth-svc",
+        "level": "ERROR",
+        "traceId": "t-1669",
+        "msg": "load shed: rejected POST /tokens with 503 (queue full)"
+      }
+    ],
+    "runs": [
+      {
+        "key": "sonnetLowTest",
+        "modelName": "Sonnet 5.5",
+        "prompt": "v3",
+        "effort": "low",
+        "steps": [
+          {
+            "tool": "search_logs",
+            "input": {
+              "level": "WARN",
+              "limit": 60
+            },
+            "output": "21 match(es):\n#38 2026-10-23T05:09:16Z WARN accounts-db slow query 1552ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#189 2026-10-23T05:22:50Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4\n#196 2026-10-23T05:23:27Z WARN account-svc [t-1650] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#200 2026-10-23T05:24:10Z WARN account-svc [t-1654] AuthClient.issueToken got 503, retrying immediately (attempt 3/4, backoff disabled)\n#201 2026-10-23T05:24:31Z WARN auth-svc inbound request rate 3.2x baseline (inflight 487), shedding load with 503\n#203 2026-10-23T05:24:37Z ERROR edge-proxy [t-1656] POST /login 503 5447ms: upstream account-svc returned 503 (retries exhausted)\n#204 2026-10-23T05:24:59Z WARN account-svc [t-1657] AuthClient.issueToken got 503, retrying immediately (attempt 4/4, backoff disabled)\n#208 2026-10-23T05:25:32Z ERROR auth-svc [t-1658] load shed: rejected POST /tokens with 503 (queue full)\n#209 2026-10-23T05:25:36Z WARN account-svc [t-1662] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#215 2026-10-23T05:26:12Z WARN auth-svc inbound request rate 4.1x baseline (inflight 663), shedding load with 503\n#217 2026-10-23T05:26:29Z WARN auth-svc inbound request rate 5.0x baseline (inflight 825), shedding load with 503\n#218 2026-10-23T05:26:33Z ERROR edge-proxy [t-1666] POST /login 503 14651ms: upstream account-svc returned 503 (retries exhausted)\n#225 2026-10-23T05:27:09Z ERROR auth-svc [t-1669] load shed: rejected POST /tokens with 503 (queue full)\n#231 2026-10-23T05:27:25Z ERROR edge-proxy [t-1679] POST /login 503 20202ms: upstream account-svc returned 503 (retries exhausted)\n#242 2026-10-23T05:28:59Z ERROR auth-svc [t-1683] load shed: rejected POST /tokens with 503 (queue full)\n#244 2026-10-23T05:29:07Z ERROR edge-proxy [t-1687] POST /login 503 16855ms: upstream account-svc returned 503 (retries exhausted)\n#250 2026-10-23T05:31:01Z ERROR edge-proxy [t-1690] POST /login 503 15375ms: upstream account-svc returned 503 (retries exhausted)\n#259 2026-10-23T05:32:30Z ERROR auth-svc [t-1693] load shed: rejected POST /tokens with 503 (queue full)\n#269 2026-10-23T05:33:54Z ERROR edge-proxy [t-1701] POST /login 503 25890ms: upstream account-svc returned 503 (retries exhausted)\n#270 2026-10-23T05:34:07Z ERROR auth-svc [t-1705] load shed: rejected POST /tokens with 503 (queue full)\n#278 2026-10-23T05:35:42Z ERROR edge-proxy [t-1707] POST /login 503 8267ms: upstream account-svc returned 503 (retries exhausted)",
+            "isError": false
+          },
+          {
+            "tool": "submit_triage",
+            "input": {
+              "hypotheses": [
+                {
+                  "rootCause": "cascading_failure",
+                  "confidence": 0.9,
+                  "evidenceLines": [
+                    189,
+                    196,
+                    200,
+                    201,
+                    208
+                  ],
+                  "reasoning": "The trigger was small: auth-svc-3 restarted after a failed liveness probe, so capacity dropped to 3/4. account-svc then retried issueToken immediately with backoff disabled. That pushed auth-svc inbound rate to 3–5x baseline, and auth-svc shed load with 503s. Retries kept the load up, so the failure did not recover. The edge 503s on /login are a symptom. The slow audit_log query on accounts-db (#38) is a red herring."
+                }
+              ],
+              "recommendedAction": "Enable exponential backoff with jitter on AuthClient retries, or temporarily cap retries. Restore auth-svc capacity. Keep load shedding in place until the retry storm drains."
+            },
+            "output": "triage recorded",
+            "isError": false
+          }
+        ],
+        "verdict": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.9,
+              "evidenceLines": [
+                189,
+                196,
+                200,
+                201,
+                208
+              ],
+              "reasoning": "The trigger was small: auth-svc-3 restarted after a failed liveness probe, so capacity dropped to 3/4. account-svc then retried issueToken immediately with backoff disabled. That pushed auth-svc inbound rate to 3–5x baseline, and auth-svc shed load with 503s. Retries kept the load up, so the failure did not recover. The edge 503s on /login are a symptom. The slow audit_log query on accounts-db (#38) is a red herring."
+            }
+          ],
+          "recommendedAction": "Enable exponential backoff with jitter on AuthClient retries, or temporarily cap retries. Restore auth-svc capacity. Keep load shedding in place until the retry storm drains."
+        },
+        "score": {
+          "top1": true,
+          "top1Lenient": true,
+          "predicted": "cascading_failure",
+          "confidence": 0.9,
+          "precision": 0.8,
+          "recall": 0.4444444444444444,
+          "cited": 5,
+          "correct": 4
+        },
+        "costUsd": 0.016187200000000002,
+        "durationMs": 4628
+      },
+      {
+        "key": "haikuLowTest",
+        "modelName": "Haiku 5.5",
+        "prompt": "v3",
+        "effort": "low",
+        "steps": [
+          {
+            "tool": "search_logs",
+            "input": {
+              "level": "WARN",
+              "limit": 100
+            },
+            "output": "21 match(es):\n#38 2026-10-23T05:09:16Z WARN accounts-db slow query 1552ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#189 2026-10-23T05:22:50Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4\n#196 2026-10-23T05:23:27Z WARN account-svc [t-1650] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#200 2026-10-23T05:24:10Z WARN account-svc [t-1654] AuthClient.issueToken got 503, retrying immediately (attempt 3/4, backoff disabled)\n#201 2026-10-23T05:24:31Z WARN auth-svc inbound request rate 3.2x baseline (inflight 487), shedding load with 503\n#203 2026-10-23T05:24:37Z ERROR edge-proxy [t-1656] POST /login 503 5447ms: upstream account-svc returned 503 (retries exhausted)\n#204 2026-10-23T05:24:59Z WARN account-svc [t-1657] AuthClient.issueToken got 503, retrying immediately (attempt 4/4, backoff disabled)\n#208 2026-10-23T05:25:32Z ERROR auth-svc [t-1658] load shed: rejected POST /tokens with 503 (queue full)\n#209 2026-10-23T05:25:36Z WARN account-svc [t-1662] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#215 2026-10-23T05:26:12Z WARN auth-svc inbound request rate 4.1x baseline (inflight 663), shedding load with 503\n#217 2026-10-23T05:26:29Z WARN auth-svc inbound request rate 5.0x baseline (inflight 825), shedding load with 503\n#218 2026-10-23T05:26:33Z ERROR edge-proxy [t-1666] POST /login 503 14651ms: upstream account-svc returned 503 (retries exhausted)\n#225 2026-10-23T05:27:09Z ERROR auth-svc [t-1669] load shed: rejected POST /tokens with 503 (queue full)\n#231 2026-10-23T05:27:25Z ERROR edge-proxy [t-1679] POST /login 503 20202ms: upstream account-svc returned 503 (retries exhausted)\n#242 2026-10-23T05:28:59Z ERROR auth-svc [t-1683] load shed: rejected POST /tokens with 503 (queue full)\n#244 2026-10-23T05:29:07Z ERROR edge-proxy [t-1687] POST /login 503 16855ms: upstream account-svc returned 503 (retries exhausted)\n#250 2026-10-23T05:31:01Z ERROR edge-proxy [t-1690] POST /login 503 15375ms: upstream account-svc returned 503 (retries exhausted)\n#259 2026-10-23T05:32:30Z ERROR auth-svc [t-1693] load shed: rejected POST /tokens with 503 (queue full)\n#269 2026-10-23T05:33:54Z ERROR edge-proxy [t-1701] POST /login 503 25890ms: upstream account-svc returned 503 (retries exhausted)\n#270 2026-10-23T05:34:07Z ERROR auth-svc [t-1705] load shed: rejected POST /tokens with 503 (queue full)\n#278 2026-10-23T05:35:42Z ERROR edge-proxy [t-1707] POST /login 503 8267ms: upstream account-svc returned 503 (retries exhausted)",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "service": "accounts-db",
+              "limit": 50
+            },
+            "output": "16 match(es):\n#17 2026-10-23T05:07:17Z INFO accounts-db checkpoint complete: wrote 271 buffers (5.6%)\n#34 2026-10-23T05:08:55Z INFO accounts-db checkpoint complete: wrote 541 buffers (1.7%)\n#38 2026-10-23T05:09:16Z WARN accounts-db slow query 1552ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#59 2026-10-23T05:11:05Z INFO accounts-db checkpoint complete: wrote 338 buffers (7.9%)\n#79 2026-10-23T05:13:03Z INFO accounts-db checkpoint complete: wrote 213 buffers (1.9%)\n#108 2026-10-23T05:15:29Z INFO accounts-db checkpoint complete: wrote 1046 buffers (1.3%)\n#128 2026-10-23T05:17:13Z INFO accounts-db checkpoint complete: wrote 1381 buffers (4.6%)\n#151 2026-10-23T05:19:15Z INFO accounts-db checkpoint complete: wrote 1055 buffers (6.6%)\n#176 2026-10-23T05:21:37Z INFO accounts-db checkpoint complete: wrote 337 buffers (6.1%)\n#194 2026-10-23T05:23:23Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 7\n#213 2026-10-23T05:25:52Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 23\n#233 2026-10-23T05:27:41Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 40\n#245 2026-10-23T05:29:15Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 0\n#249 2026-10-23T05:30:48Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 15\n#264 2026-10-23T05:33:00Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 30\n#276 2026-10-23T05:35:11Z INFO accounts-db checkpoint complete: wrote 1349 buffers (8.0%)",
+            "isError": false
+          },
+          {
+            "tool": "get_context",
+            "input": {
+              "line": 189,
+              "before": 15,
+              "after": 6
+            },
+            "output": "#174 2026-10-23T05:21:31Z INFO audit-consumer processed batch of 94 messages from audit.events (lag 183ms)\n#175 2026-10-23T05:21:33Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#176 2026-10-23T05:21:37Z INFO accounts-db checkpoint complete: wrote 337 buffers (6.1%)\n#177 2026-10-23T05:21:53Z INFO account-svc [t-1636] user u-3680 accepted, calling auth-svc POST /tokens\n#178 2026-10-23T05:21:53Z INFO edge-proxy [t-1636] POST /login 200 155ms\n#179 2026-10-23T05:22:10Z INFO account-svc [t-1638] user u-3681 accepted, calling auth-svc POST /tokens\n#180 2026-10-23T05:22:10Z INFO auth-svc [t-1638] POST /tokens u-3681 ok 76ms\n#181 2026-10-23T05:22:10Z INFO edge-proxy [t-1638] POST /login 200 137ms\n#182 2026-10-23T05:22:19Z INFO audit-consumer processed batch of 56 messages from audit.events (lag 196ms)\n#183 2026-10-23T05:22:31Z INFO account-svc [t-1641] user u-3684 accepted, calling auth-svc POST /tokens\n#184 2026-10-23T05:22:31Z INFO edge-proxy [t-1641] POST /login 200 146ms\n#185 2026-10-23T05:22:36Z INFO session-cache stats: hits=14616 misses=574 evicted=0 connected_clients=39\n#186 2026-10-23T05:22:42Z INFO account-svc [t-1642] user u-3686 accepted, calling auth-svc POST /tokens\n#187 2026-10-23T05:22:42Z INFO auth-svc [t-1642] POST /tokens u-3686 ok 32ms\n#188 2026-10-23T05:22:42Z INFO edge-proxy [t-1642] POST /login 200 138ms\n#189 2026-10-23T05:22:50Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4\n#190 2026-10-23T05:22:57Z INFO account-svc [t-1646] user u-3687 accepted, calling auth-svc POST /tokens\n#191 2026-10-23T05:22:58Z INFO edge-proxy [t-1646] POST /login 200 78ms\n#192 2026-10-23T05:22:58Z DEBUG auth-svc GC pause 25ms (young), heap 28%\n#193 2026-10-23T05:23:09Z INFO audit-consumer processed batch of 28 messages from audit.events (lag 141ms)\n#194 2026-10-23T05:23:23Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 7\n#195 2026-10-23T05:23:24Z DEBUG account-svc GC pause 15ms (young), heap 47%",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "service": "auth-svc",
+              "limit": 60
+            },
+            "output": "52 match(es):\n#2 2026-10-23T05:06:05Z INFO auth-svc [t-1528] POST /tokens u-3590 ok 30ms\n#5 2026-10-23T05:06:20Z INFO auth-svc [t-1532] POST /tokens u-3592 ok 86ms\n#9 2026-10-23T05:06:40Z DEBUG auth-svc GC pause 18ms (young), heap 36%\n#11 2026-10-23T05:06:42Z INFO auth-svc [t-1534] POST /tokens u-3593 ok 76ms\n#14 2026-10-23T05:06:58Z INFO auth-svc [t-1536] POST /tokens u-3594 ok 26ms\n#19 2026-10-23T05:07:19Z INFO auth-svc [t-1537] POST /tokens u-3595 ok 33ms\n#23 2026-10-23T05:07:48Z INFO auth-svc [t-1540] POST /tokens u-3597 ok 87ms\n#28 2026-10-23T05:08:22Z DEBUG auth-svc GC pause 16ms (young), heap 45%\n#31 2026-10-23T05:08:29Z INFO auth-svc [t-1545] POST /tokens u-3600 ok 31ms\n#47 2026-10-23T05:10:00Z INFO auth-svc [t-1559] POST /tokens u-3608 ok 51ms\n#49 2026-10-23T05:10:02Z DEBUG auth-svc GC pause 11ms (young), heap 43%\n#65 2026-10-23T05:11:46Z INFO auth-svc [t-1570] POST /tokens u-3618 ok 49ms\n#67 2026-10-23T05:11:56Z DEBUG auth-svc GC pause 21ms (young), heap 41%\n#77 2026-10-23T05:12:55Z INFO auth-svc [t-1576] POST /tokens u-3624 ok 64ms\n#88 2026-10-23T05:13:49Z INFO auth-svc [t-1585] POST /tokens u-3628 ok 80ms\n#91 2026-10-23T05:14:09Z INFO auth-svc [t-1587] POST /tokens u-3631 ok 68ms\n#103 2026-10-23T05:15:01Z DEBUG auth-svc GC pause 9ms (young), heap 41%\n#110 2026-10-23T05:15:33Z INFO auth-svc [t-1602] POST /tokens u-3640 ok 57ms\n#119 2026-10-23T05:16:25Z INFO auth-svc [t-1606] POST /tokens u-3645 ok 53ms\n#126 2026-10-23T05:17:09Z INFO auth-svc [t-1612] POST /tokens u-3650 ok 83ms\n#132 2026-10-23T05:17:28Z DEBUG auth-svc GC pause 16ms (young), heap 45%\n#137 2026-10-23T05:18:03Z INFO auth-svc [t-1617] POST /tokens u-3659 ok 25ms\n#145 2026-10-23T05:18:48Z INFO auth-svc [t-1619] POST /tokens u-3664 ok 68ms\n#149 2026-10-23T05:19:14Z INFO auth-svc [t-1621] POST /tokens u-3667 ok 83ms\n#154 2026-10-23T05:19:34Z INFO auth-svc [t-1622] POST /tokens u-3669 ok 46ms\n#156 2026-10-23T05:19:43Z DEBUG auth-svc GC pause 4ms (young), heap 45%\n#159 2026-10-23T05:19:52Z INFO auth-svc [t-1624] POST /tokens u-3670 ok 76ms\n#163 2026-10-23T05:20:12Z INFO auth-svc [t-1627] POST /tokens u-3673 ok 49ms\n#180 2026-10-23T05:22:10Z INFO auth-svc [t-1638] POST /tokens u-3681 ok 76ms\n#187 2026-10-23T05:22:42Z INFO auth-svc [t-1642] POST /tokens u-3686 ok 32ms\n#189 2026-10-23T05:22:50Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4\n#192 2026-10-23T05:22:58Z DEBUG auth-svc GC pause 25ms (young), heap 28%\n#197 2026-10-23T05:23:38Z INFO auth-svc instance auth-svc-3 ready, capacity 4/4\n#201 2026-10-23T05:24:31Z WARN auth-svc inbound request rate 3.2x baseline (inflight 487), shedding load with 503\n#205 2026-10-23T05:25:07Z DEBUG auth-svc GC pause 13ms (young), heap 31%\n#208 2026-10-23T05:25:32Z ERROR auth-svc [t-1658] load shed: rejected POST /tokens with 503 (queue full)\n#211 2026-10-23T05:25:44Z INFO auth-svc [t-1665] POST /tokens u-3690 ok 43ms\n#215 2026-10-23T05:26:12Z WARN auth-svc inbound request rate 4.1x baseline (inflight 663), shedding load with 503\n#217 2026-10-23T05:26:29Z WARN auth-svc inbound request rate 5.0x baseline (inflight 825), shedding load with 503\n#220 2026-10-23T05:26:42Z INFO auth-svc [t-1667] POST /tokens u-3693 ok 40ms\n#224 2026-10-23T05:26:56Z DEBUG auth-svc GC pause 23ms (young), heap 35%\n#225 2026-10-23T05:27:09Z ERROR auth-svc [t-1669] load shed: rejected POST /tokens with 503 (queue full)\n#229 2026-10-23T05:27:24Z INFO auth-svc [t-1675] POST /tokens u-3699 ok 35ms\n#235 2026-10-23T05:27:45Z INFO auth-svc [t-1682] POST /tokens u-3701 ok 81ms\n#239 2026-10-23T05:28:53Z DEBUG auth-svc GC pause 7ms (young), heap 40%\n#242 2026-10-23T05:28:59Z ERROR auth-svc [t-1683] load shed: rejected POST /tokens with 503 (queue full)\n#252 2026-10-23T05:31:05Z INFO auth-svc [t-1692] POST /tokens u-3703 ok 48ms\n#256 2026-10-23T05:31:40Z DEBUG auth-svc GC pause 20ms (young), heap 40%\n#259 2026-10-23T05:32:30Z ERROR auth-svc [t-1693] load shed: rejected POST /tokens with 503 (queue full)\n#262 2026-10-23T05:32:55Z INFO auth-svc [t-1695] POST /tokens u-3705 ok 45ms\n#270 2026-10-23T05:34:07Z ERROR auth-svc [t-1705] load shed: rejected POST /tokens with 503 (queue full)\n#274 2026-10-23T05:34:50Z DEBUG auth-svc GC pause 6ms (young), heap 31%",
+            "isError": false
+          },
+          {
+            "tool": "search_logs",
+            "input": {
+              "query": "backoff",
+              "limit": 50
+            },
+            "output": "4 match(es):\n#196 2026-10-23T05:23:27Z WARN account-svc [t-1650] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#200 2026-10-23T05:24:10Z WARN account-svc [t-1654] AuthClient.issueToken got 503, retrying immediately (attempt 3/4, backoff disabled)\n#204 2026-10-23T05:24:59Z WARN account-svc [t-1657] AuthClient.issueToken got 503, retrying immediately (attempt 4/4, backoff disabled)\n#209 2026-10-23T05:25:36Z WARN account-svc [t-1662] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)",
+            "isError": false
+          },
+          {
+            "tool": "get_context",
+            "input": {
+              "line": 196,
+              "before": 4,
+              "after": 4
+            },
+            "output": "#192 2026-10-23T05:22:58Z DEBUG auth-svc GC pause 25ms (young), heap 28%\n#193 2026-10-23T05:23:09Z INFO audit-consumer processed batch of 28 messages from audit.events (lag 141ms)\n#194 2026-10-23T05:23:23Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 7\n#195 2026-10-23T05:23:24Z DEBUG account-svc GC pause 15ms (young), heap 47%\n#196 2026-10-23T05:23:27Z WARN account-svc [t-1650] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#197 2026-10-23T05:23:38Z INFO auth-svc instance auth-svc-3 ready, capacity 4/4\n#198 2026-10-23T05:23:57Z INFO session-cache stats: hits=9084 misses=221 evicted=0 connected_clients=43\n#199 2026-10-23T05:24:00Z INFO audit-consumer processed batch of 116 messages from audit.events (lag 65ms)\n#200 2026-10-23T05:24:10Z WARN account-svc [t-1654] AuthClient.issueToken got 503, retrying immediately (attempt 3/4, backoff disabled)",
+            "isError": false
+          },
+          {
+            "tool": "submit_triage",
+            "input": {
+              "hypotheses": "[{\"rootCause\":\"cascading_failure\",\"confidence\":0.82,\"evidenceLines\":[189,197,196,200,204,209,201,208,203,218],\"reasoning\":\"Trigger was small: auth-svc-3 failed a liveness probe and restarted at 05:22:50 (capacity 3/4), ready again at 05:23:38. Its restart was survivable on its own. Amplification: account-svc's AuthClient.issueToken retries 503s immediately with backoff disabled (attempts 2-4/4 at #196, #200, #204, #209), so each failed login hammers auth-svc. auth-svc then sees inbound rate 3.2x-5.0x baseline with inflight 487-825 and sheds load with 503 'queue full' (#201, #208, #215, #217, #225). Edge-proxy 503s follow once account-svc's retries are exhausted (#203, #218). The error persists after capacity was restored because the retry storm keeps the queue saturated. accounts-db, session-cache and audit-consumer show no errors (routine vacuum/checkpoint only), so they are not the origin. The earlier slow audit_log seq scan (#38) is unrelated noise.\",\"},{\"rootCause\":\"resource_exhaustion\",\"confidence\":0.25,\"evidenceLines\":[189,192,201],\"reasoning\":\"auth-svc-3 liveness failure and restart could indicate a resource problem in auth-svc. However GC pauses stayed low (4-25ms, heap 28-47%), so there is no clear memory exhaustion, and the restart was followed by full recovery to 4/4 capacity. The overload is better explained by the retry storm than by a leak.\"}]",
+              "recommendedAction": "Enable exponential backoff with jitter and a retry cap on account-svc's AuthClient.issueToken (currently retrying immediately with backoff disabled). Add a circuit breaker so account-svc stops calling auth-svc during overload. Temporarily throttle or drain the login traffic so auth-svc's queue can clear. Investigate why auth-svc-3's liveness probe failed at 05:22:50, and review auth-svc queue sizing and load-shed thresholds."
+            },
+            "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+            "isError": true
+          },
+          {
+            "tool": "submit_triage",
+            "input": {
+              "hypotheses": [
+                {
+                  "rootCause": "cascading_failure",
+                  "confidence": 0.82,
+                  "evidenceLines": [
+                    189,
+                    197,
+                    196,
+                    200,
+                    204,
+                    209,
+                    201,
+                    208,
+                    215,
+                    217,
+                    225,
+                    203,
+                    218
+                  ],
+                  "reasoning": "Trigger was small: auth-svc-3 failed a liveness probe and restarted at 05:22:50 (capacity 3/4), ready again at 05:23:38. Amplification: account-svc's AuthClient.issueToken retries 503s immediately with backoff disabled (attempts 2-4/4 at #196, #200, #204, #209). Each failed login hammers auth-svc, which sees inbound rate 3.2x-5.0x baseline (inflight 487-825) and sheds load with 503 'queue full' (#201, #208, #215, #217, #225). Edge-proxy 503s follow once account-svc retries are exhausted (#203, #218). The error persists after capacity was restored because the retry storm keeps the queue saturated. accounts-db, session-cache and audit-consumer show no errors (routine vacuum/checkpoint only), so they are not the origin. The earlier slow audit_log seq scan (#38) is unrelated noise."
+                },
+                {
+                  "rootCause": "resource_exhaustion",
+                  "confidence": 0.25,
+                  "evidenceLines": [
+                    189,
+                    192,
+                    201
+                  ],
+                  "reasoning": "The auth-svc-3 liveness failure and restart could indicate a resource problem in auth-svc. However GC pauses stayed low (4-25ms, heap 28-47%), so there is no clear memory exhaustion, and the instance recovered to 4/4 capacity. The sustained overload is better explained by the retry storm than by a leak."
+                }
+              ],
+              "recommendedAction": "Enable exponential backoff with jitter and a retry cap on account-svc's AuthClient.issueToken (currently retrying immediately with backoff disabled). Add a circuit breaker so account-svc stops calling auth-svc during overload. Temporarily throttle login traffic so auth-svc's queue can drain. Investigate why auth-svc-3's liveness probe failed at 05:22:50, and review auth-svc queue sizing and load-shed thresholds."
+            },
+            "output": "triage recorded",
+            "isError": false
+          }
+        ],
+        "verdict": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.82,
+              "evidenceLines": [
+                189,
+                197,
+                196,
+                200,
+                204,
+                209,
+                201,
+                208,
+                215,
+                217,
+                225,
+                203,
+                218
+              ],
+              "reasoning": "Trigger was small: auth-svc-3 failed a liveness probe and restarted at 05:22:50 (capacity 3/4), ready again at 05:23:38. Amplification: account-svc's AuthClient.issueToken retries 503s immediately with backoff disabled (attempts 2-4/4 at #196, #200, #204, #209). Each failed login hammers auth-svc, which sees inbound rate 3.2x-5.0x baseline (inflight 487-825) and sheds load with 503 'queue full' (#201, #208, #215, #217, #225). Edge-proxy 503s follow once account-svc retries are exhausted (#203, #218). The error persists after capacity was restored because the retry storm keeps the queue saturated. accounts-db, session-cache and audit-consumer show no errors (routine vacuum/checkpoint only), so they are not the origin. The earlier slow audit_log seq scan (#38) is unrelated noise."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.25,
+              "evidenceLines": [
+                189,
+                192,
+                201
+              ],
+              "reasoning": "The auth-svc-3 liveness failure and restart could indicate a resource problem in auth-svc. However GC pauses stayed low (4-25ms, heap 28-47%), so there is no clear memory exhaustion, and the instance recovered to 4/4 capacity. The sustained overload is better explained by the retry storm than by a leak."
+            }
+          ],
+          "recommendedAction": "Enable exponential backoff with jitter and a retry cap on account-svc's AuthClient.issueToken (currently retrying immediately with backoff disabled). Add a circuit breaker so account-svc stops calling auth-svc during overload. Temporarily throttle login traffic so auth-svc's queue can drain. Investigate why auth-svc-3's liveness probe failed at 05:22:50, and review auth-svc queue sizing and load-shed thresholds."
+        },
+        "score": {
+          "top1": true,
+          "top1Lenient": true,
+          "predicted": "cascading_failure",
+          "confidence": 0.82,
+          "precision": 0.6923076923076923,
+          "recall": 1,
+          "cited": 13,
+          "correct": 9
+        },
+        "costUsd": 0.002874915,
+        "durationMs": 12407
+      },
+      {
+        "key": "opusLowTest",
+        "modelName": "Opus 5.5",
+        "prompt": "v3",
+        "effort": "low",
+        "steps": [
+          {
+            "tool": "search_logs",
+            "input": {
+              "level": "WARN",
+              "limit": 60
+            },
+            "output": "21 match(es):\n#38 2026-10-23T05:09:16Z WARN accounts-db slow query 1552ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#189 2026-10-23T05:22:50Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4\n#196 2026-10-23T05:23:27Z WARN account-svc [t-1650] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#200 2026-10-23T05:24:10Z WARN account-svc [t-1654] AuthClient.issueToken got 503, retrying immediately (attempt 3/4, backoff disabled)\n#201 2026-10-23T05:24:31Z WARN auth-svc inbound request rate 3.2x baseline (inflight 487), shedding load with 503\n#203 2026-10-23T05:24:37Z ERROR edge-proxy [t-1656] POST /login 503 5447ms: upstream account-svc returned 503 (retries exhausted)\n#204 2026-10-23T05:24:59Z WARN account-svc [t-1657] AuthClient.issueToken got 503, retrying immediately (attempt 4/4, backoff disabled)\n#208 2026-10-23T05:25:32Z ERROR auth-svc [t-1658] load shed: rejected POST /tokens with 503 (queue full)\n#209 2026-10-23T05:25:36Z WARN account-svc [t-1662] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#215 2026-10-23T05:26:12Z WARN auth-svc inbound request rate 4.1x baseline (inflight 663), shedding load with 503\n#217 2026-10-23T05:26:29Z WARN auth-svc inbound request rate 5.0x baseline (inflight 825), shedding load with 503\n#218 2026-10-23T05:26:33Z ERROR edge-proxy [t-1666] POST /login 503 14651ms: upstream account-svc returned 503 (retries exhausted)\n#225 2026-10-23T05:27:09Z ERROR auth-svc [t-1669] load shed: rejected POST /tokens with 503 (queue full)\n#231 2026-10-23T05:27:25Z ERROR edge-proxy [t-1679] POST /login 503 20202ms: upstream account-svc returned 503 (retries exhausted)\n#242 2026-10-23T05:28:59Z ERROR auth-svc [t-1683] load shed: rejected POST /tokens with 503 (queue full)\n#244 2026-10-23T05:29:07Z ERROR edge-proxy [t-1687] POST /login 503 16855ms: upstream account-svc returned 503 (retries exhausted)\n#250 2026-10-23T05:31:01Z ERROR edge-proxy [t-1690] POST /login 503 15375ms: upstream account-svc returned 503 (retries exhausted)\n#259 2026-10-23T05:32:30Z ERROR auth-svc [t-1693] load shed: rejected POST /tokens with 503 (queue full)\n#269 2026-10-23T05:33:54Z ERROR edge-proxy [t-1701] POST /login 503 25890ms: upstream account-svc returned 503 (retries exhausted)\n#270 2026-10-23T05:34:07Z ERROR auth-svc [t-1705] load shed: rejected POST /tokens with 503 (queue full)\n#278 2026-10-23T05:35:42Z ERROR edge-proxy [t-1707] POST /login 503 8267ms: upstream account-svc returned 503 (retries exhausted)",
+            "isError": false
+          },
+          {
+            "tool": "submit_triage",
+            "input": {
+              "hypotheses": [
+                {
+                  "rootCause": "cascading_failure",
+                  "confidence": 0.88,
+                  "evidenceLines": [
+                    189,
+                    196,
+                    200,
+                    204,
+                    201,
+                    215,
+                    217,
+                    208
+                  ],
+                  "reasoning": "An auth-svc instance restarted at 05:22:50, dropping capacity to 3 of 4 (#189). That alone should have been survivable. account-svc then retried every 503 immediately with backoff disabled (#196, #200, #204), which pushed auth-svc load to 3.2x, 4.1x and 5.0x baseline (#201, #215, #217). auth-svc shed load with 503s (#208), producing more 503s and more retries, so the loop kept itself going and the errors never recovered. The edge-proxy 503s are the downstream symptom. The slow audit_log query at 05:09 (#38) came well before the onset and is unrelated."
+                },
+                {
+                  "rootCause": "config_error",
+                  "confidence": 0.08,
+                  "evidenceLines": [
+                    196
+                  ],
+                  "reasoning": "'backoff disabled' in AuthClient could be a client misconfiguration. But it is the amplifier here, not the trigger."
+                }
+              ],
+              "recommendedAction": "Turn on exponential backoff with jitter in account-svc's AuthClient (or cut its retries) and add a circuit breaker. Scale auth-svc back to 4 or more instances and shed load or rate-limit at the edge until the retry storm drains. Find out why auth-svc-3 failed its liveness probe."
+            },
+            "output": "triage recorded",
+            "isError": false
+          }
+        ],
+        "verdict": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.88,
+              "evidenceLines": [
+                189,
+                196,
+                200,
+                204,
+                201,
+                215,
+                217,
+                208
+              ],
+              "reasoning": "An auth-svc instance restarted at 05:22:50, dropping capacity to 3 of 4 (#189). That alone should have been survivable. account-svc then retried every 503 immediately with backoff disabled (#196, #200, #204), which pushed auth-svc load to 3.2x, 4.1x and 5.0x baseline (#201, #215, #217). auth-svc shed load with 503s (#208), producing more 503s and more retries, so the loop kept itself going and the errors never recovered. The edge-proxy 503s are the downstream symptom. The slow audit_log query at 05:09 (#38) came well before the onset and is unrelated."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.08,
+              "evidenceLines": [
+                196
+              ],
+              "reasoning": "'backoff disabled' in AuthClient could be a client misconfiguration. But it is the amplifier here, not the trigger."
+            }
+          ],
+          "recommendedAction": "Turn on exponential backoff with jitter in account-svc's AuthClient (or cut its retries) and add a circuit breaker. Scale auth-svc back to 4 or more instances and shed load or rate-limit at the edge until the retry storm drains. Find out why auth-svc-3 failed its liveness probe."
+        },
+        "score": {
+          "top1": true,
+          "top1Lenient": true,
+          "predicted": "cascading_failure",
+          "confidence": 0.88,
+          "precision": 0.875,
+          "recall": 0.7777777777777778,
+          "cited": 8,
+          "correct": 7
+        },
+        "costUsd": 0.0368544,
+        "durationMs": 7839
+      }
+    ]
+  }
+]
