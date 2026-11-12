@@ -50,21 +50,20 @@ ${ROOT_CAUSE_CATEGORIES.map((c) => `- ${c}`).join("\n")}
 
 When you are confident, call submit_triage with hypotheses ranked most-likely first. Each hypothesis MUST cite the specific log line numbers (the #N ids) that support it. Set a calibrated confidence in [0,1] — be honest when the evidence is ambiguous. Keep investigating until you can cite concrete evidence; do not guess before you have looked.`;
 
-// ---- Tool definitions (JSON Schema, strict so arguments validate) ----
+// ---- Tool definitions. Arguments are validated with zod at execution time
+// (see runTool); bounds here are hints to the model, not strict-mode guarantees. ----
 
 const tools = [
   {
     name: "list_services",
     description:
       "Overview of the incident window: each service's line count, error count, and time range. Call this first.",
-    strict: true,
     input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
   },
   {
     name: "search_logs",
     description:
       "Search log lines. Combine filters: query (case-insensitive substring of the message), service, level (returns that level and above: DEBUG<INFO<WARN<ERROR<FATAL), traceId. Output is capped by limit (default 25).",
-    strict: true,
     input_schema: {
       type: "object",
       properties: {
@@ -81,7 +80,6 @@ const tools = [
   {
     name: "get_context",
     description: "Return the log lines immediately before and after a given line number (the #N id).",
-    strict: true,
     input_schema: {
       type: "object",
       properties: {
@@ -96,7 +94,6 @@ const tools = [
   {
     name: "correlate_trace",
     description: "Return every log line sharing a trace id, across all services, in order — follows one request's path.",
-    strict: true,
     input_schema: {
       type: "object",
       properties: { traceId: { type: "string" } },
@@ -108,7 +105,6 @@ const tools = [
     name: "submit_triage",
     description:
       "Submit your final triage. Call this once, when you can back your top hypothesis with cited evidence. Ends the investigation.",
-    strict: true,
     input_schema: {
       type: "object",
       properties: {
