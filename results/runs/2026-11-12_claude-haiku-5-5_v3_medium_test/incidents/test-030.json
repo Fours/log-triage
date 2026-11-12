@@ -1,0 +1,168 @@
+{
+  "score": {
+    "incidentId": "test-030",
+    "difficulty": "medium",
+    "scenario": "resource_exhaustion/db-disk-full",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 5,
+      "precision": 0.8333333333333334,
+      "recall": 0.625,
+      "f1": 0.7142857142857143
+    },
+    "herringsCited": 0,
+    "costUsd": 0.001867655,
+    "durationMs": 8318,
+    "iterations": 4,
+    "toolCalls": 7,
+    "tokens": {
+      "input": 10,
+      "output": 1483,
+      "cacheRead": 15328,
+      "cacheWrite": 7775
+    }
+  },
+  "result": {
+    "incidentId": "test-030",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.85,
+          "evidenceLines": [
+            89,
+            128,
+            159,
+            173,
+            166,
+            160
+          ],
+          "reasoning": "Origin is the postgres data volume filling up. Disk usage rose from 95% (#89, WAL/binlog growth 563MB/h) to 99% (#128, 574MB/h) before any failure. At #159 postgres failed to extend a relation file with 'No space left on device', and later extends failed too (#173). order-service inserts into orders then failed with 'could not extend file' (#166), and the gateway returned 500s with ~6-28s latency because of the upstream order-service 500s (#160). Payment charges still succeed (#161/#162 show 200s before the disk filled further), so the failure is isolated to the order write path. The gateway 5xx lines are downstream symptoms and are not cited as cause. Alternative: the WAL growth could have a specific trigger (for example a retained replication slot or a bloated table), but no slot or WAL-retention lines appear in the logs, so that cannot be confirmed from here. The other error-level lines are the same disk-full error."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.1,
+          "evidenceLines": [
+            89,
+            128
+          ],
+          "reasoning": "Only if the WAL/binlog growth was caused by a misconfiguration (e.g. WAL retention or archiving settings) rather than normal load. The logs show steady WAL growth but no configuration lines to confirm this."
+        }
+      ],
+      "recommendedAction": "Immediately free space on the postgres data volume: check WAL/binlog retention and archiving, and remove or archive old WAL segments. Look for inactive replication slots holding WAL. Then extend the volume or set disk alerts earlier (for example at 80%). Confirm that POST /checkout 500s stop and that orders inserts succeed. Replay or reconcile orders that failed to insert between about 16:00 and 16:11 (for example o-8108, o-8111, o-8116), since their payments were already charged."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "16 match(es):\n#66 2026-11-30T15:52:47Z WARN api-gateway [t-7447] POST /checkout 400 7ms: request validation failed: field \"email\" is not a valid address\n#89 2026-11-30T15:54:11Z WARN postgres disk usage 95% on /var/lib/postgresql/data (WAL/binlog growth 563MB/h)\n#128 2026-11-30T15:57:36Z WARN postgres disk usage 99% on /var/lib/postgresql/data (WAL/binlog growth 574MB/h)\n#159 2026-11-30T16:00:13Z ERROR postgres could not extend file \"base/16384/20542\": No space left on device\n#160 2026-11-30T16:00:20Z ERROR api-gateway [t-7493] POST /checkout 500 20341ms: upstream order-service returned 500 Internal Server Error\n#166 2026-11-30T16:00:58Z ERROR order-service [t-7499] insert into orders failed for o-8108: could not extend file\n#169 2026-11-30T16:01:19Z ERROR order-service [t-7502] insert into orders failed for o-8111: could not extend file\n#173 2026-11-30T16:01:30Z ERROR postgres could not extend file \"base/16384/33609\": No space left on device\n#180 2026-11-30T16:02:14Z ERROR postgres could not extend file \"base/16384/21867\": No space left on device\n#186 2026-11-30T16:02:56Z ERROR order-service [t-7513] insert into orders failed for o-8116: could not extend file\n#187 2026-11-30T16:03:07Z ERROR api-gateway [t-7517] POST /checkout 500 6055ms: upstream order-service returned 500 Internal Server Error\n#196 2026-11-30T16:04:28Z ERROR api-gateway [t-7523] POST /checkout 500 28427ms: upstream order-service returned 500 Internal Server Error\n#205 2026-11-30T16:05:37Z ERROR api-gateway [t-7529] POST /checkout 500 15756ms: upstream order-service returned 500 Internal Server Error\n#220 2026-11-30T16:07:24Z ERROR api-gateway [t-7541] POST /checkout 500 14270ms: upstream order-service returned 500 Internal Server Error\n#235 2026-11-30T16:08:51Z ERROR api-gateway [t-7552] POST /checkout 500 7731ms: upstream order-service returned 500 Internal Server Error\n#251 2026-11-30T16:10:36Z ERROR api-gateway [t-7562] POST /checkout 500 7406ms: upstream order-service returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "postgres",
+          "limit": 50
+        },
+        "output": "18 match(es):\n#1 2026-11-30T15:47:03Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 33\n#17 2026-11-30T15:48:41Z INFO postgres checkpoint complete: wrote 559 buffers (1.3%)\n#46 2026-11-30T15:51:11Z INFO postgres checkpoint complete: wrote 1002 buffers (4.9%)\n#84 2026-11-30T15:53:45Z INFO postgres checkpoint complete: wrote 667 buffers (2.0%)\n#89 2026-11-30T15:54:11Z WARN postgres disk usage 95% on /var/lib/postgresql/data (WAL/binlog growth 563MB/h)\n#101 2026-11-30T15:55:28Z INFO postgres checkpoint complete: wrote 295 buffers (3.2%)\n#123 2026-11-30T15:57:11Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 6\n#128 2026-11-30T15:57:36Z WARN postgres disk usage 99% on /var/lib/postgresql/data (WAL/binlog growth 574MB/h)\n#141 2026-11-30T15:58:57Z INFO postgres checkpoint complete: wrote 1223 buffers (7.2%)\n#159 2026-11-30T16:00:13Z ERROR postgres could not extend file \"base/16384/20542\": No space left on device\n#164 2026-11-30T16:00:32Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 12\n#173 2026-11-30T16:01:30Z ERROR postgres could not extend file \"base/16384/33609\": No space left on device\n#180 2026-11-30T16:02:14Z ERROR postgres could not extend file \"base/16384/21867\": No space left on device\n#184 2026-11-30T16:02:27Z INFO postgres checkpoint complete: wrote 913 buffers (2.6%)\n#193 2026-11-30T16:03:59Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 5\n#213 2026-11-30T16:06:34Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 17\n#241 2026-11-30T16:09:06Z INFO postgres checkpoint complete: wrote 1217 buffers (4.7%)\n#253 2026-11-30T16:10:43Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 39"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "slot",
+          "limit": 50
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 89,
+          "before": 12,
+          "after": 6
+        },
+        "output": "#77 2026-11-30T15:53:26Z INFO order-service [t-7454] order o-8066 accepted, calling payment-svc POST /charge\n#78 2026-11-30T15:53:26Z INFO payment-svc [t-7454] POST /charge o-8066 ok 49ms\n#79 2026-11-30T15:53:26Z INFO api-gateway [t-7454] POST /checkout 200 123ms\n#80 2026-11-30T15:53:42Z INFO order-service [t-7455] order o-8069 accepted, calling payment-svc POST /charge\n#81 2026-11-30T15:53:42Z INFO payment-svc [t-7455] POST /charge o-8069 ok 36ms\n#82 2026-11-30T15:53:42Z INFO api-gateway [t-7455] POST /checkout 200 184ms\n#83 2026-11-30T15:53:42Z INFO order-consumer processed batch of 120 messages from orders.events (lag 110ms)\n#84 2026-11-30T15:53:45Z INFO postgres checkpoint complete: wrote 667 buffers (2.0%)\n#85 2026-11-30T15:54:00Z INFO order-service [t-7457] order o-8071 accepted, calling payment-svc POST /charge\n#86 2026-11-30T15:54:00Z INFO payment-svc [t-7457] POST /charge o-8071 ok 88ms\n#87 2026-11-30T15:54:00Z INFO api-gateway [t-7457] POST /checkout 200 182ms\n#88 2026-11-30T15:54:03Z DEBUG order-service GC pause 22ms (young), heap 42%\n#89 2026-11-30T15:54:11Z WARN postgres disk usage 95% on /var/lib/postgresql/data (WAL/binlog growth 563MB/h)\n#90 2026-11-30T15:54:15Z INFO redis stats: hits=10059 misses=329 evicted=0 connected_clients=51\n#91 2026-11-30T15:54:16Z INFO order-service [t-7458] order o-8072 accepted, calling payment-svc POST /charge\n#92 2026-11-30T15:54:16Z INFO api-gateway [t-7458] POST /checkout 200 160ms\n#93 2026-11-30T15:54:19Z DEBUG api-gateway upstream health: order-service ok, payment-svc ok\n#94 2026-11-30T15:54:34Z INFO order-consumer processed batch of 54 messages from orders.events (lag 182ms)\n#95 2026-11-30T15:54:46Z INFO order-service [t-7459] order o-8074 accepted, calling payment-svc POST /charge"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "WAL",
+          "limit": 50
+        },
+        "output": "2 match(es):\n#89 2026-11-30T15:54:11Z WARN postgres disk usage 95% on /var/lib/postgresql/data (WAL/binlog growth 563MB/h)\n#128 2026-11-30T15:57:36Z WARN postgres disk usage 99% on /var/lib/postgresql/data (WAL/binlog growth 574MB/h)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 159,
+          "before": 6,
+          "after": 8
+        },
+        "output": "#153 2026-11-30T15:59:42Z INFO order-consumer processed batch of 108 messages from orders.events (lag 67ms)\n#154 2026-11-30T15:59:43Z INFO order-service [t-7491] order o-8103 accepted, calling payment-svc POST /charge\n#155 2026-11-30T15:59:44Z INFO api-gateway [t-7491] POST /checkout 200 161ms\n#156 2026-11-30T15:59:44Z DEBUG api-gateway upstream health: order-service ok, payment-svc ok\n#157 2026-11-30T16:00:04Z INFO order-service [t-7492] order o-8104 accepted, calling payment-svc POST /charge\n#158 2026-11-30T16:00:04Z INFO api-gateway [t-7492] POST /checkout 200 179ms\n#159 2026-11-30T16:00:13Z ERROR postgres could not extend file \"base/16384/20542\": No space left on device\n#160 2026-11-30T16:00:20Z ERROR api-gateway [t-7493] POST /checkout 500 20341ms: upstream order-service returned 500 Internal Server Error\n#161 2026-11-30T16:00:22Z INFO order-service [t-7495] order o-8107 accepted, calling payment-svc POST /charge\n#162 2026-11-30T16:00:22Z INFO api-gateway [t-7495] POST /checkout 200 181ms\n#163 2026-11-30T16:00:29Z INFO order-consumer processed batch of 89 messages from orders.events (lag 248ms)\n#164 2026-11-30T16:00:32Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 12\n#165 2026-11-30T16:00:53Z INFO redis stats: hits=15193 misses=574 evicted=0 connected_clients=41\n#166 2026-11-30T16:00:58Z ERROR order-service [t-7499] insert into orders failed for o-8108: could not extend file\n#167 2026-11-30T16:01:05Z INFO order-consumer processed batch of 65 messages from orders.events (lag 65ms)"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-7499"
+        },
+        "output": "1 line(s) for t-7499:\n#166 2026-11-30T16:00:58Z ERROR order-service [t-7499] insert into orders failed for o-8108: could not extend file"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.85,
+              "evidenceLines": [
+                89,
+                128,
+                159,
+                173,
+                166,
+                160
+              ],
+              "reasoning": "Origin is the postgres data volume filling up. Disk usage rose from 95% (#89, WAL/binlog growth 563MB/h) to 99% (#128, 574MB/h) before any failure. At #159 postgres failed to extend a relation file with 'No space left on device', and later extends failed too (#173). order-service inserts into orders then failed with 'could not extend file' (#166), and the gateway returned 500s with ~6-28s latency because of the upstream order-service 500s (#160). Payment charges still succeed (#161/#162 show 200s before the disk filled further), so the failure is isolated to the order write path. The gateway 5xx lines are downstream symptoms and are not cited as cause. Alternative: the WAL growth could have a specific trigger (for example a retained replication slot or a bloated table), but no slot or WAL-retention lines appear in the logs, so that cannot be confirmed from here. The other error-level lines are the same disk-full error.",
+              "rootCause2": "config_error"
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.1,
+              "evidenceLines": [
+                89,
+                128
+              ],
+              "reasoning": "Only if the WAL/binlog growth was caused by a misconfiguration (e.g. WAL retention or archiving settings) rather than normal load. The logs show steady WAL growth but no configuration lines to confirm this."
+            }
+          ],
+          "recommendedAction": "Immediately free space on the postgres data volume: check WAL/binlog retention and archiving, and remove or archive old WAL segments. Look for inactive replication slots holding WAL. Then extend the volume or set disk alerts earlier (for example at 80%). Confirm that POST /checkout 500s stop and that orders inserts succeed. Replay or reconcile orders that failed to insert between about 16:00 and 16:11 (for example o-8108, o-8111, o-8116), since their payments were already charged."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 7,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1483,
+      "cacheReadTokens": 15328,
+      "cacheWriteTokens": 7775
+    },
+    "durationMs": 8318,
+    "stopReason": "tool_use"
+  }
+}

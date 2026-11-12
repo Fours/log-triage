@@ -9,6 +9,7 @@ import { costUsd } from "../src/eval/pricing.js";
 import { renderLeaderboard, renderRunReport, type RunConfig } from "../src/eval/report.js";
 import { runEval, writeLeaderboard, type TriageFn } from "../src/eval/runner.js";
 import { calibration, percentile, scoreIncident, summarize, type IncidentScore } from "../src/eval/score.js";
+import { bootstrapMean, pairedDiff } from "../src/eval/stats.js";
 import { generateDataset } from "../src/generator/index.js";
 import { loadIncident } from "../src/tools.js";
 import { Incident, toIncidentView, type Hypothesis, type RootCauseCategory } from "../src/types.js";
@@ -158,6 +159,39 @@ check("summary: rates over all incidents, outcome counts, confusion with 'none'"
 check("summary cost is null when any run is unpriced", () => {
   const s = summarize([scoreIncident(incident, result([hyp("config_error", [3])], { model: "baseline:keywords" }))]);
   assert.equal(s.cost.totalUsd, null);
+});
+
+console.log("\nUncertainty");
+
+check("bootstrap intervals are seeded, contain the mean, and collapse when every incident agrees", () => {
+  const xs = Array.from({ length: 48 }, (_, i) => Number(i % 8 !== 0)); // 42/48 right
+  const iv = bootstrapMean(xs);
+  assert.deepEqual(bootstrapMean(xs), iv, "same seed, same interval");
+  assert.ok(iv[0] < 42 / 48 && 42 / 48 < iv[1]);
+  assert.ok(iv[1] - iv[0] > 0.1 && iv[1] - iv[0] < 0.25, `width ${iv[1] - iv[0]}`);
+  assert.deepEqual(bootstrapMean(Array(48).fill(1)), [1, 1]);
+});
+
+check("paired comparison: zero for a run against itself; pairs by incident id; flags a clear gain", () => {
+  const mk = (id: string, top1: boolean, precision: number) =>
+    ({ ...fakeScore(top1, 0.9), incidentId: id, evidence: { cited: 2, correct: 1, precision, recall: 1, f1: 0 }, costUsd: 0.01 }) as IncidentScore;
+  const a = Array.from({ length: 40 }, (_, i) => mk(`i${i}`, i % 2 === 0, 0.5));
+  const self = pairedDiff(a, a);
+  for (const d of self) assert.equal(d.diff, 0, d.metric);
+  const b = [...a].reverse().map((s) => ({ ...s, evidence: { ...s.evidence, precision: 0.9 } }));
+  const diffs = Object.fromEntries(pairedDiff(a, b).map((d) => [d.metric, d]));
+  assert.equal(diffs.top1.diff, 0, "reversed order still pairs by id");
+  assert.ok(Math.abs(diffs.evidencePrecision.diff - 0.4) < 1e-9);
+  assert.ok(diffs.evidencePrecision.significant);
+  assert.ok(!diffs.top1.significant);
+  assert.throws(() => pairedDiff(a, [mk("other", true, 1)]), /share no incidents/);
+});
+
+check("summaries carry intervals and reports print them", () => {
+  const scores = [scoreIncident(incident, result([hyp("config_error", [3, 4])])), scoreIncident(incident, result([hyp("bad_deploy", [3])]))];
+  const s = summarize(scores);
+  assert.ok(s.intervals && s.intervals.top1[0] <= 0.5 && s.intervals.top1[1] >= 0.5);
+  assert.ok(s.intervals.meanUsd);
 });
 
 console.log("\nReports and baseline");

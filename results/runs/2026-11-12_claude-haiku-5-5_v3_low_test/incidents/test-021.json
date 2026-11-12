@@ -1,0 +1,152 @@
+{
+  "score": {
+    "incidentId": "test-021",
+    "difficulty": "easy",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 3,
+      "precision": 0.5,
+      "recall": 0.75,
+      "f1": 0.6
+    },
+    "herringsCited": 0,
+    "costUsd": 0.00192795,
+    "durationMs": 9564,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 1878,
+      "cacheRead": 14595,
+      "cacheWrite": 6736
+    }
+  },
+  "result": {
+    "incidentId": "test-021",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.85,
+          "evidenceLines": [
+            68,
+            69,
+            74,
+            75,
+            84,
+            114
+          ],
+          "reasoning": "Redis restarted at 20:08:17 after node replacement with no RDB snapshot, so it started empty. Order-service cache miss ratio jumped to 95% (baseline 2%), and every checkout read fell through to postgres as SELECT * FROM orders WHERE id = $1. Postgres connections reached 491/500 with CPU at 94-98%, queries slowed to 2.5-8.3s, and order-service orders queries began timing out at 5s. The api-gateway 504s are downstream symptoms. The trigger (a cache restart) is survivable alone; the stampede onto the database turned it into the outage. Postgres vacuum and checkpoints look normal and payment-svc is healthy, so neither is the cause. The payment-svc connection reset at #33 is minor and was retried."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.3,
+          "evidenceLines": [
+            74,
+            79
+          ],
+          "reasoning": "The postgres connection pool (477-491 of 500) is near its limit and CPU is saturated. This is the saturated resource, but it was driven by the cache-miss load rather than being the origin, so it is a weaker reading of the same lines."
+        }
+      ],
+      "recommendedAction": "Restore redis cache capacity and warm it, and enable RDB persistence or a replica so restarts don't start empty. Short term, throttle or coalesce order-service reads on cache miss, and cap or raise the postgres connection pool to relieve saturation. Add an alert on cache miss ratio. Confirm that checkout 504s recover as the miss ratio returns to baseline."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "14 match(es):\n#33 2026-11-23T20:03:49Z WARN payment-svc [t-1909] card processor call failed: connection reset by peer POST https://api.cardproc.example/v1/charges, retry 1/3\n#68 2026-11-23T20:08:17Z WARN redis restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#69 2026-11-23T20:08:32Z WARN order-service redis miss ratio 95% over last 30s (baseline 2%), loading from postgres\n#74 2026-11-23T20:09:32Z WARN postgres connections 491/500 (active 382), CPU 94%\n#75 2026-11-23T20:09:32Z WARN postgres slow query 2538ms: SELECT * FROM orders WHERE id = $1\n#78 2026-11-23T20:10:19Z ERROR api-gateway [t-1932] POST /checkout 504 5571ms: upstream order-service timed out\n#79 2026-11-23T20:10:36Z WARN postgres connections 477/500 (active 422), CPU 98%\n#84 2026-11-23T20:11:52Z ERROR order-service [t-1934] query on orders timed out after 5000ms (o-8801)\n#88 2026-11-23T20:12:32Z ERROR api-gateway [t-1938] POST /checkout 504 28620ms: upstream order-service timed out\n#99 2026-11-23T20:14:31Z WARN postgres slow query 3367ms: SELECT * FROM orders WHERE id = $1\n#102 2026-11-23T20:15:06Z ERROR api-gateway [t-1947] POST /checkout 504 27929ms: upstream order-service timed out\n#108 2026-11-23T20:16:02Z ERROR order-service [t-1952] query on orders timed out after 5000ms (o-8813)\n#109 2026-11-23T20:16:25Z ERROR api-gateway [t-1953] POST /checkout 504 24124ms: upstream order-service timed out\n#114 2026-11-23T20:16:59Z WARN postgres slow query 8285ms: SELECT * FROM orders WHERE id = $1"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "postgres",
+          "limit": 50
+        },
+        "output": "13 match(es):\n#16 2026-11-23T20:01:39Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 28\n#31 2026-11-23T20:03:40Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 27\n#52 2026-11-23T20:06:06Z INFO postgres checkpoint complete: wrote 1114 buffers (7.0%)\n#63 2026-11-23T20:07:38Z INFO postgres checkpoint complete: wrote 529 buffers (1.7%)\n#73 2026-11-23T20:09:17Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 2\n#74 2026-11-23T20:09:32Z WARN postgres connections 491/500 (active 382), CPU 94%\n#75 2026-11-23T20:09:32Z WARN postgres slow query 2538ms: SELECT * FROM orders WHERE id = $1\n#79 2026-11-23T20:10:36Z WARN postgres connections 477/500 (active 422), CPU 98%\n#83 2026-11-23T20:11:17Z INFO postgres checkpoint complete: wrote 638 buffers (6.5%)\n#97 2026-11-23T20:13:51Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 35\n#99 2026-11-23T20:14:31Z WARN postgres slow query 3367ms: SELECT * FROM orders WHERE id = $1\n#110 2026-11-23T20:16:29Z INFO postgres checkpoint complete: wrote 216 buffers (2.8%)\n#114 2026-11-23T20:16:59Z WARN postgres slow query 8285ms: SELECT * FROM orders WHERE id = $1"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "redis",
+          "limit": 50
+        },
+        "output": "7 match(es):\n#11 2026-11-23T20:01:15Z INFO redis stats: hits=15941 misses=621 evicted=0 connected_clients=58\n#21 2026-11-23T20:02:42Z INFO redis stats: hits=8752 misses=250 evicted=0 connected_clients=34\n#32 2026-11-23T20:03:49Z INFO redis stats: hits=15043 misses=220 evicted=0 connected_clients=59\n#45 2026-11-23T20:05:12Z INFO redis stats: hits=14953 misses=656 evicted=0 connected_clients=31\n#55 2026-11-23T20:06:18Z INFO redis stats: hits=13280 misses=303 evicted=0 connected_clients=42\n#64 2026-11-23T20:07:41Z INFO redis stats: hits=17709 misses=321 evicted=0 connected_clients=58\n#68 2026-11-23T20:08:17Z WARN redis restarted after node replacement; no RDB snapshot found, starting with 0 keys"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 69,
+          "before": 3,
+          "after": 6
+        },
+        "output": "#66 2026-11-23T20:07:57Z INFO order-service [t-1929] order o-8798 accepted, calling payment-svc POST /charge\n#67 2026-11-23T20:07:57Z INFO api-gateway [t-1929] POST /checkout 200 129ms\n#68 2026-11-23T20:08:17Z WARN redis restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#69 2026-11-23T20:08:32Z WARN order-service redis miss ratio 95% over last 30s (baseline 2%), loading from postgres\n#70 2026-11-23T20:08:32Z INFO order-consumer processed batch of 37 messages from orders.events (lag 97ms)\n#71 2026-11-23T20:08:55Z DEBUG payment-svc GC pause 7ms (young), heap 34%\n#72 2026-11-23T20:09:13Z INFO order-consumer processed batch of 37 messages from orders.events (lag 344ms)\n#73 2026-11-23T20:09:17Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 2\n#74 2026-11-23T20:09:32Z WARN postgres connections 491/500 (active 382), CPU 94%\n#75 2026-11-23T20:09:32Z WARN postgres slow query 2538ms: SELECT * FROM orders WHERE id = $1"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"cascading_failure\",\"confidence\":0.85,\"evidenceLines\":[68,69,74,75,84,114],\"reasoning\":\"Redis restarted at 20:08:17 after node replacement with no RDB snapshot, starting empty. Order-service cache miss ratio jumped to 95% (baseline 2%) and every checkout read fell through to postgres as SELECT * FROM orders WHERE id = $1. Postgres connections hit 491/500 with CPU at 94-98%, queries slowed to 2.5-8.3s, and order-service's orders queries began timing out at 5s. api-gateway 504s (upstream order-service timeouts) are downstream symptoms. The trigger (a cache restart) is survivable alone; the stampede onto the database turned it into the outage. Postgres vacuum and checkpoints look normal and payment-svc is healthy, so they are not the cause. Payment-svc connection resets at #33 are minor and retried.\",\"}, {\"rootCause\":\"resource_exhaustion\",\"confidence\":0.3,\"evidenceLines\":[74,79],\"reasoning\":\"Postgres connection pool (477-491 of 500) is near its limit and CPU is saturated. This is the saturated resource, but it was driven by the cache-miss load rather than being the origin, so it is a weaker reading of the same lines.\"}]",
+          "recommendedAction": "Restore redis cache capacity and warm it (or enable RDB persistence / replica for redis so restarts don't start empty). Short term, throttle or request-coalesce order-service reads on cache miss and raise or cap the postgres connection pool to relieve saturation. Add a cache-miss-ratio alert. Confirm that checkout 504s recover as the miss ratio returns to baseline."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.85,
+              "evidenceLines": [
+                68,
+                69,
+                74,
+                75,
+                84,
+                114
+              ],
+              "reasoning": "Redis restarted at 20:08:17 after node replacement with no RDB snapshot, so it started empty. Order-service cache miss ratio jumped to 95% (baseline 2%), and every checkout read fell through to postgres as SELECT * FROM orders WHERE id = $1. Postgres connections reached 491/500 with CPU at 94-98%, queries slowed to 2.5-8.3s, and order-service orders queries began timing out at 5s. The api-gateway 504s are downstream symptoms. The trigger (a cache restart) is survivable alone; the stampede onto the database turned it into the outage. Postgres vacuum and checkpoints look normal and payment-svc is healthy, so neither is the cause. The payment-svc connection reset at #33 is minor and was retried."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.3,
+              "evidenceLines": [
+                74,
+                79
+              ],
+              "reasoning": "The postgres connection pool (477-491 of 500) is near its limit and CPU is saturated. This is the saturated resource, but it was driven by the cache-miss load rather than being the origin, so it is a weaker reading of the same lines."
+            }
+          ],
+          "recommendedAction": "Restore redis cache capacity and warm it, and enable RDB persistence or a replica so restarts don't start empty. Short term, throttle or coalesce order-service reads on cache miss, and cap or raise the postgres connection pool to relieve saturation. Add an alert on cache miss ratio. Confirm that checkout 504s recover as the miss ratio returns to baseline."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1878,
+      "cacheReadTokens": 14595,
+      "cacheWriteTokens": 6736
+    },
+    "durationMs": 9564,
+    "stopReason": "tool_use"
+  }
+}

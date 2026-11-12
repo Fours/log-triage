@@ -1,0 +1,160 @@
+{
+  "score": {
+    "incidentId": "test-038",
+    "difficulty": "easy",
+    "scenario": "external_outage/provider-5xx",
+    "truth": "external_outage",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 5,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.002025425,
+    "durationMs": 9162,
+    "iterations": 4,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 10,
+      "output": 1718,
+      "cacheRead": 15355,
+      "cacheWrite": 8095
+    }
+  },
+  "result": {
+    "incidentId": "test-038",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.85,
+          "evidenceLines": [
+            94,
+            98,
+            101,
+            104,
+            144
+          ],
+          "reasoning": "Root cause is the third-party translation API (api.translate.example) returning 502/503 from 08:46:36Z. catalog-svc calls it during GET /products/batch, its failure rate hit 87% over 20 calls, and the circuit breaker opened at 08:48:14Z. The half-open probe at 08:55:10Z failed with 502, so the dependency is still down. The failures are fast error responses, not hangs, which points to the dependency reporting itself down rather than timing out. Before 08:46 catalog-svc calls to /products/batch all succeeded (lines 6-86), and catalog-db, redis and index-worker show no errors, so nothing upstream of the translation call is faulty. The gateway 503s (lines 105, 124, 128, 148) and the search-api circuit-open errors (lines 107, 134) are downstream symptoms of catalog-svc failing fast, and I did not cite them as origin evidence. The translation call itself is the only path that fails in catalog-svc."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.1,
+          "evidenceLines": [
+            94,
+            98,
+            101
+          ],
+          "reasoning": "Alternative reading: the translation calls could be timing out at the provider and surfacing as 502/503. The logs show explicit gateway status codes rather than timeouts, and no latency or timeout lines were found for the calls, so this is less likely."
+        }
+      ],
+      "recommendedAction": "Escalate to the translation API provider (api.translate.example) and check their status page. In the meantime, configure catalog-svc to degrade gracefully when translation is unavailable (return untranslated results instead of failing /products/batch), and shorten the breaker half-open interval. Confirm the breaker closes and the /search 503 rate returns to baseline once the provider recovers."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "11 match(es):\n#94 2026-11-19T08:46:36Z ERROR catalog-svc [t-2705] translation API returned 502 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id ef5323e)\n#98 2026-11-19T08:47:09Z ERROR catalog-svc [t-2710] translation API returned 503 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id 0fde73d)\n#101 2026-11-19T08:47:42Z ERROR catalog-svc [t-2712] translation API returned 503 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id a32af0c)\n#104 2026-11-19T08:48:14Z WARN catalog-svc circuit breaker OPEN for api.translate.example (failure rate 87% over 20 calls), failing fast for 30s\n#105 2026-11-19T08:48:21Z ERROR web-bff [t-2713] GET /search 503 17956ms: upstream search-api returned 503 Service Unavailable\n#107 2026-11-19T08:48:24Z ERROR search-api [t-2714] CatalogClient.getBatch failed: catalog-svc returned 503 (circuit open)\n#124 2026-11-19T08:51:17Z ERROR web-bff [t-2722] GET /search 503 29361ms: upstream search-api returned 503 Service Unavailable\n#128 2026-11-19T08:52:12Z ERROR web-bff [t-2726] GET /search 503 20486ms: upstream search-api returned 503 Service Unavailable\n#134 2026-11-19T08:53:49Z ERROR search-api [t-2729] CatalogClient.getBatch failed: catalog-svc returned 503 (circuit open)\n#144 2026-11-19T08:55:10Z WARN catalog-svc circuit breaker half-open probe to api.translate.example failed: 502, re-opening\n#148 2026-11-19T08:56:24Z ERROR web-bff [t-2732] GET /search 503 26017ms: upstream search-api returned 503 Service Unavailable"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-db",
+          "limit": 50
+        },
+        "output": "11 match(es):\n#18 2026-11-19T08:37:34Z INFO catalog-db checkpoint complete: wrote 419 buffers (7.7%)\n#33 2026-11-19T08:39:20Z INFO catalog-db checkpoint complete: wrote 295 buffers (6.1%)\n#51 2026-11-19T08:41:35Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 7\n#66 2026-11-19T08:43:37Z INFO catalog-db checkpoint complete: wrote 382 buffers (5.7%)\n#83 2026-11-19T08:45:35Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 3\n#100 2026-11-19T08:47:34Z INFO catalog-db checkpoint complete: wrote 643 buffers (7.4%)\n#117 2026-11-19T08:49:23Z INFO catalog-db checkpoint complete: wrote 971 buffers (2.5%)\n#123 2026-11-19T08:51:14Z INFO catalog-db checkpoint complete: wrote 1253 buffers (3.6%)\n#131 2026-11-19T08:52:50Z INFO catalog-db checkpoint complete: wrote 492 buffers (6.6%)\n#141 2026-11-19T08:54:37Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 4\n#147 2026-11-19T08:56:21Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 26"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-svc",
+          "limit": 50
+        },
+        "output": "27 match(es):\n#3 2026-11-19T08:35:42Z DEBUG catalog-svc GC pause 24ms (young), heap 29%\n#6 2026-11-19T08:35:58Z INFO catalog-svc [t-2661] GET /products/batch p-3971 ok 81ms\n#13 2026-11-19T08:36:44Z INFO catalog-svc [t-2664] GET /products/batch p-3973 ok 65ms\n#22 2026-11-19T08:38:02Z DEBUG catalog-svc GC pause 18ms (young), heap 40%\n#25 2026-11-19T08:38:28Z INFO catalog-svc [t-2672] GET /products/batch p-3980 ok 23ms\n#30 2026-11-19T08:39:07Z INFO catalog-svc [t-2676] GET /products/batch p-3982 ok 30ms\n#37 2026-11-19T08:39:52Z INFO catalog-svc [t-2677] GET /products/batch p-3985 ok 54ms\n#39 2026-11-19T08:40:02Z DEBUG catalog-svc GC pause 16ms (young), heap 39%\n#48 2026-11-19T08:41:25Z INFO catalog-svc [t-2684] GET /products/batch p-3989 ok 42ms\n#54 2026-11-19T08:41:57Z INFO catalog-svc [t-2687] GET /products/batch p-3991 ok 46ms\n#63 2026-11-19T08:43:21Z DEBUG catalog-svc GC pause 11ms (young), heap 34%\n#68 2026-11-19T08:43:38Z INFO catalog-svc [t-2693] GET /products/batch p-3994 ok 30ms\n#71 2026-11-19T08:44:12Z INFO catalog-svc [t-2695] GET /products/batch p-3997 ok 34ms\n#80 2026-11-19T08:45:00Z INFO catalog-svc [t-2700] GET /products/batch p-4001 ok 74ms\n#86 2026-11-19T08:45:46Z INFO catalog-svc [t-2701] GET /products/batch p-4002 ok 57ms\n#91 2026-11-19T08:46:17Z DEBUG catalog-svc GC pause 10ms (young), heap 45%\n#94 2026-11-19T08:46:36Z ERROR catalog-svc [t-2705] translation API returned 502 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id ef5323e)\n#98 2026-11-19T08:47:09Z ERROR catalog-svc [t-2710] translation API returned 503 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id 0fde73d)\n#101 2026-11-19T08:47:42Z ERROR catalog-svc [t-2712] translation API returned 503 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id a32af0c)\n#104 2026-11-19T08:48:14Z WARN catalog-svc circuit breaker OPEN for api.translate.example (failure rate 87% over 20 calls), failing fast for 30s\n#110 2026-11-19T08:48:48Z INFO catalog-svc [t-2716] GET /products/batch p-4007 ok 56ms\n#112 2026-11-19T08:48:53Z DEBUG catalog-svc GC pause 7ms (young), heap 43%\n#115 2026-11-19T08:49:17Z INFO catalog-svc [t-2718] GET /products/batch p-4009 ok 30ms\n#126 2026-11-19T08:51:53Z DEBUG catalog-svc GC pause 24ms (young), heap 37%\n#138 2026-11-19T08:54:18Z INFO catalog-svc [t-2730] GET /products/batch p-4010 ok 84ms\n#142 2026-11-19T08:54:49Z DEBUG catalog-svc GC pause 8ms (young), heap 40%\n#144 2026-11-19T08:55:10Z WARN catalog-svc circuit breaker half-open probe to api.translate.example failed: 502, re-opening"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 94,
+          "before": 12,
+          "after": 3
+        },
+        "output": "#82 2026-11-19T08:45:12Z DEBUG web-bff upstream health: search-api ok, catalog-svc ok\n#83 2026-11-19T08:45:35Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 3\n#84 2026-11-19T08:45:40Z INFO index-worker processed batch of 98 messages from catalog.updates (lag 286ms)\n#85 2026-11-19T08:45:46Z INFO search-api [t-2701] product p-4002 accepted, calling catalog-svc GET /products/batch\n#86 2026-11-19T08:45:46Z INFO catalog-svc [t-2701] GET /products/batch p-4002 ok 57ms\n#87 2026-11-19T08:45:46Z INFO web-bff [t-2701] GET /search 200 98ms\n#88 2026-11-19T08:45:47Z INFO redis-cache stats: hits=13440 misses=283 evicted=0 connected_clients=51\n#89 2026-11-19T08:46:14Z INFO search-api [t-2704] product p-4005 accepted, calling catalog-svc GET /products/batch\n#90 2026-11-19T08:46:14Z INFO web-bff [t-2704] GET /search 200 101ms\n#91 2026-11-19T08:46:17Z DEBUG catalog-svc GC pause 10ms (young), heap 45%\n#92 2026-11-19T08:46:19Z DEBUG search-api GC pause 21ms (young), heap 41%\n#93 2026-11-19T08:46:21Z INFO index-worker processed batch of 71 messages from catalog.updates (lag 225ms)\n#94 2026-11-19T08:46:36Z ERROR catalog-svc [t-2705] translation API returned 502 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id ef5323e)\n#95 2026-11-19T08:46:59Z INFO search-api [t-2707] product p-4006 accepted, calling catalog-svc GET /products/batch\n#96 2026-11-19T08:47:00Z INFO web-bff [t-2707] GET /search 200 92ms\n#97 2026-11-19T08:47:07Z INFO redis-cache stats: hits=9632 misses=597 evicted=0 connected_clients=46"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "translat",
+          "limit": 50
+        },
+        "output": "5 match(es):\n#94 2026-11-19T08:46:36Z ERROR catalog-svc [t-2705] translation API returned 502 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id ef5323e)\n#98 2026-11-19T08:47:09Z ERROR catalog-svc [t-2710] translation API returned 503 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id 0fde73d)\n#101 2026-11-19T08:47:42Z ERROR catalog-svc [t-2712] translation API returned 503 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id a32af0c)\n#104 2026-11-19T08:48:14Z WARN catalog-svc circuit breaker OPEN for api.translate.example (failure rate 87% over 20 calls), failing fast for 30s\n#144 2026-11-19T08:55:10Z WARN catalog-svc circuit breaker half-open probe to api.translate.example failed: 502, re-opening"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-2705"
+        },
+        "output": "1 line(s) for t-2705:\n#94 2026-11-19T08:46:36Z ERROR catalog-svc [t-2705] translation API returned 502 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id ef5323e)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.85,
+              "evidenceLines": [
+                94,
+                98,
+                101,
+                104,
+                144
+              ],
+              "reasoning": "Root cause is the third-party translation API (api.translate.example) returning 502/503 from 08:46:36Z. catalog-svc calls it during GET /products/batch, its failure rate hit 87% over 20 calls, and the circuit breaker opened at 08:48:14Z. The half-open probe at 08:55:10Z failed with 502, so the dependency is still down. The failures are fast error responses, not hangs, which points to the dependency reporting itself down rather than timing out. Before 08:46 catalog-svc calls to /products/batch all succeeded (lines 6-86), and catalog-db, redis and index-worker show no errors, so nothing upstream of the translation call is faulty. The gateway 503s (lines 105, 124, 128, 148) and the search-api circuit-open errors (lines 107, 134) are downstream symptoms of catalog-svc failing fast, and I did not cite them as origin evidence. The translation call itself is the only path that fails in catalog-svc.",
+              "recommendedAction": "Escalate to the translation API provider and check their status page. Meanwhile, make catalog-svc's /products/batch path tolerate translation failure: skip or fall back to untranslated results when the breaker is open, instead of failing the request. Consider a shorter breaker half-open interval and alerting on translate-API error rate. Once translation recovers, confirm the breaker closes and /search 503 rate returns to baseline."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.1,
+              "evidenceLines": [
+                94,
+                98,
+                101
+              ],
+              "reasoning": "Alternative reading: the translation calls could be timing out at the provider and surfacing as 502/503. The logs show explicit gateway status codes rather than timeouts, and no latency or timeout lines were found for the calls, so this is less likely.",
+              "rootCause_note": "low"
+            }
+          ],
+          "recommendedAction": "Escalate to the translation API provider (api.translate.example) and check their status page. In the meantime, configure catalog-svc to degrade gracefully when translation is unavailable (return untranslated results instead of failing /products/batch), and shorten the breaker half-open interval. Confirm the breaker closes and the /search 503 rate returns to baseline once the provider recovers."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1718,
+      "cacheReadTokens": 15355,
+      "cacheWriteTokens": 8095
+    },
+    "durationMs": 9162,
+    "stopReason": "tool_use"
+  }
+}

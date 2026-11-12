@@ -1,0 +1,199 @@
+{
+  "score": {
+    "incidentId": "test-016",
+    "difficulty": "medium",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.72,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 10,
+      "correct": 8,
+      "precision": 0.8,
+      "recall": 0.8888888888888888,
+      "f1": 0.8421052631578948
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0037296599999999997,
+    "durationMs": 13984,
+    "iterations": 6,
+    "toolCalls": 10,
+    "tokens": {
+      "input": 14,
+      "output": 2503,
+      "cacheRead": 47426,
+      "cacheWrite": 16020
+    }
+  },
+  "result": {
+    "incidentId": "test-016",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.72,
+          "evidenceLines": [
+            189,
+            196,
+            200,
+            204,
+            209,
+            201,
+            215,
+            217,
+            208,
+            225
+          ],
+          "reasoning": "The trigger is small: auth-svc-3 failed its liveness probe and restarted at 05:22:50 (#189), dropping capacity to 3/4, and it was ready again at 05:23:38 (#197). Nothing in the logs explains the probe failure, and auth-svc's GC pauses were normal, so the trigger alone was survivable. The damage came from amplification. account-svc retried AuthClient.issueToken immediately with backoff disabled (#196, #200, #204, #209). Those retries pushed auth-svc inbound load to 3.2x, 4.1x and 5.0x baseline (inflight 487 to 825, #201, #215, #217), and auth-svc then shed load with 503 'queue full' (#208, #225). Because the retry loop never backed off, the overload kept going after the instance recovered, which explains 'not recovering'. The edge 503s (#203, #218, #231, #244, #250, #269, #278) are downstream symptoms. accounts-db's slow audit_log scan (#38) and the vacuums are unrelated: account-svc and accounts-db logged no errors, and the session-cache and audit-consumer are healthy."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.2,
+          "evidenceLines": [
+            189,
+            192,
+            208
+          ],
+          "reasoning": "Alternative reading: auth-svc-3 may have exhausted a resource (memory or threads, given the inflight climb) and crashed, and the instance is the origin rather than the retry loop. The logs do not show this. GC pauses stayed around 4-25ms with heap at 28-45%, so there is no memory exhaustion signal. This stays a low-confidence alternative."
+        }
+      ],
+      "recommendedAction": "Enable exponential backoff with jitter and a retry budget in account-svc's AuthClient.issueToken, and cap concurrent retries, so a brief auth-svc instance loss does not turn into sustained overload. Short term, reduce auth-svc inbound load from account-svc (or temporarily disable the immediate retries) to let auth-svc drain its queue and recover. Separately, find out why auth-svc-3's liveness probe failed at 05:22:50, since the logs give no reason, and check the probe timeout against the load at that time."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "21 match(es):\n#38 2026-10-23T05:09:16Z WARN accounts-db slow query 1552ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#189 2026-10-23T05:22:50Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4\n#196 2026-10-23T05:23:27Z WARN account-svc [t-1650] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#200 2026-10-23T05:24:10Z WARN account-svc [t-1654] AuthClient.issueToken got 503, retrying immediately (attempt 3/4, backoff disabled)\n#201 2026-10-23T05:24:31Z WARN auth-svc inbound request rate 3.2x baseline (inflight 487), shedding load with 503\n#203 2026-10-23T05:24:37Z ERROR edge-proxy [t-1656] POST /login 503 5447ms: upstream account-svc returned 503 (retries exhausted)\n#204 2026-10-23T05:24:59Z WARN account-svc [t-1657] AuthClient.issueToken got 503, retrying immediately (attempt 4/4, backoff disabled)\n#208 2026-10-23T05:25:32Z ERROR auth-svc [t-1658] load shed: rejected POST /tokens with 503 (queue full)\n#209 2026-10-23T05:25:36Z WARN account-svc [t-1662] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#215 2026-10-23T05:26:12Z WARN auth-svc inbound request rate 4.1x baseline (inflight 663), shedding load with 503\n#217 2026-10-23T05:26:29Z WARN auth-svc inbound request rate 5.0x baseline (inflight 825), shedding load with 503\n#218 2026-10-23T05:26:33Z ERROR edge-proxy [t-1666] POST /login 503 14651ms: upstream account-svc returned 503 (retries exhausted)\n#225 2026-10-23T05:27:09Z ERROR auth-svc [t-1669] load shed: rejected POST /tokens with 503 (queue full)\n#231 2026-10-23T05:27:25Z ERROR edge-proxy [t-1679] POST /login 503 20202ms: upstream account-svc returned 503 (retries exhausted)\n#242 2026-10-23T05:28:59Z ERROR auth-svc [t-1683] load shed: rejected POST /tokens with 503 (queue full)\n#244 2026-10-23T05:29:07Z ERROR edge-proxy [t-1687] POST /login 503 16855ms: upstream account-svc returned 503 (retries exhausted)\n#250 2026-10-23T05:31:01Z ERROR edge-proxy [t-1690] POST /login 503 15375ms: upstream account-svc returned 503 (retries exhausted)\n#259 2026-10-23T05:32:30Z ERROR auth-svc [t-1693] load shed: rejected POST /tokens with 503 (queue full)\n#269 2026-10-23T05:33:54Z ERROR edge-proxy [t-1701] POST /login 503 25890ms: upstream account-svc returned 503 (retries exhausted)\n#270 2026-10-23T05:34:07Z ERROR auth-svc [t-1705] load shed: rejected POST /tokens with 503 (queue full)\n#278 2026-10-23T05:35:42Z ERROR edge-proxy [t-1707] POST /login 503 8267ms: upstream account-svc returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "list_services",
+        "input": {},
+        "output": "window 2026-10-23T05:06:05Z .. 2026-10-23T05:35:46Z, 279 lines total\n- edge-proxy: 70 lines, 7 error+ (2026-10-23T05:06:05Z .. 2026-10-23T05:35:42Z)\n- auth-svc: 52 lines, 5 error+ (2026-10-23T05:06:05Z .. 2026-10-23T05:34:50Z)\n- account-svc: 74 lines, 0 error+ (2026-10-23T05:06:05Z .. 2026-10-23T05:34:26Z)\n- audit-consumer: 44 lines, 0 error+ (2026-10-23T05:06:36Z .. 2026-10-23T05:35:46Z)\n- session-cache: 23 lines, 0 error+ (2026-10-23T05:07:26Z .. 2026-10-23T05:35:27Z)\n- accounts-db: 16 lines, 0 error+ (2026-10-23T05:07:17Z .. 2026-10-23T05:35:11Z)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "limit": 60
+        },
+        "output": "52 match(es):\n#2 2026-10-23T05:06:05Z INFO auth-svc [t-1528] POST /tokens u-3590 ok 30ms\n#5 2026-10-23T05:06:20Z INFO auth-svc [t-1532] POST /tokens u-3592 ok 86ms\n#9 2026-10-23T05:06:40Z DEBUG auth-svc GC pause 18ms (young), heap 36%\n#11 2026-10-23T05:06:42Z INFO auth-svc [t-1534] POST /tokens u-3593 ok 76ms\n#14 2026-10-23T05:06:58Z INFO auth-svc [t-1536] POST /tokens u-3594 ok 26ms\n#19 2026-10-23T05:07:19Z INFO auth-svc [t-1537] POST /tokens u-3595 ok 33ms\n#23 2026-10-23T05:07:48Z INFO auth-svc [t-1540] POST /tokens u-3597 ok 87ms\n#28 2026-10-23T05:08:22Z DEBUG auth-svc GC pause 16ms (young), heap 45%\n#31 2026-10-23T05:08:29Z INFO auth-svc [t-1545] POST /tokens u-3600 ok 31ms\n#47 2026-10-23T05:10:00Z INFO auth-svc [t-1559] POST /tokens u-3608 ok 51ms\n#49 2026-10-23T05:10:02Z DEBUG auth-svc GC pause 11ms (young), heap 43%\n#65 2026-10-23T05:11:46Z INFO auth-svc [t-1570] POST /tokens u-3618 ok 49ms\n#67 2026-10-23T05:11:56Z DEBUG auth-svc GC pause 21ms (young), heap 41%\n#77 2026-10-23T05:12:55Z INFO auth-svc [t-1576] POST /tokens u-3624 ok 64ms\n#88 2026-10-23T05:13:49Z INFO auth-svc [t-1585] POST /tokens u-3628 ok 80ms\n#91 2026-10-23T05:14:09Z INFO auth-svc [t-1587] POST /tokens u-3631 ok 68ms\n#103 2026-10-23T05:15:01Z DEBUG auth-svc GC pause 9ms (young), heap 41%\n#110 2026-10-23T05:15:33Z INFO auth-svc [t-1602] POST /tokens u-3640 ok 57ms\n#119 2026-10-23T05:16:25Z INFO auth-svc [t-1606] POST /tokens u-3645 ok 53ms\n#126 2026-10-23T05:17:09Z INFO auth-svc [t-1612] POST /tokens u-3650 ok 83ms\n#132 2026-10-23T05:17:28Z DEBUG auth-svc GC pause 16ms (young), heap 45%\n#137 2026-10-23T05:18:03Z INFO auth-svc [t-1617] POST /tokens u-3659 ok 25ms\n#145 2026-10-23T05:18:48Z INFO auth-svc [t-1619] POST /tokens u-3664 ok 68ms\n#149 2026-10-23T05:19:14Z INFO auth-svc [t-1621] POST /tokens u-3667 ok 83ms\n#154 2026-10-23T05:19:34Z INFO auth-svc [t-1622] POST /tokens u-3669 ok 46ms\n#156 2026-10-23T05:19:43Z DEBUG auth-svc GC pause 4ms (young), heap 45%\n#159 2026-10-23T05:19:52Z INFO auth-svc [t-1624] POST /tokens u-3670 ok 76ms\n#163 2026-10-23T05:20:12Z INFO auth-svc [t-1627] POST /tokens u-3673 ok 49ms\n#180 2026-10-23T05:22:10Z INFO auth-svc [t-1638] POST /tokens u-3681 ok 76ms\n#187 2026-10-23T05:22:42Z INFO auth-svc [t-1642] POST /tokens u-3686 ok 32ms\n#189 2026-10-23T05:22:50Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4\n#192 2026-10-23T05:22:58Z DEBUG auth-svc GC pause 25ms (young), heap 28%\n#197 2026-10-23T05:23:38Z INFO auth-svc instance auth-svc-3 ready, capacity 4/4\n#201 2026-10-23T05:24:31Z WARN auth-svc inbound request rate 3.2x baseline (inflight 487), shedding load with 503\n#205 2026-10-23T05:25:07Z DEBUG auth-svc GC pause 13ms (young), heap 31%\n#208 2026-10-23T05:25:32Z ERROR auth-svc [t-1658] load shed: rejected POST /tokens with 503 (queue full)\n#211 2026-10-23T05:25:44Z INFO auth-svc [t-1665] POST /tokens u-3690 ok 43ms\n#215 2026-10-23T05:26:12Z WARN auth-svc inbound request rate 4.1x baseline (inflight 663), shedding load with 503\n#217 2026-10-23T05:26:29Z WARN auth-svc inbound request rate 5.0x baseline (inflight 825), shedding load with 503\n#220 2026-10-23T05:26:42Z INFO auth-svc [t-1667] POST /tokens u-3693 ok 40ms\n#224 2026-10-23T05:26:56Z DEBUG auth-svc GC pause 23ms (young), heap 35%\n#225 2026-10-23T05:27:09Z ERROR auth-svc [t-1669] load shed: rejected POST /tokens with 503 (queue full)\n#229 2026-10-23T05:27:24Z INFO auth-svc [t-1675] POST /tokens u-3699 ok 35ms\n#235 2026-10-23T05:27:45Z INFO auth-svc [t-1682] POST /tokens u-3701 ok 81ms\n#239 2026-10-23T05:28:53Z DEBUG auth-svc GC pause 7ms (young), heap 40%\n#242 2026-10-23T05:28:59Z ERROR auth-svc [t-1683] load shed: rejected POST /tokens with 503 (queue full)\n#252 2026-10-23T05:31:05Z INFO auth-svc [t-1692] POST /tokens u-3703 ok 48ms\n#256 2026-10-23T05:31:40Z DEBUG auth-svc GC pause 20ms (young), heap 40%\n#259 2026-10-23T05:32:30Z ERROR auth-svc [t-1693] load shed: rejected POST /tokens with 503 (queue full)\n#262 2026-10-23T05:32:55Z INFO auth-svc [t-1695] POST /tokens u-3705 ok 45ms\n#270 2026-10-23T05:34:07Z ERROR auth-svc [t-1705] load shed: rejected POST /tokens with 503 (queue full)\n#274 2026-10-23T05:34:50Z DEBUG auth-svc GC pause 6ms (young), heap 31%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "accounts-db",
+          "limit": 30
+        },
+        "output": "16 match(es):\n#17 2026-10-23T05:07:17Z INFO accounts-db checkpoint complete: wrote 271 buffers (5.6%)\n#34 2026-10-23T05:08:55Z INFO accounts-db checkpoint complete: wrote 541 buffers (1.7%)\n#38 2026-10-23T05:09:16Z WARN accounts-db slow query 1552ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#59 2026-10-23T05:11:05Z INFO accounts-db checkpoint complete: wrote 338 buffers (7.9%)\n#79 2026-10-23T05:13:03Z INFO accounts-db checkpoint complete: wrote 213 buffers (1.9%)\n#108 2026-10-23T05:15:29Z INFO accounts-db checkpoint complete: wrote 1046 buffers (1.3%)\n#128 2026-10-23T05:17:13Z INFO accounts-db checkpoint complete: wrote 1381 buffers (4.6%)\n#151 2026-10-23T05:19:15Z INFO accounts-db checkpoint complete: wrote 1055 buffers (6.6%)\n#176 2026-10-23T05:21:37Z INFO accounts-db checkpoint complete: wrote 337 buffers (6.1%)\n#194 2026-10-23T05:23:23Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 7\n#213 2026-10-23T05:25:52Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 23\n#233 2026-10-23T05:27:41Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 40\n#245 2026-10-23T05:29:15Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 0\n#249 2026-10-23T05:30:48Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 15\n#264 2026-10-23T05:33:00Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 30\n#276 2026-10-23T05:35:11Z INFO accounts-db checkpoint complete: wrote 1349 buffers (8.0%)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 189,
+          "before": 12,
+          "after": 12
+        },
+        "output": "#177 2026-10-23T05:21:53Z INFO account-svc [t-1636] user u-3680 accepted, calling auth-svc POST /tokens\n#178 2026-10-23T05:21:53Z INFO edge-proxy [t-1636] POST /login 200 155ms\n#179 2026-10-23T05:22:10Z INFO account-svc [t-1638] user u-3681 accepted, calling auth-svc POST /tokens\n#180 2026-10-23T05:22:10Z INFO auth-svc [t-1638] POST /tokens u-3681 ok 76ms\n#181 2026-10-23T05:22:10Z INFO edge-proxy [t-1638] POST /login 200 137ms\n#182 2026-10-23T05:22:19Z INFO audit-consumer processed batch of 56 messages from audit.events (lag 196ms)\n#183 2026-10-23T05:22:31Z INFO account-svc [t-1641] user u-3684 accepted, calling auth-svc POST /tokens\n#184 2026-10-23T05:22:31Z INFO edge-proxy [t-1641] POST /login 200 146ms\n#185 2026-10-23T05:22:36Z INFO session-cache stats: hits=14616 misses=574 evicted=0 connected_clients=39\n#186 2026-10-23T05:22:42Z INFO account-svc [t-1642] user u-3686 accepted, calling auth-svc POST /tokens\n#187 2026-10-23T05:22:42Z INFO auth-svc [t-1642] POST /tokens u-3686 ok 32ms\n#188 2026-10-23T05:22:42Z INFO edge-proxy [t-1642] POST /login 200 138ms\n#189 2026-10-23T05:22:50Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4\n#190 2026-10-23T05:22:57Z INFO account-svc [t-1646] user u-3687 accepted, calling auth-svc POST /tokens\n#191 2026-10-23T05:22:58Z INFO edge-proxy [t-1646] POST /login 200 78ms\n#192 2026-10-23T05:22:58Z DEBUG auth-svc GC pause 25ms (young), heap 28%\n#193 2026-10-23T05:23:09Z INFO audit-consumer processed batch of 28 messages from audit.events (lag 141ms)\n#194 2026-10-23T05:23:23Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 7\n#195 2026-10-23T05:23:24Z DEBUG account-svc GC pause 15ms (young), heap 47%\n#196 2026-10-23T05:23:27Z WARN account-svc [t-1650] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#197 2026-10-23T05:23:38Z INFO auth-svc instance auth-svc-3 ready, capacity 4/4\n#198 2026-10-23T05:23:57Z INFO session-cache stats: hits=9084 misses=221 evicted=0 connected_clients=43\n#199 2026-10-23T05:24:00Z INFO audit-consumer processed batch of 116 messages from audit.events (lag 65ms)\n#200 2026-10-23T05:24:10Z WARN account-svc [t-1654] AuthClient.issueToken got 503, retrying immediately (attempt 3/4, backoff disabled)\n#201 2026-10-23T05:24:31Z WARN auth-svc inbound request rate 3.2x baseline (inflight 487), shedding load with 503"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "account-svc",
+          "limit": 80
+        },
+        "output": "74 match(es):\n#1 2026-10-23T05:06:05Z INFO account-svc [t-1528] user u-3590 accepted, calling auth-svc POST /tokens\n#4 2026-10-23T05:06:20Z INFO account-svc [t-1532] user u-3592 accepted, calling auth-svc POST /tokens\n#8 2026-10-23T05:06:36Z DEBUG account-svc GC pause 6ms (young), heap 45%\n#10 2026-10-23T05:06:42Z INFO account-svc [t-1534] user u-3593 accepted, calling auth-svc POST /tokens\n#13 2026-10-23T05:06:57Z INFO account-svc [t-1536] user u-3594 accepted, calling auth-svc POST /tokens\n#18 2026-10-23T05:07:19Z INFO account-svc [t-1537] user u-3595 accepted, calling auth-svc POST /tokens\n#22 2026-10-23T05:07:48Z INFO account-svc [t-1540] user u-3597 accepted, calling auth-svc POST /tokens\n#26 2026-10-23T05:08:09Z INFO account-svc [t-1541] user u-3598 accepted, calling auth-svc POST /tokens\n#30 2026-10-23T05:08:29Z INFO account-svc [t-1545] user u-3600 accepted, calling auth-svc POST /tokens\n#35 2026-10-23T05:08:56Z INFO account-svc [t-1549] user u-3602 accepted, calling auth-svc POST /tokens\n#37 2026-10-23T05:09:03Z DEBUG account-svc GC pause 24ms (young), heap 42%\n#40 2026-10-23T05:09:23Z INFO account-svc [t-1552] user u-3603 accepted, calling auth-svc POST /tokens\n#43 2026-10-23T05:09:49Z INFO account-svc [t-1555] user u-3606 accepted, calling auth-svc POST /tokens\n#46 2026-10-23T05:09:59Z INFO account-svc [t-1559] user u-3608 accepted, calling auth-svc POST /tokens\n#51 2026-10-23T05:10:14Z INFO account-svc [t-1561] user u-3609 accepted, calling auth-svc POST /tokens\n#53 2026-10-23T05:10:36Z INFO account-svc [t-1565] user u-3612 accepted, calling auth-svc POST /tokens\n#56 2026-10-23T05:10:56Z INFO account-svc [t-1566] user u-3614 accepted, calling auth-svc POST /tokens\n#58 2026-10-23T05:10:59Z DEBUG account-svc GC pause 10ms (young), heap 39%\n#62 2026-10-23T05:11:25Z INFO account-svc [t-1568] user u-3615 accepted, calling auth-svc POST /tokens\n#64 2026-10-23T05:11:46Z INFO account-svc [t-1570] user u-3618 accepted, calling auth-svc POST /tokens\n#69 2026-10-23T05:12:13Z INFO account-svc [t-1571] user u-3620 accepted, calling auth-svc POST /tokens\n#72 2026-10-23T05:12:28Z INFO account-svc [t-1573] user u-3623 accepted, calling auth-svc POST /tokens\n#76 2026-10-23T05:12:55Z INFO account-svc [t-1576] user u-3624 accepted, calling auth-svc POST /tokens\n#80 2026-10-23T05:13:06Z INFO account-svc [t-1580] user u-3625 accepted, calling auth-svc POST /tokens\n#82 2026-10-23T05:13:10Z DEBUG account-svc GC pause 24ms (young), heap 31%\n#84 2026-10-23T05:13:35Z INFO account-svc [t-1581] user u-3626 accepted, calling auth-svc POST /tokens\n#87 2026-10-23T05:13:49Z INFO account-svc [t-1585] user u-3628 accepted, calling auth-svc POST /tokens\n#90 2026-10-23T05:14:09Z INFO account-svc [t-1587] user u-3631 accepted, calling auth-svc POST /tokens\n#94 2026-10-23T05:14:21Z INFO account-svc [t-1590] user u-3633 accepted, calling auth-svc POST /tokens\n#97 2026-10-23T05:14:41Z INFO account-svc [t-1591] user u-3635 accepted, calling auth-svc POST /tokens\n#101 2026-10-23T05:14:54Z INFO account-svc [t-1595] user u-3638 accepted, calling auth-svc POST /tokens\n#105 2026-10-23T05:15:15Z INFO account-svc [t-1598] user u-3639 accepted, calling auth-svc POST /tokens\n#109 2026-10-23T05:15:33Z INFO account-svc [t-1602] user u-3640 accepted, calling auth-svc POST /tokens\n#113 2026-10-23T05:15:56Z INFO account-svc [t-1604] user u-3642 accepted, calling auth-svc POST /tokens\n#117 2026-10-23T05:16:18Z DEBUG account-svc GC pause 14ms (young), heap 44%\n#118 2026-10-23T05:16:25Z INFO account-svc [t-1606] user u-3645 accepted, calling auth-svc POST /tokens\n#122 2026-10-23T05:16:52Z INFO account-svc [t-1610] user u-3647 accepted, calling auth-svc POST /tokens\n#125 2026-10-23T05:17:09Z INFO account-svc [t-1612] user u-3650 accepted, calling auth-svc POST /tokens\n#130 2026-10-23T05:17:19Z INFO account-svc [t-1613] user u-3653 accepted, calling auth-svc POST /tokens\n#133 2026-10-23T05:17:41Z INFO account-svc [t-1614] user u-3656 accepted, calling auth-svc POST /tokens\n#136 2026-10-23T05:18:03Z INFO account-svc [t-1617] user u-3659 accepted, calling auth-svc POST /tokens\n#140 2026-10-23T05:18:23Z INFO account-svc [t-1618] user u-3661 accepted, calling auth-svc POST /tokens\n#143 2026-10-23T05:18:37Z DEBUG account-svc GC pause 14ms (young), heap 42%\n#144 2026-10-23T05:18:48Z INFO account-svc [t-1619] user u-3664 accepted, calling auth-svc POST /tokens\n#148 2026-10-23T05:19:14Z INFO account-svc [t-1621] user u-3667 accepted, calling auth-svc POST /tokens\n#153 2026-10-23T05:19:34Z INFO account-svc [t-1622] user u-3669 accepted, calling auth-svc POST /tokens\n#158 2026-10-23T05:19:52Z INFO account-svc [t-1624] user u-3670 accepted, calling auth-svc POST /tokens\n#162 2026-10-23T05:20:12Z INFO account-svc [t-1627] user u-3673 accepted, calling auth-svc POST /tokens\n#165 2026-10-23T05:20:33Z DEBUG account-svc GC pause 14ms (young), heap 30%\n#167 2026-10-23T05:20:40Z INFO account-svc [t-1628] user u-3675 accepted, calling auth-svc POST /tokens\n#170 2026-10-23T05:21:09Z INFO account-svc [t-1629] user u-3677 accepted, calling auth-svc POST /tokens\n#172 2026-10-23T05:21:25Z INFO account-svc [t-1632] user u-3679 accepted, calling auth-svc POST /tokens\n#177 2026-10-23T05:21:53Z INFO account-svc [t-1636] user u-3680 accepted, calling auth-svc POST /tokens\n#179 2026-10-23T05:22:10Z INFO account-svc [t-1638] user u-3681 accepted, calling auth-svc POST /tokens\n#183 2026-10-23T05:22:31Z INFO account-svc [t-1641] user u-3684 accepted, calling auth-svc POST /tokens\n#186 2026-10-23T05:22:42Z INFO account-svc [t-1642] user u-3686 accepted, calling auth-svc POST /tokens\n#190 2026-10-23T05:22:57Z INFO account-svc [t-1646] user u-3687 accepted, calling auth-svc POST /tokens\n#195 2026-10-23T05:23:24Z DEBUG account-svc GC pause 15ms (young), heap 47%\n#196 2026-10-23T05:23:27Z WARN account-svc [t-1650] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#200 2026-10-23T05:24:10Z WARN account-svc [t-1654] AuthClient.issueToken got 503, retrying immediately (attempt 3/4, backoff disabled)\n#204 2026-10-23T05:24:59Z WARN account-svc [t-1657] AuthClient.issueToken got 503, retrying immediately (attempt 4/4, backoff disabled)\n#209 2026-10-23T05:25:36Z WARN account-svc [t-1662] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#210 2026-10-23T05:25:44Z INFO account-svc [t-1665] user u-3690 accepted, calling auth-svc POST /tokens\n#216 2026-10-23T05:26:22Z DEBUG account-svc GC pause 19ms (young), heap 30%\n#219 2026-10-23T05:26:42Z INFO account-svc [t-1667] user u-3693 accepted, calling auth-svc POST /tokens\n#226 2026-10-23T05:27:11Z INFO account-svc [t-1671] user u-3696 accepted, calling auth-svc POST /tokens\n#228 2026-10-23T05:27:24Z INFO account-svc [t-1675] user u-3699 accepted, calling auth-svc POST /tokens\n#234 2026-10-23T05:27:44Z INFO account-svc [t-1682] user u-3701 accepted, calling auth-svc POST /tokens\n#241 2026-10-23T05:28:59Z DEBUG account-svc GC pause 11ms (young), heap 37%\n#251 2026-10-23T05:31:04Z INFO account-svc [t-1692] user u-3703 accepted, calling auth-svc POST /tokens\n#257 2026-10-23T05:32:00Z DEBUG account-svc GC pause 17ms (young), heap 36%\n#261 2026-10-23T05:32:55Z INFO account-svc [t-1695] user u-3705 accepted, calling auth-svc POST /tokens\n#266 2026-10-23T05:33:19Z INFO account-svc [t-1699] user u-3706 accepted, calling auth-svc POST /tokens\n#273 2026-10-23T05:34:26Z DEBUG account-svc GC pause 25ms (young), heap 37%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "liveness",
+          "limit": 20
+        },
+        "output": "1 match(es):\n#189 2026-10-23T05:22:50Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "retry",
+          "limit": 30
+        },
+        "output": "4 match(es):\n#196 2026-10-23T05:23:27Z WARN account-svc [t-1650] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#200 2026-10-23T05:24:10Z WARN account-svc [t-1654] AuthClient.issueToken got 503, retrying immediately (attempt 3/4, backoff disabled)\n#204 2026-10-23T05:24:59Z WARN account-svc [t-1657] AuthClient.issueToken got 503, retrying immediately (attempt 4/4, backoff disabled)\n#209 2026-10-23T05:25:36Z WARN account-svc [t-1662] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "edge-proxy",
+          "level": "ERROR",
+          "limit": 20
+        },
+        "output": "7 match(es):\n#203 2026-10-23T05:24:37Z ERROR edge-proxy [t-1656] POST /login 503 5447ms: upstream account-svc returned 503 (retries exhausted)\n#218 2026-10-23T05:26:33Z ERROR edge-proxy [t-1666] POST /login 503 14651ms: upstream account-svc returned 503 (retries exhausted)\n#231 2026-10-23T05:27:25Z ERROR edge-proxy [t-1679] POST /login 503 20202ms: upstream account-svc returned 503 (retries exhausted)\n#244 2026-10-23T05:29:07Z ERROR edge-proxy [t-1687] POST /login 503 16855ms: upstream account-svc returned 503 (retries exhausted)\n#250 2026-10-23T05:31:01Z ERROR edge-proxy [t-1690] POST /login 503 15375ms: upstream account-svc returned 503 (retries exhausted)\n#269 2026-10-23T05:33:54Z ERROR edge-proxy [t-1701] POST /login 503 25890ms: upstream account-svc returned 503 (retries exhausted)\n#278 2026-10-23T05:35:42Z ERROR edge-proxy [t-1707] POST /login 503 8267ms: upstream account-svc returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-1656"
+        },
+        "output": "1 line(s) for t-1656:\n#203 2026-10-23T05:24:37Z ERROR edge-proxy [t-1656] POST /login 503 5447ms: upstream account-svc returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.72,
+              "evidenceLines": [
+                189,
+                196,
+                200,
+                204,
+                209,
+                201,
+                215,
+                217,
+                208,
+                225
+              ],
+              "reasoning": "The trigger is small: auth-svc-3 failed its liveness probe and restarted at 05:22:50 (#189), dropping capacity to 3/4, and it was ready again at 05:23:38 (#197). Nothing in the logs explains the probe failure, and auth-svc's GC pauses were normal, so the trigger alone was survivable. The damage came from amplification. account-svc retried AuthClient.issueToken immediately with backoff disabled (#196, #200, #204, #209). Those retries pushed auth-svc inbound load to 3.2x, 4.1x and 5.0x baseline (inflight 487 to 825, #201, #215, #217), and auth-svc then shed load with 503 'queue full' (#208, #225). Because the retry loop never backed off, the overload kept going after the instance recovered, which explains 'not recovering'. The edge 503s (#203, #218, #231, #244, #250, #269, #278) are downstream symptoms. accounts-db's slow audit_log scan (#38) and the vacuums are unrelated: account-svc and accounts-db logged no errors, and the session-cache and audit-consumer are healthy.",
+              "hypotheses_note": "Ranked by likelihood."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.2,
+              "evidenceLines": [
+                189,
+                192,
+                208
+              ],
+              "reasoning": "Alternative reading: auth-svc-3 may have exhausted a resource (memory or threads, given the inflight climb) and crashed, and the instance is the origin rather than the retry loop. The logs do not show this. GC pauses stayed around 4-25ms with heap at 28-45%, so there is no memory exhaustion signal. This stays a low-confidence alternative."
+            }
+          ],
+          "recommendedAction": "Enable exponential backoff with jitter and a retry budget in account-svc's AuthClient.issueToken, and cap concurrent retries, so a brief auth-svc instance loss does not turn into sustained overload. Short term, reduce auth-svc inbound load from account-svc (or temporarily disable the immediate retries) to let auth-svc drain its queue and recover. Separately, find out why auth-svc-3's liveness probe failed at 05:22:50, since the logs give no reason, and check the probe timeout against the load at that time."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 10,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 2503,
+      "cacheReadTokens": 47426,
+      "cacheWriteTokens": 16020
+    },
+    "durationMs": 13984,
+    "stopReason": "tool_use"
+  }
+}

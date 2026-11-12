@@ -1,0 +1,167 @@
+{
+  "score": {
+    "incidentId": "test-009",
+    "difficulty": "easy",
+    "scenario": "bad_deploy/dependency-contract-change",
+    "truth": "bad_deploy",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "bad_deploy",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 5,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0027663900000000005,
+    "durationMs": 11366,
+    "iterations": 5,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 12,
+      "output": 2343,
+      "cacheRead": 26644,
+      "cacheWrite": 10618
+    }
+  },
+  "result": {
+    "incidentId": "test-009",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.9,
+          "evidenceLines": [
+            118,
+            120,
+            130,
+            138,
+            145
+          ],
+          "reasoning": "auth-svc v1.25.0 (build 6bc2c8a) rolled out at 00:59:56 replacing v1.24.2; startup at 01:00:14 logs 'response serializer v2 enabled'. From about 01:01:42 onward, account-svc fails to decode auth-svc POST /tokens responses because the 'status' field is missing (keys returned: id, state, updatedAt). The serializer change dropped or renamed the field account-svc requires, so account-svc fails the login and edge-proxy returns 502s (lines 140, 158, 173, 191 are downstream symptoms and not cited as cause). Successful /tokens calls before the deploy and some v1.25.0 calls that returned ok (e.g., 01:00:45, 01:02:02) show the break is intermittent or tied to a subset of responses. accounts-db, session-cache and audit-consumer show no errors, which rules out the database as origin; its checkpoints and vacuums are routine."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.3,
+          "evidenceLines": [
+            130,
+            138,
+            145
+          ],
+          "reasoning": "Alternative reading: the auth-svc response payload is malformed or has an incompatible schema, a data/contract integrity issue rather than a code regression. It fits the same decode errors, but the timing matches the v1.25.0 serializer v2 rollout exactly, which makes bad_deploy the more likely origin."
+        }
+      ],
+      "recommendedAction": "Roll back auth-svc from v1.25.0 to v1.24.2 now. That restores the 'status' field in /tokens responses and stops the account-svc decode failures and the edge-proxy 502s. Then fix the response serializer v2 so it emits 'status' (or coordinate a contract change with account-svc), add a contract test for the /tokens response schema to CI, and re-run the login flow to confirm the 502 rate returns to baseline."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "7 match(es):\n#130 2026-11-30T01:01:42Z ERROR account-svc [t-2844] failed to decode auth-svc POST /tokens response for u-2595: missing required field \"status\" (got keys: id, state, updatedAt)\n#138 2026-11-30T01:02:27Z ERROR account-svc [t-2847] failed to decode auth-svc POST /tokens response for u-2598: missing required field \"status\" (got keys: id, state, updatedAt)\n#140 2026-11-30T01:02:39Z ERROR edge-proxy [t-2849] POST /login 502 27088ms: upstream account-svc returned 502 Bad Gateway\n#145 2026-11-30T01:04:02Z ERROR account-svc [t-2852] failed to decode auth-svc POST /tokens response for u-2600: missing required field \"status\" (got keys: id, state, updatedAt)\n#158 2026-11-30T01:06:53Z ERROR edge-proxy [t-2859] POST /login 502 18907ms: upstream account-svc returned 502 Bad Gateway\n#173 2026-11-30T01:10:20Z ERROR edge-proxy [t-2863] POST /login 502 21437ms: upstream account-svc returned 502 Bad Gateway\n#191 2026-11-30T01:14:48Z ERROR edge-proxy [t-2870] POST /login 502 25479ms: upstream account-svc returned 502 Bad Gateway"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "accounts-db",
+          "limit": 50
+        },
+        "output": "14 match(es):\n#9 2026-11-30T00:46:48Z INFO accounts-db checkpoint complete: wrote 602 buffers (3.9%)\n#20 2026-11-30T00:48:22Z INFO accounts-db checkpoint complete: wrote 781 buffers (1.7%)\n#37 2026-11-30T00:50:17Z INFO accounts-db checkpoint complete: wrote 796 buffers (4.2%)\n#50 2026-11-30T00:52:19Z INFO accounts-db checkpoint complete: wrote 825 buffers (3.4%)\n#63 2026-11-30T00:53:56Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 22\n#87 2026-11-30T00:56:32Z INFO accounts-db checkpoint complete: wrote 1161 buffers (6.2%)\n#111 2026-11-30T00:59:07Z INFO accounts-db checkpoint complete: wrote 1109 buffers (1.9%)\n#129 2026-11-30T01:01:24Z INFO accounts-db checkpoint complete: wrote 1321 buffers (1.7%)\n#144 2026-11-30T01:03:59Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 20\n#152 2026-11-30T01:06:23Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 12\n#164 2026-11-30T01:08:03Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 15\n#174 2026-11-30T01:10:23Z INFO accounts-db checkpoint complete: wrote 769 buffers (4.3%)\n#183 2026-11-30T01:12:56Z INFO accounts-db checkpoint complete: wrote 210 buffers (2.9%)\n#193 2026-11-30T01:15:05Z INFO accounts-db checkpoint complete: wrote 503 buffers (5.6%)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "limit": 50
+        },
+        "output": "31 match(es):\n#2 2026-11-30T00:46:07Z DEBUG auth-svc GC pause 24ms (young), heap 28%\n#17 2026-11-30T00:48:02Z INFO auth-svc [t-2779] POST /tokens u-2551 ok 79ms\n#23 2026-11-30T00:48:48Z INFO auth-svc [t-2781] POST /tokens u-2554 ok 39ms\n#26 2026-11-30T00:49:09Z DEBUG auth-svc GC pause 18ms (young), heap 32%\n#29 2026-11-30T00:49:35Z INFO auth-svc [t-2785] POST /tokens u-2557 ok 39ms\n#46 2026-11-30T00:51:52Z DEBUG auth-svc GC pause 19ms (young), heap 40%\n#52 2026-11-30T00:52:35Z INFO auth-svc [t-2798] POST /tokens u-2567 ok 77ms\n#57 2026-11-30T00:52:54Z INFO auth-svc [t-2799] POST /tokens u-2568 ok 23ms\n#65 2026-11-30T00:53:57Z INFO auth-svc [t-2805] POST /tokens u-2573 ok 41ms\n#70 2026-11-30T00:54:15Z DEBUG auth-svc GC pause 14ms (young), heap 32%\n#72 2026-11-30T00:54:31Z INFO auth-svc [t-2807] POST /tokens u-2575 ok 61ms\n#80 2026-11-30T00:55:40Z INFO auth-svc [t-2812] POST /tokens u-2580 ok 43ms\n#85 2026-11-30T00:56:20Z DEBUG auth-svc GC pause 11ms (young), heap 32%\n#90 2026-11-30T00:56:52Z INFO auth-svc [t-2818] POST /tokens u-2584 ok 35ms\n#96 2026-11-30T00:57:17Z INFO auth-svc [t-2822] POST /tokens u-2585 ok 59ms\n#100 2026-11-30T00:57:58Z INFO auth-svc [t-2824] POST /tokens u-2586 ok 35ms\n#104 2026-11-30T00:58:22Z INFO auth-svc [t-2827] POST /tokens u-2587 ok 82ms\n#109 2026-11-30T00:59:04Z INFO auth-svc [t-2831] POST /tokens u-2589 ok 36ms\n#114 2026-11-30T00:59:32Z DEBUG auth-svc GC pause 6ms (young), heap 34%\n#116 2026-11-30T00:59:42Z INFO auth-svc [t-2834] POST /tokens u-2590 ok 88ms\n#118 2026-11-30T00:59:56Z INFO auth-svc deploy: rolling out auth-svc v1.25.0 (build 6bc2c8a), replacing v1.24.2\n#120 2026-11-30T01:00:14Z INFO auth-svc started auth-svc v1.25.0: response serializer v2 enabled\n#124 2026-11-30T01:00:45Z INFO auth-svc [t-2841] POST /tokens u-2593 ok 86ms\n#132 2026-11-30T01:01:50Z DEBUG auth-svc GC pause 16ms (young), heap 42%\n#135 2026-11-30T01:02:02Z INFO auth-svc [t-2845] POST /tokens u-2597 ok 21ms\n#143 2026-11-30T01:03:43Z DEBUG auth-svc GC pause 16ms (young), heap 35%\n#155 2026-11-30T01:06:37Z INFO auth-svc [t-2856] POST /tokens u-2603 ok 62ms\n#159 2026-11-30T01:06:57Z DEBUG auth-svc GC pause 5ms (young), heap 31%\n#168 2026-11-30T01:09:04Z DEBUG auth-svc GC pause 5ms (young), heap 35%\n#175 2026-11-30T01:10:49Z DEBUG auth-svc GC pause 12ms (young), heap 33%\n#186 2026-11-30T01:13:33Z DEBUG auth-svc GC pause 25ms (young), heap 34%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "account-svc",
+          "limit": 50
+        },
+        "output": "45 match(es):\n#1 2026-11-30T00:46:01Z DEBUG account-svc GC pause 20ms (young), heap 39%\n#5 2026-11-30T00:46:27Z INFO account-svc [t-2773] user u-2544 accepted, calling auth-svc POST /tokens\n#7 2026-11-30T00:46:47Z INFO account-svc [t-2776] user u-2547 accepted, calling auth-svc POST /tokens\n#11 2026-11-30T00:47:12Z INFO account-svc [t-2777] user u-2548 accepted, calling auth-svc POST /tokens\n#16 2026-11-30T00:48:02Z INFO account-svc [t-2779] user u-2551 accepted, calling auth-svc POST /tokens\n#19 2026-11-30T00:48:11Z DEBUG account-svc GC pause 18ms (young), heap 43%\n#22 2026-11-30T00:48:48Z INFO account-svc [t-2781] user u-2554 accepted, calling auth-svc POST /tokens\n#28 2026-11-30T00:49:35Z INFO account-svc [t-2785] user u-2557 accepted, calling auth-svc POST /tokens\n#33 2026-11-30T00:49:52Z DEBUG account-svc GC pause 25ms (young), heap 41%\n#34 2026-11-30T00:50:01Z INFO account-svc [t-2786] user u-2558 accepted, calling auth-svc POST /tokens\n#39 2026-11-30T00:50:39Z INFO account-svc [t-2788] user u-2561 accepted, calling auth-svc POST /tokens\n#42 2026-11-30T00:51:26Z INFO account-svc [t-2792] user u-2563 accepted, calling auth-svc POST /tokens\n#47 2026-11-30T00:51:58Z INFO account-svc [t-2796] user u-2565 accepted, calling auth-svc POST /tokens\n#51 2026-11-30T00:52:35Z INFO account-svc [t-2798] user u-2567 accepted, calling auth-svc POST /tokens\n#56 2026-11-30T00:52:54Z INFO account-svc [t-2799] user u-2568 accepted, calling auth-svc POST /tokens\n#59 2026-11-30T00:53:10Z DEBUG account-svc GC pause 21ms (young), heap 37%\n#61 2026-11-30T00:53:31Z INFO account-svc [t-2802] user u-2570 accepted, calling auth-svc POST /tokens\n#64 2026-11-30T00:53:57Z INFO account-svc [t-2805] user u-2573 accepted, calling auth-svc POST /tokens\n#71 2026-11-30T00:54:31Z INFO account-svc [t-2807] user u-2575 accepted, calling auth-svc POST /tokens\n#75 2026-11-30T00:55:20Z INFO account-svc [t-2811] user u-2578 accepted, calling auth-svc POST /tokens\n#79 2026-11-30T00:55:40Z INFO account-svc [t-2812] user u-2580 accepted, calling auth-svc POST /tokens\n#83 2026-11-30T00:56:19Z INFO account-svc [t-2814] user u-2583 accepted, calling auth-svc POST /tokens\n#86 2026-11-30T00:56:23Z DEBUG account-svc GC pause 14ms (young), heap 44%\n#89 2026-11-30T00:56:52Z INFO account-svc [t-2818] user u-2584 accepted, calling auth-svc POST /tokens\n#95 2026-11-30T00:57:17Z INFO account-svc [t-2822] user u-2585 accepted, calling auth-svc POST /tokens\n#99 2026-11-30T00:57:58Z INFO account-svc [t-2824] user u-2586 accepted, calling auth-svc POST /tokens\n#103 2026-11-30T00:58:22Z INFO account-svc [t-2827] user u-2587 accepted, calling auth-svc POST /tokens\n#107 2026-11-30T00:59:00Z DEBUG account-svc GC pause 8ms (young), heap 46%\n#108 2026-11-30T00:59:04Z INFO account-svc [t-2831] user u-2589 accepted, calling auth-svc POST /tokens\n#115 2026-11-30T00:59:42Z INFO account-svc [t-2834] user u-2590 accepted, calling auth-svc POST /tokens\n#121 2026-11-30T01:00:19Z INFO account-svc [t-2837] user u-2592 accepted, calling auth-svc POST /tokens\n#123 2026-11-30T01:00:44Z INFO account-svc [t-2841] user u-2593 accepted, calling auth-svc POST /tokens\n#130 2026-11-30T01:01:42Z ERROR account-svc [t-2844] failed to decode auth-svc POST /tokens response for u-2595: missing required field \"status\" (got keys: id, state, updatedAt)\n#131 2026-11-30T01:01:47Z DEBUG account-svc GC pause 12ms (young), heap 39%\n#134 2026-11-30T01:02:01Z INFO account-svc [t-2845] user u-2597 accepted, calling auth-svc POST /tokens\n#138 2026-11-30T01:02:27Z ERROR account-svc [t-2847] failed to decode auth-svc POST /tokens response for u-2598: missing required field \"status\" (got keys: id, state, updatedAt)\n#145 2026-11-30T01:04:02Z ERROR account-svc [t-2852] failed to decode auth-svc POST /tokens response for u-2600: missing required field \"status\" (got keys: id, state, updatedAt)\n#147 2026-11-30T01:04:38Z DEBUG account-svc GC pause 12ms (young), heap 40%\n#154 2026-11-30T01:06:37Z INFO account-svc [t-2856] user u-2603 accepted, calling auth-svc POST /tokens\n#161 2026-11-30T01:07:28Z DEBUG account-svc GC pause 21ms (young), heap 44%\n#170 2026-11-30T01:09:57Z DEBUG account-svc GC pause 5ms (young), heap 32%\n#179 2026-11-30T01:12:11Z INFO account-svc [t-2867] user u-2606 accepted, calling auth-svc POST /tokens\n#184 2026-11-30T01:12:56Z DEBUG account-svc GC pause 22ms (young), heap 31%\n#187 2026-11-30T01:13:45Z INFO account-svc [t-2868] user u-2609 accepted, calling auth-svc POST /tokens\n#195 2026-11-30T01:15:25Z DEBUG account-svc GC pause 19ms (young), heap 48%"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 120,
+          "before": 3,
+          "after": 6
+        },
+        "output": "#117 2026-11-30T00:59:42Z INFO edge-proxy [t-2834] POST /login 200 97ms\n#118 2026-11-30T00:59:56Z INFO auth-svc deploy: rolling out auth-svc v1.25.0 (build 6bc2c8a), replacing v1.24.2\n#119 2026-11-30T01:00:11Z INFO audit-consumer processed batch of 37 messages from audit.events (lag 102ms)\n#120 2026-11-30T01:00:14Z INFO auth-svc started auth-svc v1.25.0: response serializer v2 enabled\n#121 2026-11-30T01:00:19Z INFO account-svc [t-2837] user u-2592 accepted, calling auth-svc POST /tokens\n#122 2026-11-30T01:00:20Z INFO edge-proxy [t-2837] POST /login 200 114ms\n#123 2026-11-30T01:00:44Z INFO account-svc [t-2841] user u-2593 accepted, calling auth-svc POST /tokens\n#124 2026-11-30T01:00:45Z INFO auth-svc [t-2841] POST /tokens u-2593 ok 86ms\n#125 2026-11-30T01:00:45Z INFO edge-proxy [t-2841] POST /login 200 114ms\n#126 2026-11-30T01:00:49Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-2844"
+        },
+        "output": "1 line(s) for t-2844:\n#130 2026-11-30T01:01:42Z ERROR account-svc [t-2844] failed to decode auth-svc POST /tokens response for u-2595: missing required field \"status\" (got keys: id, state, updatedAt)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"bad_deploy\",\"confidence\":0.9,\"evidenceLines\":[118,120,130,138,145],\"reasoning\":\"auth-svc v1.25.0 (build 6bc2c8a) rolled out at 00:59:56 replacing v1.24.2; startup at 01:00:14 logs 'response serializer v2 enabled'. From about 01:01:42 onward, account-svc fails to decode auth-svc POST /tokens responses because the 'status' field is missing (keys returned: id, state, updatedAt). The serializer change dropped/renamed the field that account-svc requires. Account-svc then fails the login, and edge-proxy returns 502s (lines 140, 158, 173, 191 are downstream symptoms, not cited as cause). Successful /tokens calls before the deploy and the v1.25.0 calls that returned ok at 01:00:45 and 01:02:02 show the break is intermittent or tied to a subset of responses. accounts-db, session-cache and audit-consumer show no errors, which rules out the database as the origin. The vacuum and checkpoint lines are routine.\",\"},{\"rootCause\":\"data_integrity\",\"confidence\":0.3,\"evidenceLines\":[130,138,145],\"reasoning\":\"Alternative reading: the auth-svc response payload is malformed or has an incompatible schema, which is a data/contract integrity issue rather than a code regression. This fits the same decode errors, but the timing lines up exactly with the v1.25.0 serializer v2 rollout, which makes bad_deploy the more likely origin.\"}]",
+          "recommendedAction": "Roll back auth-svc from v1.25.0 to v1.24.2 now, which restores the 'status' field in /tokens responses and stops the account-svc decode failures and the edge-proxy 502s. Then fix the response serializer v2 so it emits 'status' (or coordinate a contract change with account-svc), add a contract test for the /tokens response schema to CI, and re-run the login flow to confirm the 502 rate returns to baseline."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.9,
+              "evidenceLines": [
+                118,
+                120,
+                130,
+                138,
+                145
+              ],
+              "reasoning": "auth-svc v1.25.0 (build 6bc2c8a) rolled out at 00:59:56 replacing v1.24.2; startup at 01:00:14 logs 'response serializer v2 enabled'. From about 01:01:42 onward, account-svc fails to decode auth-svc POST /tokens responses because the 'status' field is missing (keys returned: id, state, updatedAt). The serializer change dropped or renamed the field account-svc requires, so account-svc fails the login and edge-proxy returns 502s (lines 140, 158, 173, 191 are downstream symptoms and not cited as cause). Successful /tokens calls before the deploy and some v1.25.0 calls that returned ok (e.g., 01:00:45, 01:02:02) show the break is intermittent or tied to a subset of responses. accounts-db, session-cache and audit-consumer show no errors, which rules out the database as origin; its checkpoints and vacuums are routine."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.3,
+              "evidenceLines": [
+                130,
+                138,
+                145
+              ],
+              "reasoning": "Alternative reading: the auth-svc response payload is malformed or has an incompatible schema, a data/contract integrity issue rather than a code regression. It fits the same decode errors, but the timing matches the v1.25.0 serializer v2 rollout exactly, which makes bad_deploy the more likely origin."
+            }
+          ],
+          "recommendedAction": "Roll back auth-svc from v1.25.0 to v1.24.2 now. That restores the 'status' field in /tokens responses and stops the account-svc decode failures and the edge-proxy 502s. Then fix the response serializer v2 so it emits 'status' (or coordinate a contract change with account-svc), add a contract test for the /tokens response schema to CI, and re-run the login flow to confirm the 502 rate returns to baseline."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 2343,
+      "cacheReadTokens": 26644,
+      "cacheWriteTokens": 10618
+    },
+    "durationMs": 11366,
+    "stopReason": "tool_use"
+  }
+}

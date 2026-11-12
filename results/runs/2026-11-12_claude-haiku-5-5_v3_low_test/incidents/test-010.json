@@ -1,0 +1,152 @@
+{
+  "score": {
+    "incidentId": "test-010",
+    "difficulty": "medium",
+    "scenario": "external_outage/cloud-object-storage",
+    "truth": "external_outage",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.6,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 4,
+      "precision": 0.8,
+      "recall": 0.8,
+      "f1": 0.8000000000000002
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0023065550000000005,
+    "durationMs": 10741,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 2350,
+      "cacheRead": 15143,
+      "cacheWrite": 7833
+    }
+  },
+  "result": {
+    "incidentId": "test-010",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.6,
+          "evidenceLines": [
+            124,
+            133,
+            140,
+            147,
+            127
+          ],
+          "reasoning": "The earliest anomaly is catalog-svc failing PutObject to S3 (s3://search-artifacts-prod) at 22:00:46 with 503 ServiceUnavailable 'Please reduce your request rate' (#124). Shortly after, the AWS SDK reports the retry quota exhausted (52 failed attempts in 60s, #133), and later S3 returns 500 InternalError (#140, #147). Catalog-svc then fails its batch calls with 500 'storage write failed', which search-api surfaces as CatalogClient.getBatch failures (#127), and web-bff returns 500s on GET /search after 7-29s latency. Everything before 22:00:46 is healthy: catalog-db checkpoints and vacuums are normal, index-worker and redis show no errors, and search requests return 200. The 500s are downstream of the S3 write failures, not of the database or cache. The S3 errors look like a throttling or availability problem in the storage dependency, which fails fast rather than hanging. The write-path retries in catalog-svc amplify it, so cascading_failure is a plausible alternative."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.3,
+          "evidenceLines": [
+            133,
+            124,
+            127
+          ],
+          "reasoning": "The S3 throttling may have been triggered by catalog-svc's own write volume, with SDK retries (quota exhausted at #133) amplifying load and turning a survivable throttle into sustained 500s across search-api and web-bff. The logs do not show the request rate that caused the throttle, so this is less certain than the external reading."
+        }
+      ],
+      "recommendedAction": "Check S3 service health and the request rate from catalog-svc to s3://search-artifacts-prod in us-east-1. Reduce write rate or add backoff with jitter for PutObject in catalog-svc. Consider making artifact writes asynchronous or non-blocking on the /products/batch path so search reads do not fail when S3 is throttled. Prevent retry-quota exhaustion from amplifying load. Watch for recovery of 503/500 responses from S3 (request-ids 3D87FDE and 3C9EE10)."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "17 match(es):\n#59 2026-10-06T21:55:16Z WARN index-worker msg-544140 from catalog.updates failed schema validation (missing field \"version\"), moved to catalog.updates.dlq\n#124 2026-10-06T22:00:46Z ERROR catalog-svc [t-7556] PutObject s3://search-artifacts-prod/p-8070.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 3D87FDE)\n#126 2026-10-06T22:00:58Z ERROR web-bff [t-7558] GET /search 500 16964ms: upstream search-api returned 500 Internal Server Error\n#127 2026-10-06T22:01:01Z ERROR search-api [t-7560] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#129 2026-10-06T22:01:17Z ERROR catalog-svc [t-7564] PutObject s3://search-artifacts-prod/p-8072.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 1594BC7)\n#130 2026-10-06T22:01:36Z ERROR web-bff [t-7566] GET /search 500 15262ms: upstream search-api returned 500 Internal Server Error\n#133 2026-10-06T22:01:51Z WARN catalog-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (52 failed attempts in 60s)\n#136 2026-10-06T22:02:23Z ERROR search-api [t-7570] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#140 2026-10-06T22:02:57Z ERROR catalog-svc [t-7573] PutObject s3://search-artifacts-prod/p-8075.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id 3C9EE10)\n#141 2026-10-06T22:02:57Z ERROR web-bff [t-7576] GET /search 500 7544ms: upstream search-api returned 500 Internal Server Error\n#147 2026-10-06T22:03:56Z ERROR catalog-svc [t-7580] PutObject s3://search-artifacts-prod/p-8079.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id AFF5E99)\n#149 2026-10-06T22:04:21Z ERROR web-bff [t-7582] GET /search 500 29294ms: upstream search-api returned 500 Internal Server Error\n#151 2026-10-06T22:04:45Z ERROR search-api [t-7584] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#158 2026-10-06T22:05:30Z ERROR web-bff [t-7595] GET /search 500 21168ms: upstream search-api returned 500 Internal Server Error\n#168 2026-10-06T22:06:13Z ERROR search-api [t-7601] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#170 2026-10-06T22:06:36Z ERROR web-bff [t-7604] GET /search 500 13405ms: upstream search-api returned 500 Internal Server Error\n#173 2026-10-06T22:07:05Z ERROR web-bff [t-7608] GET /search 500 8573ms: upstream search-api returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-db",
+          "limit": 20
+        },
+        "output": "9 match(es):\n#3 2026-10-06T21:50:05Z INFO catalog-db checkpoint complete: wrote 894 buffers (1.2%)\n#21 2026-10-06T21:51:44Z INFO catalog-db checkpoint complete: wrote 516 buffers (2.7%)\n#42 2026-10-06T21:53:40Z INFO catalog-db checkpoint complete: wrote 1330 buffers (1.6%)\n#61 2026-10-06T21:55:23Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 4\n#94 2026-10-06T21:57:50Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 10\n#118 2026-10-06T22:00:06Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 38\n#134 2026-10-06T22:02:02Z INFO catalog-db checkpoint complete: wrote 1237 buffers (5.8%)\n#148 2026-10-06T22:03:56Z INFO catalog-db checkpoint complete: wrote 553 buffers (3.4%)\n#169 2026-10-06T22:06:17Z INFO catalog-db checkpoint complete: wrote 823 buffers (1.8%)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "s3",
+          "limit": 50
+        },
+        "output": "5 match(es):\n#124 2026-10-06T22:00:46Z ERROR catalog-svc [t-7556] PutObject s3://search-artifacts-prod/p-8070.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 3D87FDE)\n#129 2026-10-06T22:01:17Z ERROR catalog-svc [t-7564] PutObject s3://search-artifacts-prod/p-8072.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 1594BC7)\n#133 2026-10-06T22:01:51Z WARN catalog-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (52 failed attempts in 60s)\n#140 2026-10-06T22:02:57Z ERROR catalog-svc [t-7573] PutObject s3://search-artifacts-prod/p-8075.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id 3C9EE10)\n#147 2026-10-06T22:03:56Z ERROR catalog-svc [t-7580] PutObject s3://search-artifacts-prod/p-8079.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id AFF5E99)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 124,
+          "before": 12,
+          "after": 2
+        },
+        "output": "#112 2026-10-06T21:59:35Z INFO catalog-svc [t-7553] GET /products/batch p-8065 ok 73ms\n#113 2026-10-06T21:59:35Z INFO web-bff [t-7553] GET /search 200 121ms\n#114 2026-10-06T21:59:45Z INFO index-worker processed batch of 62 messages from catalog.updates (lag 115ms)\n#115 2026-10-06T21:59:48Z INFO redis-cache stats: hits=8931 misses=773 evicted=0 connected_clients=35\n#116 2026-10-06T21:59:53Z INFO search-api [t-7554] product p-8066 accepted, calling catalog-svc GET /products/batch\n#117 2026-10-06T21:59:53Z INFO web-bff [t-7554] GET /search 200 130ms\n#118 2026-10-06T22:00:06Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 38\n#119 2026-10-06T22:00:20Z INFO index-worker processed batch of 57 messages from catalog.updates (lag 127ms)\n#120 2026-10-06T22:00:41Z DEBUG search-api GC pause 13ms (young), heap 39%\n#121 2026-10-06T22:00:43Z INFO search-api [t-7555] product p-8068 accepted, calling catalog-svc GET /products/batch\n#122 2026-10-06T22:00:43Z INFO catalog-svc [t-7555] GET /products/batch p-8068 ok 70ms\n#123 2026-10-06T22:00:43Z INFO web-bff [t-7555] GET /search 200 68ms\n#124 2026-10-06T22:00:46Z ERROR catalog-svc [t-7556] PutObject s3://search-artifacts-prod/p-8070.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 3D87FDE)\n#125 2026-10-06T22:00:54Z INFO index-worker processed batch of 70 messages from catalog.updates (lag 220ms)\n#126 2026-10-06T22:00:58Z ERROR web-bff [t-7558] GET /search 500 16964ms: upstream search-api returned 500 Internal Server Error"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"external_outage\",\"confidence\":0.6,\"evidenceLines\":[124,133,140,147,127],\"reasoning\":\"The earliest anomaly is catalog-svc failing PutObject to S3 (s3://search-artifacts-prod) at 22:00:46 with 503 ServiceUnavailable 'Please reduce your request rate' (#124). Shortly after, the AWS SDK reports the retry quota exhausted (52 failed attempts in 60s, #133), and later S3 returns 500 InternalError (#140, #147). Catalog-svc then fails its batch calls with 500 'storage write failed', which search-api surfaces as CatalogClient.getBatch failures (#127), and web-bff returns 500s on GET /search after 7-29s latency. Everything before 22:00:46 is healthy: catalog-db checkpoints and vacuums are normal, index-worker and redis show no errors, and search requests return 200. The 500s are downstream of the S3 write failures, not of the database or cache. The S3 errors look like a throttling/availability problem in the storage dependency, which fails fast rather than hanging. The write-path retries in catalog-svc amplify it, so cascading_failure is a plausible alternative.\",\"}, {\"rootCause\":\"cascading_failure\",\"confidence\":0.3,\"evidenceLines\":[133,124,127],\"reasoning\":\"The S3 throttling may have been triggered by catalog-svc's own write volume, with the SDK retries (quota exhausted at #133) amplifying the load and turning a survivable throttle into sustained 500s across search-api and web-bff. The logs do not show the request rate that caused the throttle, so this is less certain than the external reading.\",\"}]",
+          "recommendedAction": "Check S3 service health and the request rate from catalog-svc to s3://search-artifacts-prod in us-east-1. Reduce write rate or add backoff with jitter for PutObject in catalog-svc, and consider making artifact writes asynchronous or non-blocking on the /products/batch path so search reads do not fail when S3 is throttled. Prevent the retry-quota exhaustion from amplifying load. Watch for recovery of 503/500 from S3 request-ids 3D87FDE and 3C9EE10."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.6,
+              "evidenceLines": [
+                124,
+                133,
+                140,
+                147,
+                127
+              ],
+              "reasoning": "The earliest anomaly is catalog-svc failing PutObject to S3 (s3://search-artifacts-prod) at 22:00:46 with 503 ServiceUnavailable 'Please reduce your request rate' (#124). Shortly after, the AWS SDK reports the retry quota exhausted (52 failed attempts in 60s, #133), and later S3 returns 500 InternalError (#140, #147). Catalog-svc then fails its batch calls with 500 'storage write failed', which search-api surfaces as CatalogClient.getBatch failures (#127), and web-bff returns 500s on GET /search after 7-29s latency. Everything before 22:00:46 is healthy: catalog-db checkpoints and vacuums are normal, index-worker and redis show no errors, and search requests return 200. The 500s are downstream of the S3 write failures, not of the database or cache. The S3 errors look like a throttling or availability problem in the storage dependency, which fails fast rather than hanging. The write-path retries in catalog-svc amplify it, so cascading_failure is a plausible alternative."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.3,
+              "evidenceLines": [
+                133,
+                124,
+                127
+              ],
+              "reasoning": "The S3 throttling may have been triggered by catalog-svc's own write volume, with SDK retries (quota exhausted at #133) amplifying load and turning a survivable throttle into sustained 500s across search-api and web-bff. The logs do not show the request rate that caused the throttle, so this is less certain than the external reading."
+            }
+          ],
+          "recommendedAction": "Check S3 service health and the request rate from catalog-svc to s3://search-artifacts-prod in us-east-1. Reduce write rate or add backoff with jitter for PutObject in catalog-svc. Consider making artifact writes asynchronous or non-blocking on the /products/batch path so search reads do not fail when S3 is throttled. Prevent retry-quota exhaustion from amplifying load. Watch for recovery of 503/500 responses from S3 (request-ids 3D87FDE and 3C9EE10)."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 2350,
+      "cacheReadTokens": 15143,
+      "cacheWriteTokens": 7833
+    },
+    "durationMs": 10741,
+    "stopReason": "tool_use"
+  }
+}

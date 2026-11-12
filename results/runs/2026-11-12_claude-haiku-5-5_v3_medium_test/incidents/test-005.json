@@ -1,0 +1,226 @@
+{
+  "score": {
+    "incidentId": "test-005",
+    "difficulty": "hard",
+    "scenario": "data_integrity/partial-migration",
+    "truth": "data_integrity",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 6,
+      "precision": 0.8571428571428571,
+      "recall": 0.8571428571428571,
+      "f1": 0.8571428571428571
+    },
+    "herringsCited": 0,
+    "costUsd": 0.00281172,
+    "durationMs": 14453,
+    "iterations": 6,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 14,
+      "output": 2832,
+      "cacheRead": 30782,
+      "cacheWrite": 8692
+    }
+  },
+  "result": {
+    "incidentId": "test-005",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.9,
+          "evidenceLines": [
+            162,
+            164,
+            168,
+            179,
+            185,
+            189,
+            197
+          ],
+          "reasoning": "Migration 0134_add_status_v2 ran 3 steps at 08:24:10Z. Step 1 renamed orders.status_v2 to status_v2_old and committed (non-transactional DDL). Step 2 then failed with a lock timeout on orders (#168), and the migration was not rolled back, leaving the schema half-applied. From about 08:25 onward, every order-service query referencing status_v2 fails with 'column does not exist' (#179, #185, #189, #197), and those failures propagate to api-gateway as upstream 500s on POST /checkout. Payment-svc and redis showed no errors, so the fault is in the schema, not in a dependency. The gateway 5xx lines are downstream symptoms and are not cited as evidence. The timing matches: checkout succeeded until the 08:24 migration and failed right after it."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.3,
+          "evidenceLines": [
+            162,
+            164,
+            168
+          ],
+          "reasoning": "The migration shipped with an order-service release, so it could be framed as a bad deploy. However, the operative fault is the broken schema state left by the partially applied migration, which fits data_integrity better. Listed as a lower-ranked alternative only."
+        }
+      ],
+      "recommendedAction": "Stop further rollout of migration 0134. Restore the schema so the status_v2 column exists: rename status_v2_old back to status_v2, or complete steps 2 and 3 in a fresh migration with a retry once the lock is free. Check whether other orders-table consumers (order-consumer) are affected. Use transactional or idempotent migration patterns so partial failures cannot leave the schema half-applied. Then confirm the checkout 500 rate recovers. If the release that shipped 0134 is still running, consider rolling it back as well."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "24 match(es):\n#83 2026-10-31T08:19:43Z WARN api-gateway TLS certificate for *.internal.example expires in 18 days\n#168 2026-10-31T08:24:23Z WARN order-service migrate: 0134_add_status_v2 step 2/3 failed: lock timeout on orders; step 1 already committed (non-transactional DDL), not rolled back\n#179 2026-10-31T08:25:14Z ERROR postgres column \"status_v2\" of relation \"orders\" does not exist at character 35\n#180 2026-10-31T08:25:27Z ERROR api-gateway [t-5958] POST /checkout 500 6078ms: upstream order-service returned 500 Internal Server Error\n#184 2026-10-31T08:26:09Z ERROR api-gateway [t-5962] POST /checkout 500 5477ms: upstream order-service returned 500 Internal Server Error\n#185 2026-10-31T08:26:11Z ERROR postgres column \"status_v2\" of relation \"orders\" does not exist at character 90\n#189 2026-10-31T08:26:25Z ERROR order-service [t-5966] query on orders failed for o-6503: column \"status_v2\" does not exist\n#193 2026-10-31T08:27:08Z ERROR api-gateway [t-5969] POST /checkout 500 26753ms: upstream order-service returned 500 Internal Server Error\n#195 2026-10-31T08:27:16Z ERROR order-service [t-5971] query on orders failed for o-6506: column \"status_v2\" does not exist\n#197 2026-10-31T08:27:36Z ERROR postgres column \"status_v2\" of relation \"orders\" does not exist at character 53\n#201 2026-10-31T08:28:26Z ERROR api-gateway [t-5974] POST /checkout 500 9164ms: upstream order-service returned 500 Internal Server Error\n#202 2026-10-31T08:28:27Z ERROR postgres column \"status_v2\" of relation \"orders\" does not exist at character 46\n#206 2026-10-31T08:29:15Z ERROR api-gateway [t-5978] POST /checkout 500 9282ms: upstream order-service returned 500 Internal Server Error\n#209 2026-10-31T08:29:24Z ERROR order-service [t-5981] query on orders failed for o-6508: column \"status_v2\" does not exist\n#213 2026-10-31T08:30:13Z ERROR api-gateway [t-5986] POST /checkout 500 8700ms: upstream order-service returned 500 Internal Server Error\n#220 2026-10-31T08:30:50Z ERROR api-gateway [t-5991] POST /checkout 500 22822ms: upstream order-service returned 500 Internal Server Error\n#224 2026-10-31T08:31:51Z ERROR api-gateway [t-5994] POST /checkout 500 11091ms: upstream order-service returned 500 Internal Server Error\n#225 2026-10-31T08:31:59Z ERROR order-service [t-5996] query on orders failed for o-6516: column \"status_v2\" does not exist\n#227 2026-10-31T08:32:18Z ERROR api-gateway [t-6000] POST /checkout 500 28781ms: upstream order-service returned 500 Internal Server Error\n#232 2026-10-31T08:32:33Z ERROR order-service [t-6006] query on orders failed for o-6521: column \"status_v2\" does not exist\n#240 2026-10-31T08:33:31Z ERROR api-gateway [t-6011] POST /checkout 500 18320ms: upstream order-service returned 500 Internal Server Error\n#246 2026-10-31T08:34:17Z ERROR api-gateway [t-6017] POST /checkout 500 7628ms: upstream order-service returned 500 Internal Server Error\n#251 2026-10-31T08:35:07Z ERROR order-service [t-6018] query on orders failed for o-6527: column \"status_v2\" does not exist\n#253 2026-10-31T08:35:14Z ERROR api-gateway [t-6019] POST /checkout 500 29681ms: upstream order-service returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "postgres",
+          "limit": 50
+        },
+        "output": "14 match(es):\n#28 2026-10-31T08:15:52Z INFO postgres checkpoint complete: wrote 1065 buffers (7.9%)\n#58 2026-10-31T08:18:01Z INFO postgres checkpoint complete: wrote 695 buffers (2.4%)\n#91 2026-10-31T08:20:10Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 23\n#130 2026-10-31T08:22:36Z INFO postgres checkpoint complete: wrote 380 buffers (5.1%)\n#177 2026-10-31T08:25:02Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 3\n#179 2026-10-31T08:25:14Z ERROR postgres column \"status_v2\" of relation \"orders\" does not exist at character 35\n#185 2026-10-31T08:26:11Z ERROR postgres column \"status_v2\" of relation \"orders\" does not exist at character 90\n#196 2026-10-31T08:27:28Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 16\n#197 2026-10-31T08:27:36Z ERROR postgres column \"status_v2\" of relation \"orders\" does not exist at character 53\n#202 2026-10-31T08:28:27Z ERROR postgres column \"status_v2\" of relation \"orders\" does not exist at character 46\n#207 2026-10-31T08:29:17Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 18\n#222 2026-10-31T08:31:04Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 4\n#241 2026-10-31T08:33:44Z INFO postgres checkpoint complete: wrote 475 buffers (1.1%)\n#255 2026-10-31T08:35:39Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 13"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "migrate",
+          "limit": 50
+        },
+        "output": "3 match(es):\n#162 2026-10-31T08:24:10Z INFO order-service migrate: applying 0134_add_status_v2 (3 steps) to postgres\n#164 2026-10-31T08:24:12Z INFO order-service migrate: 0134_add_status_v2 step 1/3 ok: renamed column orders.status_v2 -> status_v2_old\n#168 2026-10-31T08:24:23Z WARN order-service migrate: 0134_add_status_v2 step 2/3 failed: lock timeout on orders; step 1 already committed (non-transactional DDL), not rolled back"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 168,
+          "before": 12,
+          "after": 4
+        },
+        "output": "#156 2026-10-31T08:23:52Z INFO api-gateway [t-5941] POST /checkout 200 112ms\n#157 2026-10-31T08:23:58Z INFO redis stats: hits=18838 misses=751 evicted=0 connected_clients=58\n#158 2026-10-31T08:24:01Z DEBUG payment-svc GC pause 13ms (young), heap 31%\n#159 2026-10-31T08:24:04Z INFO order-service [t-5943] order o-6489 accepted, calling payment-svc POST /charge\n#160 2026-10-31T08:24:04Z INFO payment-svc [t-5943] POST /charge o-6489 ok 66ms\n#161 2026-10-31T08:24:04Z INFO api-gateway [t-5943] POST /checkout 200 204ms\n#162 2026-10-31T08:24:10Z INFO order-service migrate: applying 0134_add_status_v2 (3 steps) to postgres\n#163 2026-10-31T08:24:11Z INFO order-consumer processed batch of 90 messages from orders.events (lag 374ms)\n#164 2026-10-31T08:24:12Z INFO order-service migrate: 0134_add_status_v2 step 1/3 ok: renamed column orders.status_v2 -> status_v2_old\n#165 2026-10-31T08:24:15Z INFO order-service [t-5947] order o-6492 accepted, calling payment-svc POST /charge\n#166 2026-10-31T08:24:16Z INFO api-gateway [t-5947] POST /checkout 200 134ms\n#167 2026-10-31T08:24:21Z INFO payment-svc config reloaded from config-service (revision 741): 0 keys changed\n#168 2026-10-31T08:24:23Z WARN order-service migrate: 0134_add_status_v2 step 2/3 failed: lock timeout on orders; step 1 already committed (non-transactional DDL), not rolled back\n#169 2026-10-31T08:24:33Z INFO order-service [t-5950] order o-6493 accepted, calling payment-svc POST /charge\n#170 2026-10-31T08:24:33Z INFO payment-svc [t-5950] POST /charge o-6493 ok 56ms\n#171 2026-10-31T08:24:33Z INFO api-gateway [t-5950] POST /checkout 200 131ms\n#172 2026-10-31T08:24:47Z INFO order-service [t-5952] order o-6496 accepted, calling payment-svc POST /charge"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-5966"
+        },
+        "output": "1 line(s) for t-5966:\n#189 2026-10-31T08:26:25Z ERROR order-service [t-5966] query on orders failed for o-6503: column \"status_v2\" does not exist"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                162,
+                164,
+                168,
+                179,
+                185,
+                189,
+                197
+              ],
+              "reasoning": "Migration 0134_add_status_v2 ran 3 steps at 08:24:10Z. Step 1 renamed orders.status_v2 to status_v2_old and committed (non-transactional DDL). Step 2 then failed with a lock timeout on orders (#168), and the migration was not rolled back, leaving the schema half-applied. From ~08:25 onward, every order-service query referencing status_v2 fails with 'column does not exist' (#179, #185, #189, #197), and those failures propagate to api-gateway as upstream 500s on POST /checkout (#180, #184, #193, etc.). Payment-svc returned no errors and the postgres errors are only the missing-column failures, so the fault is in the schema, not in a dependency. The gateway 5xx lines are downstream symptoms and are not cited as evidence. The timing matches: checkout succeeded until the 08:24 migration and failed right after it.",
+              "recommendedAction": "Stop further rollout of 0134. Restore the schema so the status_v2 column exists: rename status_v2_old back to status_v2, or complete steps 2 and 3 in a fresh migration with a retry once the lock is free. Check whether other orders-table consumers (order-consumer) are affected. Add a transactional or idempotent migration pattern so partial failures cannot leave the schema half-applied. Then confirm checkout 500 rate recovers."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.3,
+              "evidenceLines": [
+                162,
+                164,
+                168
+              ],
+              "reasoning": "The migration was shipped as part of an order-service release, so it could be framed as a bad deploy. But the actual fault is the broken schema state left by the failed migration, which fits data_integrity better. Listed as an alternative only.",
+              "recommendedAction": "Roll back the order-service release that shipped 0134 as well as repairing the schema."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                162,
+                164,
+                168,
+                179,
+                185,
+                189,
+                197
+              ],
+              "reasoning": "Migration 0134_add_status_v2 ran 3 steps at 08:24:10Z. Step 1 renamed orders.status_v2 to status_v2_old and committed (non-transactional DDL). Step 2 then failed with a lock timeout on orders (#168), and the migration was not rolled back, leaving the schema half-applied. From about 08:25 onward, every order-service query referencing status_v2 fails with 'column does not exist' (#179, #185, #189, #197), and those failures propagate to api-gateway as upstream 500s on POST /checkout. Payment-svc and redis showed no errors, so the fault is in the schema, not in a dependency. The gateway 5xx lines are downstream symptoms and are not cited as evidence. The timing matches: checkout succeeded until the 08:24 migration and failed right after it.",
+              "recommendedAction": "Stop further rollout of 0134. Restore the schema so the status_v2 column exists: rename status_v2_old back to status_v2, or complete steps 2 and 3 in a fresh migration with a retry once the lock is free. Check whether other orders-table consumers (order-consumer) are affected. Use transactional or idempotent migration patterns so partial failures cannot leave the schema half-applied. Then confirm the checkout 500 rate recovers."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.3,
+              "evidenceLines": [
+                162,
+                164,
+                168
+              ],
+              "reasoning": "The migration shipped with an order-service release, so it could be framed as a bad deploy. However, the operative fault is the broken schema state left by the partially applied migration, which fits data_integrity better. Listed as a lower-ranked alternative only.",
+              "recommendedAction": "Roll back the order-service release that shipped 0134 while repairing the schema."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                162,
+                164,
+                168,
+                179,
+                185,
+                189,
+                197
+              ],
+              "reasoning": "Migration 0134_add_status_v2 ran 3 steps at 08:24:10Z. Step 1 renamed orders.status_v2 to status_v2_old and committed (non-transactional DDL). Step 2 then failed with a lock timeout on orders (#168), and the migration was not rolled back, leaving the schema half-applied. From about 08:25 onward, every order-service query referencing status_v2 fails with 'column does not exist' (#179, #185, #189, #197), and those failures propagate to api-gateway as upstream 500s on POST /checkout. Payment-svc and redis showed no errors, so the fault is in the schema, not in a dependency. The gateway 5xx lines are downstream symptoms and are not cited as evidence. The timing matches: checkout succeeded until the 08:24 migration and failed right after it."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.3,
+              "evidenceLines": [
+                162,
+                164,
+                168
+              ],
+              "reasoning": "The migration shipped with an order-service release, so it could be framed as a bad deploy. However, the operative fault is the broken schema state left by the partially applied migration, which fits data_integrity better. Listed as a lower-ranked alternative only."
+            }
+          ],
+          "recommendedAction": "Stop further rollout of migration 0134. Restore the schema so the status_v2 column exists: rename status_v2_old back to status_v2, or complete steps 2 and 3 in a fresh migration with a retry once the lock is free. Check whether other orders-table consumers (order-consumer) are affected. Use transactional or idempotent migration patterns so partial failures cannot leave the schema half-applied. Then confirm the checkout 500 rate recovers. If the release that shipped 0134 is still running, consider rolling it back as well."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 2832,
+      "cacheReadTokens": 30782,
+      "cacheWriteTokens": 8692
+    },
+    "durationMs": 14453,
+    "stopReason": "tool_use"
+  }
+}

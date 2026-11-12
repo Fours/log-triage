@@ -1,0 +1,174 @@
+{
+  "score": {
+    "incidentId": "test-032",
+    "difficulty": "easy",
+    "scenario": "config_error/rotated-credential",
+    "truth": "config_error",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "config_error",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 4,
+      "correct": 4,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.002568745,
+    "durationMs": 12010,
+    "iterations": 5,
+    "toolCalls": 8,
+    "tokens": {
+      "input": 12,
+      "output": 2439,
+      "cacheRead": 21867,
+      "cacheWrite": 9035
+    }
+  },
+  "result": {
+    "incidentId": "test-032",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "config_error",
+          "confidence": 0.88,
+          "evidenceLines": [
+            114,
+            117,
+            122,
+            128
+          ],
+          "reasoning": "template-svc reloaded MAILER_API_KEY from the secrets store at 12:03:10 (version 17, with version 16 revoked, #114). From 12:04:07 onward every call to the email provider fails with 401 Unauthorized (invalid API key) (#117, #122, #128). This is the earliest anomaly that is not a benign GC or rate-limit line. The rotation left template-svc on a credential the provider rejects, so /render fails, notification-svc gets 502 from template-svc (#130, #146), and api-gateway returns 502 on POST /v1/notify (#121, #139, #144, #157). The 502s at the gateway and notification-svc are downstream symptoms and are not cited as root cause. notif-db, redis and notif-worker show no errors, which rules out data-layer and queue causes. The 429 throttle on k-2741 at #19 is unrelated and predates the onset by about an hour. Alternative: external_outage, but a 401 means the credential is rejected, not that the provider is down, so this is less likely."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.08,
+          "evidenceLines": [
+            117,
+            122,
+            128
+          ],
+          "reasoning": "The provider is rejecting requests, which could be read as a provider-side problem. However, the 401 is an auth rejection tied to the key rotation at #114, so this is a weak alternative."
+        }
+      ],
+      "recommendedAction": "Fix the credential in template-svc. Confirm that the version 17 MAILER_API_KEY is valid with the mailer provider and that template-svc is actually using it. If the reload did not take effect, force a re-read or restart template-svc so it stops sending the revoked version 16 key. Verify that POST /render and POST /v1/notify return to 200 and that the 401 count drops to zero. Then review the key rotation runbook so an old key is not revoked until every consumer has picked up the new version."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "10 match(es):\n#19 2026-10-17T11:51:08Z WARN api-gateway rate limiter: client key k-2741 throttled (429), 82 req/s over quota\n#117 2026-10-17T12:04:07Z ERROR template-svc [t-5148] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#121 2026-10-17T12:05:07Z ERROR api-gateway [t-5149] POST /v1/notify 502 24576ms: upstream notification-svc returned 502 Bad Gateway\n#122 2026-10-17T12:05:14Z ERROR template-svc [t-5153] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#128 2026-10-17T12:06:05Z ERROR template-svc [t-5154] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#130 2026-10-17T12:06:30Z ERROR notification-svc [t-5156] TemplateClient.render failed: template-svc returned 502 (upstream email provider error)\n#139 2026-10-17T12:08:19Z ERROR api-gateway [t-5163] POST /v1/notify 502 13696ms: upstream notification-svc returned 502 Bad Gateway\n#144 2026-10-17T12:09:49Z ERROR api-gateway [t-5164] POST /v1/notify 502 14553ms: upstream notification-svc returned 502 Bad Gateway\n#146 2026-10-17T12:09:59Z ERROR notification-svc [t-5166] TemplateClient.render failed: template-svc returned 502 (upstream email provider error)\n#157 2026-10-17T12:12:36Z ERROR api-gateway [t-5168] POST /v1/notify 502 26304ms: upstream notification-svc returned 502 Bad Gateway"
+      },
+      {
+        "tool": "list_services",
+        "input": {},
+        "output": "window 2026-10-17T11:49:24Z .. 2026-10-17T12:13:59Z, 162 lines total\n- api-gateway: 35 lines, 4 error+ (2026-10-17T11:49:24Z .. 2026-10-17T12:12:36Z)\n- template-svc: 24 lines, 3 error+ (2026-10-17T11:49:24Z .. 2026-10-17T12:12:35Z)\n- notification-svc: 38 lines, 2 error+ (2026-10-17T11:49:24Z .. 2026-10-17T12:13:05Z)\n- notif-worker: 34 lines, 0 error+ (2026-10-17T11:49:47Z .. 2026-10-17T12:13:49Z)\n- redis: 19 lines, 0 error+ (2026-10-17T11:49:56Z .. 2026-10-17T12:13:24Z)\n- notif-db: 12 lines, 0 error+ (2026-10-17T11:49:54Z .. 2026-10-17T12:13:59Z)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 117,
+          "before": 12,
+          "after": 4
+        },
+        "output": "#105 2026-10-17T12:02:07Z INFO notification-svc [t-5145] message m-5024 accepted, calling template-svc POST /render\n#106 2026-10-17T12:02:07Z INFO template-svc [t-5145] POST /render m-5024 ok 28ms\n#107 2026-10-17T12:02:07Z INFO api-gateway [t-5145] POST /v1/notify 200 117ms\n#108 2026-10-17T12:02:36Z INFO notif-worker processed batch of 69 messages from notifications.outbound (lag 144ms)\n#109 2026-10-17T12:02:40Z INFO notification-svc [t-5146] message m-5027 accepted, calling template-svc POST /render\n#110 2026-10-17T12:02:40Z INFO api-gateway [t-5146] POST /v1/notify 200 167ms\n#111 2026-10-17T12:02:51Z DEBUG template-svc GC pause 6ms (young), heap 42%\n#112 2026-10-17T12:03:07Z INFO notif-db InnoDB: page cleaner flushed 403 pages, buffer pool hit rate 99.9%\n#113 2026-10-17T12:03:08Z DEBUG notification-svc GC pause 13ms (young), heap 37%\n#114 2026-10-17T12:03:10Z INFO template-svc secrets: reloaded MAILER_API_KEY from secrets store (version 17, previous 16 revoked)\n#115 2026-10-17T12:03:13Z INFO redis stats: hits=14413 misses=503 evicted=0 connected_clients=54\n#116 2026-10-17T12:03:23Z INFO notif-worker processed batch of 59 messages from notifications.outbound (lag 192ms)\n#117 2026-10-17T12:04:07Z ERROR template-svc [t-5148] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#118 2026-10-17T12:04:10Z INFO notif-worker processed batch of 107 messages from notifications.outbound (lag 87ms)\n#119 2026-10-17T12:04:28Z INFO redis stats: hits=18042 misses=850 evicted=0 connected_clients=41\n#120 2026-10-17T12:05:02Z INFO notif-worker processed batch of 88 messages from notifications.outbound (lag 304ms)\n#121 2026-10-17T12:05:07Z ERROR api-gateway [t-5149] POST /v1/notify 502 24576ms: upstream notification-svc returned 502 Bad Gateway"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "key"
+        },
+        "output": "5 match(es):\n#19 2026-10-17T11:51:08Z WARN api-gateway rate limiter: client key k-2741 throttled (429), 82 req/s over quota\n#114 2026-10-17T12:03:10Z INFO template-svc secrets: reloaded MAILER_API_KEY from secrets store (version 17, previous 16 revoked)\n#117 2026-10-17T12:04:07Z ERROR template-svc [t-5148] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#122 2026-10-17T12:05:14Z ERROR template-svc [t-5153] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#128 2026-10-17T12:06:05Z ERROR template-svc [t-5154] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "rotat"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-5148"
+        },
+        "output": "1 line(s) for t-5148:\n#117 2026-10-17T12:04:07Z ERROR template-svc [t-5148] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "MAILER"
+        },
+        "output": "4 match(es):\n#114 2026-10-17T12:03:10Z INFO template-svc secrets: reloaded MAILER_API_KEY from secrets store (version 17, previous 16 revoked)\n#117 2026-10-17T12:04:07Z ERROR template-svc [t-5148] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#122 2026-10-17T12:05:14Z ERROR template-svc [t-5153] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#128 2026-10-17T12:06:05Z ERROR template-svc [t-5154] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "limit": 30
+        },
+        "output": "24 match(es):\n#2 2026-10-17T11:49:24Z INFO template-svc [t-5087] POST /render m-4977 ok 83ms\n#12 2026-10-17T11:50:23Z INFO template-svc [t-5094] POST /render m-4983 ok 49ms\n#14 2026-10-17T11:50:41Z DEBUG template-svc GC pause 24ms (young), heap 32%\n#17 2026-10-17T11:50:58Z INFO template-svc [t-5098] POST /render m-4985 ok 38ms\n#23 2026-10-17T11:51:47Z INFO template-svc [t-5101] POST /render m-4988 ok 31ms\n#32 2026-10-17T11:52:37Z INFO template-svc [t-5105] POST /render m-4991 ok 37ms\n#38 2026-10-17T11:53:13Z DEBUG template-svc GC pause 5ms (young), heap 40%\n#43 2026-10-17T11:53:39Z INFO template-svc [t-5114] POST /render m-4998 ok 29ms\n#49 2026-10-17T11:54:28Z INFO template-svc [t-5118] POST /render m-5000 ok 89ms\n#52 2026-10-17T11:54:59Z DEBUG template-svc GC pause 5ms (young), heap 45%\n#61 2026-10-17T11:55:50Z INFO template-svc [t-5125] POST /render m-5005 ok 60ms\n#65 2026-10-17T11:56:28Z INFO template-svc [t-5128] POST /render m-5008 ok 63ms\n#75 2026-10-17T11:57:22Z DEBUG template-svc GC pause 11ms (young), heap 34%\n#90 2026-10-17T11:59:43Z DEBUG template-svc GC pause 13ms (young), heap 35%\n#106 2026-10-17T12:02:07Z INFO template-svc [t-5145] POST /render m-5024 ok 28ms\n#111 2026-10-17T12:02:51Z DEBUG template-svc GC pause 6ms (young), heap 42%\n#114 2026-10-17T12:03:10Z INFO template-svc secrets: reloaded MAILER_API_KEY from secrets store (version 17, previous 16 revoked)\n#117 2026-10-17T12:04:07Z ERROR template-svc [t-5148] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#122 2026-10-17T12:05:14Z ERROR template-svc [t-5153] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#126 2026-10-17T12:05:45Z DEBUG template-svc GC pause 8ms (young), heap 38%\n#128 2026-10-17T12:06:05Z ERROR template-svc [t-5154] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#140 2026-10-17T12:08:21Z DEBUG template-svc GC pause 19ms (young), heap 37%\n#147 2026-10-17T12:10:13Z DEBUG template-svc GC pause 17ms (young), heap 40%\n#156 2026-10-17T12:12:35Z DEBUG template-svc GC pause 16ms (young), heap 34%"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"config_error\",\"confidence\":0.88,\"evidenceLines\":[114,117,122,128],\"reasoning\":\"template-svc reloaded MAILER_API_KEY from the secrets store at 12:03:10 (version 17, with version 16 revoked, #114). From 12:04:07 onward every call to the email provider fails with 401 Unauthorized (invalid API key) (#117, #122, #128). This is the earliest anomaly in the window that is not a benign GC or rate-limit line. The rotation left template-svc on a credential the provider rejects, so /render fails, notification-svc gets 502 from template-svc (#130, #146), and api-gateway returns 502 on POST /v1/notify (#121, #139, #144, #157). The 502s at the gateway and notification-svc are downstream symptoms and are not cited as root cause. notif-db, redis and notif-worker show no errors, which rules out data-layer and queue causes. The 429 throttle on k-2741 at #19 is unrelated and predates the onset by about an hour. Alternative: external_outage, but a 401 means the credential is rejected, not that the provider is down, so this is less likely.\",\"}, {\"rootCause\":\"external_outage\",\"confidence\":0.08,\"evidenceLines\":[117,122,128],\"reasoning\":\"The provider is rejecting requests, which could be read as a provider-side problem. However, the 401 is an auth rejection tied to the key rotation at #114, so this is a weak alternative.\",\"}]\",\"recommendedAction\":\"Fix the credential in template-svc: confirm that the version 17 MAILER_API_KEY is valid with the mailer provider and that template-svc is using it. If the reload did not take effect, force a re-read or restart template-svc so it stops sending the revoked version 16 key. Verify that POST /render and POST /v1/notify return to 200 and that the 401 count drops to zero. Then review the rotation runbook so the key is not revoked until all consumers have picked up the new version.\"}]"
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string; recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "config_error",
+              "confidence": 0.88,
+              "evidenceLines": [
+                114,
+                117,
+                122,
+                128
+              ],
+              "reasoning": "template-svc reloaded MAILER_API_KEY from the secrets store at 12:03:10 (version 17, with version 16 revoked, #114). From 12:04:07 onward every call to the email provider fails with 401 Unauthorized (invalid API key) (#117, #122, #128). This is the earliest anomaly that is not a benign GC or rate-limit line. The rotation left template-svc on a credential the provider rejects, so /render fails, notification-svc gets 502 from template-svc (#130, #146), and api-gateway returns 502 on POST /v1/notify (#121, #139, #144, #157). The 502s at the gateway and notification-svc are downstream symptoms and are not cited as root cause. notif-db, redis and notif-worker show no errors, which rules out data-layer and queue causes. The 429 throttle on k-2741 at #19 is unrelated and predates the onset by about an hour. Alternative: external_outage, but a 401 means the credential is rejected, not that the provider is down, so this is less likely."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.08,
+              "evidenceLines": [
+                117,
+                122,
+                128
+              ],
+              "reasoning": "The provider is rejecting requests, which could be read as a provider-side problem. However, the 401 is an auth rejection tied to the key rotation at #114, so this is a weak alternative."
+            }
+          ],
+          "recommendedAction": "Fix the credential in template-svc. Confirm that the version 17 MAILER_API_KEY is valid with the mailer provider and that template-svc is actually using it. If the reload did not take effect, force a re-read or restart template-svc so it stops sending the revoked version 16 key. Verify that POST /render and POST /v1/notify return to 200 and that the 401 count drops to zero. Then review the key rotation runbook so an old key is not revoked until every consumer has picked up the new version."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 8,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 2439,
+      "cacheReadTokens": 21867,
+      "cacheWriteTokens": 9035
+    },
+    "durationMs": 12010,
+    "stopReason": "tool_use"
+  }
+}

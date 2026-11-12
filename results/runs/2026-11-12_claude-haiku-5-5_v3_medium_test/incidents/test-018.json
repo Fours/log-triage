@@ -1,0 +1,187 @@
+{
+  "score": {
+    "incidentId": "test-018",
+    "difficulty": "easy",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.8,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 9,
+      "correct": 6,
+      "precision": 0.6666666666666666,
+      "recall": 0.8571428571428571,
+      "f1": 0.75
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0031368800000000003,
+    "durationMs": 13597,
+    "iterations": 6,
+    "toolCalls": 8,
+    "tokens": {
+      "input": 14,
+      "output": 2561,
+      "cacheRead": 38623,
+      "cacheWrite": 11750
+    }
+  },
+  "result": {
+    "incidentId": "test-018",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.8,
+          "evidenceLines": [
+            96,
+            99,
+            101,
+            106,
+            111,
+            110,
+            105,
+            121,
+            102
+          ],
+          "reasoning": "The trigger is small: template-svc-3 failed its liveness probe and restarted at 23:02:24 (#96), dropping capacity to 3/4 (back to 4/4 at #99). That alone should be survivable. The damage comes from amplification: notification-svc's TemplateClient.render retries immediately with backoff disabled (#101, #106, #111, attempts 2 to 4 of 4), so every failed render is hammered again at once. template-svc then reports inbound request rate at 3.2x to 4.1x baseline with ~580 inflight (#110, #118) and sheds load with 503 'queue full' (#105, #121). Those 503s become retries-exhausted 503s at api-gateway (#102, #115, #125, #137). Recovery stalls because the retry storm keeps the render queue saturated. The gateway 503s are downstream symptoms, not the origin. GC pauses on template-svc are small (#109, heap ~32%), which argues against a memory fault. The liveness-failure reason is not visible in these logs."
+        }
+      ],
+      "recommendedAction": "Immediately enable exponential backoff with jitter and a bounded retry budget in notification-svc's TemplateClient (it is currently retrying with backoff disabled), and add a circuit breaker on the render path. Throttle inbound /v1/notify traffic at the gateway until template-svc inflight returns to baseline. Confirm template-svc is at 4/4 capacity and healthy. Investigate why template-svc-3 failed its liveness probe, since that is the initial trigger, and check whether the restart recurs."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "14 match(es):\n#17 2026-11-25T22:52:01Z WARN notif-worker msg-420280 from notifications.outbound failed schema validation (missing field \"version\"), moved to notifications.outbound.dlq\n#96 2026-11-25T23:02:24Z WARN template-svc instance template-svc-3 restarting (liveness probe failed), capacity 3/4\n#101 2026-11-25T23:03:22Z WARN notification-svc [t-3791] TemplateClient.render got 503, retrying immediately (attempt 2/4, backoff disabled)\n#102 2026-11-25T23:03:33Z ERROR api-gateway [t-3794] POST /v1/notify 503 28990ms: upstream notification-svc returned 503 (retries exhausted)\n#105 2026-11-25T23:03:52Z ERROR template-svc [t-3797] load shed: rejected POST /render with 503 (queue full)\n#106 2026-11-25T23:04:00Z WARN notification-svc [t-3801] TemplateClient.render got 503, retrying immediately (attempt 3/4, backoff disabled)\n#110 2026-11-25T23:04:43Z WARN template-svc inbound request rate 3.2x baseline (inflight 581), shedding load with 503\n#111 2026-11-25T23:04:45Z WARN notification-svc [t-3804] TemplateClient.render got 503, retrying immediately (attempt 4/4, backoff disabled)\n#115 2026-11-25T23:05:42Z ERROR api-gateway [t-3808] POST /v1/notify 503 14157ms: upstream notification-svc returned 503 (retries exhausted)\n#118 2026-11-25T23:06:32Z WARN template-svc inbound request rate 4.1x baseline (inflight 543), shedding load with 503\n#121 2026-11-25T23:06:49Z ERROR template-svc [t-3811] load shed: rejected POST /render with 503 (queue full)\n#125 2026-11-25T23:07:47Z ERROR api-gateway [t-3815] POST /v1/notify 503 20482ms: upstream notification-svc returned 503 (retries exhausted)\n#132 2026-11-25T23:09:17Z ERROR template-svc [t-3819] load shed: rejected POST /render with 503 (queue full)\n#137 2026-11-25T23:09:58Z ERROR api-gateway [t-3821] POST /v1/notify 503 21172ms: upstream notification-svc returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "limit": 50
+        },
+        "output": "23 match(es):\n#4 2026-11-25T22:50:31Z INFO template-svc [t-3749] POST /render m-4608 ok 38ms\n#23 2026-11-25T22:53:01Z DEBUG template-svc GC pause 21ms (young), heap 37%\n#25 2026-11-25T22:53:11Z INFO template-svc [t-3758] POST /render m-4619 ok 56ms\n#32 2026-11-25T22:54:02Z INFO template-svc [t-3764] POST /render m-4624 ok 42ms\n#49 2026-11-25T22:56:04Z DEBUG template-svc GC pause 15ms (young), heap 39%\n#53 2026-11-25T22:56:32Z INFO template-svc [t-3774] POST /render m-4634 ok 61ms\n#60 2026-11-25T22:57:17Z INFO template-svc [t-3778] POST /render m-4637 ok 27ms\n#64 2026-11-25T22:57:50Z INFO template-svc [t-3780] POST /render m-4639 ok 52ms\n#66 2026-11-25T22:58:16Z DEBUG template-svc GC pause 6ms (young), heap 34%\n#69 2026-11-25T22:58:23Z INFO template-svc [t-3781] POST /render m-4641 ok 50ms\n#90 2026-11-25T23:01:31Z DEBUG template-svc GC pause 11ms (young), heap 31%\n#96 2026-11-25T23:02:24Z WARN template-svc instance template-svc-3 restarting (liveness probe failed), capacity 3/4\n#99 2026-11-25T23:02:59Z INFO template-svc instance template-svc-3 ready, capacity 4/4\n#105 2026-11-25T23:03:52Z ERROR template-svc [t-3797] load shed: rejected POST /render with 503 (queue full)\n#109 2026-11-25T23:04:34Z DEBUG template-svc GC pause 7ms (young), heap 32%\n#110 2026-11-25T23:04:43Z WARN template-svc inbound request rate 3.2x baseline (inflight 581), shedding load with 503\n#118 2026-11-25T23:06:32Z WARN template-svc inbound request rate 4.1x baseline (inflight 543), shedding load with 503\n#119 2026-11-25T23:06:37Z DEBUG template-svc GC pause 15ms (young), heap 36%\n#121 2026-11-25T23:06:49Z ERROR template-svc [t-3811] load shed: rejected POST /render with 503 (queue full)\n#129 2026-11-25T23:08:56Z INFO template-svc [t-3817] POST /render m-4655 ok 24ms\n#132 2026-11-25T23:09:17Z ERROR template-svc [t-3819] load shed: rejected POST /render with 503 (queue full)\n#136 2026-11-25T23:09:57Z DEBUG template-svc GC pause 6ms (young), heap 32%\n#140 2026-11-25T23:10:39Z INFO template-svc [t-3823] POST /render m-4657 ok 28ms"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 96,
+          "before": 20,
+          "after": 10
+        },
+        "output": "#76 2026-11-25T22:59:09Z INFO api-gateway [t-3783] POST /v1/notify 200 126ms\n#77 2026-11-25T22:59:29Z INFO notif-worker processed batch of 55 messages from notifications.outbound (lag 295ms)\n#78 2026-11-25T22:59:50Z INFO notification-svc [t-3784] message m-4647 accepted, calling template-svc POST /render\n#79 2026-11-25T22:59:50Z INFO api-gateway [t-3784] POST /v1/notify 200 144ms\n#80 2026-11-25T22:59:51Z INFO redis stats: hits=16678 misses=737 evicted=0 connected_clients=53\n#81 2026-11-25T23:00:15Z INFO notif-worker processed batch of 115 messages from notifications.outbound (lag 328ms)\n#82 2026-11-25T23:00:27Z INFO notification-svc [t-3786] message m-4650 accepted, calling template-svc POST /render\n#83 2026-11-25T23:00:28Z INFO api-gateway [t-3786] POST /v1/notify 200 118ms\n#84 2026-11-25T23:00:46Z INFO notif-db InnoDB: page cleaner flushed 305 pages, buffer pool hit rate 98.7%\n#85 2026-11-25T23:01:03Z DEBUG notification-svc GC pause 24ms (young), heap 37%\n#86 2026-11-25T23:01:03Z INFO notif-worker processed batch of 36 messages from notifications.outbound (lag 247ms)\n#87 2026-11-25T23:01:08Z INFO notification-svc [t-3788] message m-4651 accepted, calling template-svc POST /render\n#88 2026-11-25T23:01:08Z INFO api-gateway [t-3788] POST /v1/notify 200 168ms\n#89 2026-11-25T23:01:14Z INFO redis stats: hits=16405 misses=270 evicted=0 connected_clients=43\n#90 2026-11-25T23:01:31Z DEBUG template-svc GC pause 11ms (young), heap 31%\n#91 2026-11-25T23:01:38Z DEBUG api-gateway upstream health: notification-svc ok, template-svc ok\n#92 2026-11-25T23:01:38Z INFO notif-worker processed batch of 94 messages from notifications.outbound (lag 292ms)\n#93 2026-11-25T23:01:39Z INFO notification-svc [t-3790] message m-4653 accepted, calling template-svc POST /render\n#94 2026-11-25T23:01:39Z INFO api-gateway [t-3790] POST /v1/notify 200 101ms\n#95 2026-11-25T23:02:21Z INFO notif-worker processed batch of 39 messages from notifications.outbound (lag 221ms)\n#96 2026-11-25T23:02:24Z WARN template-svc instance template-svc-3 restarting (liveness probe failed), capacity 3/4\n#97 2026-11-25T23:02:27Z INFO redis stats: hits=11403 misses=308 evicted=0 connected_clients=48\n#98 2026-11-25T23:02:58Z INFO notif-db InnoDB: page cleaner flushed 646 pages, buffer pool hit rate 99.9%\n#99 2026-11-25T23:02:59Z INFO template-svc instance template-svc-3 ready, capacity 4/4\n#100 2026-11-25T23:03:05Z INFO notif-worker processed batch of 52 messages from notifications.outbound (lag 253ms)\n#101 2026-11-25T23:03:22Z WARN notification-svc [t-3791] TemplateClient.render got 503, retrying immediately (attempt 2/4, backoff disabled)\n#102 2026-11-25T23:03:33Z ERROR api-gateway [t-3794] POST /v1/notify 503 28990ms: upstream notification-svc returned 503 (retries exhausted)\n#103 2026-11-25T23:03:40Z INFO redis stats: hits=11885 misses=263 evicted=0 connected_clients=41\n#104 2026-11-25T23:03:46Z INFO notif-worker processed batch of 49 messages from notifications.outbound (lag 218ms)\n#105 2026-11-25T23:03:52Z ERROR template-svc [t-3797] load shed: rejected POST /render with 503 (queue full)\n#106 2026-11-25T23:04:00Z WARN notification-svc [t-3801] TemplateClient.render got 503, retrying immediately (attempt 3/4, backoff disabled)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "limit": 50
+        },
+        "output": "34 match(es):\n#3 2026-11-25T22:50:31Z INFO notification-svc [t-3749] message m-4608 accepted, calling template-svc POST /render\n#7 2026-11-25T22:50:54Z INFO notification-svc [t-3750] message m-4610 accepted, calling template-svc POST /render\n#10 2026-11-25T22:51:35Z INFO notification-svc [t-3754] message m-4611 accepted, calling template-svc POST /render\n#12 2026-11-25T22:51:37Z DEBUG notification-svc GC pause 18ms (young), heap 42%\n#15 2026-11-25T22:51:57Z INFO notification-svc [t-3755] message m-4613 accepted, calling template-svc POST /render\n#19 2026-11-25T22:52:35Z INFO notification-svc [t-3756] message m-4616 accepted, calling template-svc POST /render\n#24 2026-11-25T22:53:10Z INFO notification-svc [t-3758] message m-4619 accepted, calling template-svc POST /render\n#28 2026-11-25T22:53:36Z INFO notification-svc [t-3761] message m-4622 accepted, calling template-svc POST /render\n#31 2026-11-25T22:54:02Z INFO notification-svc [t-3764] message m-4624 accepted, calling template-svc POST /render\n#35 2026-11-25T22:54:32Z INFO notification-svc [t-3765] message m-4626 accepted, calling template-svc POST /render\n#40 2026-11-25T22:54:53Z DEBUG notification-svc GC pause 10ms (young), heap 47%\n#42 2026-11-25T22:55:06Z INFO notification-svc [t-3767] message m-4628 accepted, calling template-svc POST /render\n#45 2026-11-25T22:55:37Z INFO notification-svc [t-3768] message m-4630 accepted, calling template-svc POST /render\n#47 2026-11-25T22:55:57Z INFO notification-svc [t-3770] message m-4632 accepted, calling template-svc POST /render\n#52 2026-11-25T22:56:32Z INFO notification-svc [t-3774] message m-4634 accepted, calling template-svc POST /render\n#55 2026-11-25T22:56:34Z DEBUG notification-svc GC pause 10ms (young), heap 33%\n#59 2026-11-25T22:57:17Z INFO notification-svc [t-3778] message m-4637 accepted, calling template-svc POST /render\n#63 2026-11-25T22:57:50Z INFO notification-svc [t-3780] message m-4639 accepted, calling template-svc POST /render\n#67 2026-11-25T22:58:18Z DEBUG notification-svc GC pause 20ms (young), heap 37%\n#68 2026-11-25T22:58:23Z INFO notification-svc [t-3781] message m-4641 accepted, calling template-svc POST /render\n#75 2026-11-25T22:59:08Z INFO notification-svc [t-3783] message m-4644 accepted, calling template-svc POST /render\n#78 2026-11-25T22:59:50Z INFO notification-svc [t-3784] message m-4647 accepted, calling template-svc POST /render\n#82 2026-11-25T23:00:27Z INFO notification-svc [t-3786] message m-4650 accepted, calling template-svc POST /render\n#85 2026-11-25T23:01:03Z DEBUG notification-svc GC pause 24ms (young), heap 37%\n#87 2026-11-25T23:01:08Z INFO notification-svc [t-3788] message m-4651 accepted, calling template-svc POST /render\n#93 2026-11-25T23:01:39Z INFO notification-svc [t-3790] message m-4653 accepted, calling template-svc POST /render\n#101 2026-11-25T23:03:22Z WARN notification-svc [t-3791] TemplateClient.render got 503, retrying immediately (attempt 2/4, backoff disabled)\n#106 2026-11-25T23:04:00Z WARN notification-svc [t-3801] TemplateClient.render got 503, retrying immediately (attempt 3/4, backoff disabled)\n#107 2026-11-25T23:04:11Z DEBUG notification-svc GC pause 25ms (young), heap 44%\n#111 2026-11-25T23:04:45Z WARN notification-svc [t-3804] TemplateClient.render got 503, retrying immediately (attempt 4/4, backoff disabled)\n#117 2026-11-25T23:06:29Z DEBUG notification-svc GC pause 10ms (young), heap 48%\n#128 2026-11-25T23:08:56Z INFO notification-svc [t-3817] message m-4655 accepted, calling template-svc POST /render\n#135 2026-11-25T23:09:46Z DEBUG notification-svc GC pause 9ms (young), heap 37%\n#139 2026-11-25T23:10:39Z INFO notification-svc [t-3823] message m-4657 accepted, calling template-svc POST /render"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "backoff"
+        },
+        "output": "3 match(es):\n#101 2026-11-25T23:03:22Z WARN notification-svc [t-3791] TemplateClient.render got 503, retrying immediately (attempt 2/4, backoff disabled)\n#106 2026-11-25T23:04:00Z WARN notification-svc [t-3801] TemplateClient.render got 503, retrying immediately (attempt 3/4, backoff disabled)\n#111 2026-11-25T23:04:45Z WARN notification-svc [t-3804] TemplateClient.render got 503, retrying immediately (attempt 4/4, backoff disabled)"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-3791"
+        },
+        "output": "1 line(s) for t-3791:\n#101 2026-11-25T23:03:22Z WARN notification-svc [t-3791] TemplateClient.render got 503, retrying immediately (attempt 2/4, backoff disabled)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "liveness"
+        },
+        "output": "1 match(es):\n#96 2026-11-25T23:02:24Z WARN template-svc instance template-svc-3 restarting (liveness probe failed), capacity 3/4"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 110,
+          "before": 8,
+          "after": 4
+        },
+        "output": "#102 2026-11-25T23:03:33Z ERROR api-gateway [t-3794] POST /v1/notify 503 28990ms: upstream notification-svc returned 503 (retries exhausted)\n#103 2026-11-25T23:03:40Z INFO redis stats: hits=11885 misses=263 evicted=0 connected_clients=41\n#104 2026-11-25T23:03:46Z INFO notif-worker processed batch of 49 messages from notifications.outbound (lag 218ms)\n#105 2026-11-25T23:03:52Z ERROR template-svc [t-3797] load shed: rejected POST /render with 503 (queue full)\n#106 2026-11-25T23:04:00Z WARN notification-svc [t-3801] TemplateClient.render got 503, retrying immediately (attempt 3/4, backoff disabled)\n#107 2026-11-25T23:04:11Z DEBUG notification-svc GC pause 25ms (young), heap 44%\n#108 2026-11-25T23:04:34Z INFO notif-worker processed batch of 76 messages from notifications.outbound (lag 171ms)\n#109 2026-11-25T23:04:34Z DEBUG template-svc GC pause 7ms (young), heap 32%\n#110 2026-11-25T23:04:43Z WARN template-svc inbound request rate 3.2x baseline (inflight 581), shedding load with 503\n#111 2026-11-25T23:04:45Z WARN notification-svc [t-3804] TemplateClient.render got 503, retrying immediately (attempt 4/4, backoff disabled)\n#112 2026-11-25T23:04:53Z INFO notif-db InnoDB: page cleaner flushed 197 pages, buffer pool hit rate 99.6%\n#113 2026-11-25T23:05:16Z INFO redis stats: hits=16706 misses=403 evicted=0 connected_clients=31\n#114 2026-11-25T23:05:26Z INFO notif-worker processed batch of 75 messages from notifications.outbound (lag 351ms)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.8,
+              "evidenceLines": [
+                96,
+                99,
+                101,
+                106,
+                111,
+                110,
+                105,
+                121,
+                102
+              ],
+              "reasoning": "The trigger is small: template-svc-3 failed its liveness probe and restarted at 23:02:24 (#96), dropping capacity to 3/4 (back to 4/4 at #99). That alone should be survivable. The damage comes from amplification: notification-svc's TemplateClient.render retries immediately with backoff disabled (#101, #106, #111, attempts 2 to 4 of 4), so every failed render is hammered again at once. template-svc then reports inbound request rate at 3.2x to 4.1x baseline with ~580 inflight (#110, #118) and sheds load with 503 'queue full' (#105, #121). Those 503s become retries-exhausted 503s at api-gateway (#102, #115, #125, #137). Recovery stalls because the retry storm keeps the render queue saturated. The gateway 503s are downstream symptoms, not the origin. GC pauses on template-svc are small (#109, heap ~32%), which argues against a memory fault. Note that the liveness-failure reason is not visible in these logs.",
+              "recommendedAction": "Immediately enable exponential backoff with jitter and a bounded retry budget in notification-svc's TemplateClient (it is currently retrying with backoff disabled). Consider a circuit breaker on the render path. Shed or throttle inbound /v1/notify traffic at the gateway until template-svc inflight drops back to baseline. Confirm template-svc is at 4/4 capacity and healthy. Investigate why template-svc-3 failed its liveness probe, which is the initial trigger, and check whether the restart loop recurs."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.8,
+              "evidenceLines": [
+                96,
+                99,
+                101,
+                106,
+                111,
+                110,
+                105,
+                121,
+                102
+              ],
+              "reasoning": "The trigger is small: template-svc-3 failed its liveness probe and restarted at 23:02:24 (#96), dropping capacity to 3/4 (back to 4/4 at #99). That alone should be survivable. The damage comes from amplification: notification-svc's TemplateClient.render retries immediately with backoff disabled (#101, #106, #111, attempts 2 to 4 of 4), so every failed render is hammered again at once. template-svc then reports inbound request rate at 3.2x to 4.1x baseline with ~580 inflight (#110, #118) and sheds load with 503 'queue full' (#105, #121). Those 503s become retries-exhausted 503s at api-gateway (#102, #115, #125, #137). Recovery stalls because the retry storm keeps the render queue saturated. The gateway 503s are downstream symptoms, not the origin. GC pauses on template-svc are small (#109, heap ~32%), which argues against a memory fault. The liveness-failure reason is not visible in these logs."
+            }
+          ],
+          "recommendedAction": "Immediately enable exponential backoff with jitter and a bounded retry budget in notification-svc's TemplateClient (it is currently retrying with backoff disabled), and add a circuit breaker on the render path. Throttle inbound /v1/notify traffic at the gateway until template-svc inflight returns to baseline. Confirm template-svc is at 4/4 capacity and healthy. Investigate why template-svc-3 failed its liveness probe, since that is the initial trigger, and check whether the restart recurs."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 8,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 2561,
+      "cacheReadTokens": 38623,
+      "cacheWriteTokens": 11750
+    },
+    "durationMs": 13597,
+    "stopReason": "tool_use"
+  }
+}

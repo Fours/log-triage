@@ -1,0 +1,168 @@
+{
+  "score": {
+    "incidentId": "test-004",
+    "difficulty": "medium",
+    "scenario": "data_integrity/sequence-collision",
+    "truth": "data_integrity",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 5,
+      "precision": 0.7142857142857143,
+      "recall": 1,
+      "f1": 0.8333333333333333
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0024905600000000006,
+    "durationMs": 11588,
+    "iterations": 6,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 14,
+      "output": 2210,
+      "cacheRead": 31491,
+      "cacheWrite": 8554
+    }
+  },
+  "result": {
+    "incidentId": "test-004",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.9,
+          "evidenceLines": [
+            168,
+            180,
+            195,
+            205,
+            211,
+            186,
+            189
+          ],
+          "reasoning": "At 09:52:11Z notif-db reloaded the notifications table from a snapshot (2,186,750 rows), but AUTO_INCREMENT was left at 2,167,241, about 19.5k IDs behind the real max id. From 09:53:06Z onward, inserts that reuse IDs already in the table fail with Duplicate entry on notifications.PRIMARY (#180, #195, #205, #211). notification-svc turns these into 409 unique-violation/500 create failures (#186), and api-gateway surfaces them as POST /v1/notify 500s (#189), which is the alert. Before the restore the service was healthy (e.g. #156-#173 all 200). The gateway 5xx and the 409s are downstream symptoms. The audit_log slow query (#66), the InnoDB flush lines, and template-svc and redis, which show no errors, are not causal. The restore is the origin; the AUTO_INCREMENT counter was not advanced afterward."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.3,
+          "evidenceLines": [
+            168
+          ],
+          "reasoning": "The restore runbook's post-restore step (resetting AUTO_INCREMENT to max(id)+1) may have been skipped or misconfigured. This is an alternative reading of the same line, but the fault itself is the stale counter, so data_integrity is the better fit."
+        }
+      ],
+      "recommendedAction": "Immediately set the notifications AUTO_INCREMENT on notif-db to max(id)+1 (at least 2186751) so inserts stop colliding. Verify that the restore did not lose or duplicate data by comparing the snapshot with notifications written since. Add a post-restore check that compares AUTO_INCREMENT with MAX(id) before traffic is re-enabled. Replay the rejected POST /v1/notify requests from the window, since they failed rather than saved."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "17 match(es):\n#66 2026-11-02T09:43:18Z WARN notif-db slow query 1584ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#168 2026-11-02T09:52:11Z WARN notif-db restore: table notifications reloaded from snapshot (2186750 rows); AUTO_INCREMENT left at 2167241\n#180 2026-11-02T09:53:06Z ERROR notif-db Duplicate entry '2183043' for key 'notifications.PRIMARY'\n#186 2026-11-02T09:53:42Z ERROR notification-svc [t-6844] create message failed: unique violation on notifications.id, returning 409\n#189 2026-11-02T09:54:05Z ERROR api-gateway [t-6848] POST /v1/notify 500 11347ms: upstream notification-svc returned 500 (create failed)\n#195 2026-11-02T09:54:45Z ERROR notif-db Duplicate entry '2183048' for key 'notifications.PRIMARY'\n#199 2026-11-02T09:55:28Z ERROR api-gateway [t-6855] POST /v1/notify 500 11866ms: upstream notification-svc returned 500 (create failed)\n#205 2026-11-02T09:55:50Z ERROR notif-db Duplicate entry '2183051' for key 'notifications.PRIMARY'\n#211 2026-11-02T09:56:54Z ERROR notif-db Duplicate entry '2183055' for key 'notifications.PRIMARY'\n#217 2026-11-02T09:58:02Z ERROR notification-svc [t-6861] create message failed: unique violation on notifications.id, returning 409\n#222 2026-11-02T09:58:47Z ERROR api-gateway [t-6867] POST /v1/notify 500 5446ms: upstream notification-svc returned 500 (create failed)\n#233 2026-11-02T10:00:06Z ERROR notification-svc [t-6874] create message failed: unique violation on notifications.id, returning 409\n#234 2026-11-02T10:00:09Z ERROR api-gateway [t-6877] POST /v1/notify 500 13787ms: upstream notification-svc returned 500 (create failed)\n#250 2026-11-02T10:01:52Z ERROR api-gateway [t-6893] POST /v1/notify 500 28780ms: upstream notification-svc returned 500 (create failed)\n#260 2026-11-02T10:03:07Z ERROR api-gateway [t-6901] POST /v1/notify 500 23680ms: upstream notification-svc returned 500 (create failed)\n#279 2026-11-02T10:06:36Z ERROR notification-svc [t-6908] create message failed: unique violation on notifications.id, returning 409\n#280 2026-11-02T10:06:38Z ERROR api-gateway [t-6912] POST /v1/notify 500 12774ms: upstream notification-svc returned 500 (create failed)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-db",
+          "limit": 50
+        },
+        "output": "21 match(es):\n#12 2026-11-02T09:38:01Z INFO notif-db InnoDB: page cleaner flushed 812 pages, buffer pool hit rate 98.9%\n#36 2026-11-02T09:40:13Z INFO notif-db InnoDB: page cleaner flushed 289 pages, buffer pool hit rate 98.8%\n#52 2026-11-02T09:42:01Z INFO notif-db InnoDB: page cleaner flushed 123 pages, buffer pool hit rate 98.8%\n#66 2026-11-02T09:43:18Z WARN notif-db slow query 1584ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#73 2026-11-02T09:44:08Z INFO notif-db InnoDB: page cleaner flushed 111 pages, buffer pool hit rate 99.1%\n#97 2026-11-02T09:46:13Z INFO notif-db InnoDB: page cleaner flushed 822 pages, buffer pool hit rate 99.2%\n#117 2026-11-02T09:47:51Z INFO notif-db InnoDB: page cleaner flushed 398 pages, buffer pool hit rate 98.5%\n#141 2026-11-02T09:50:10Z INFO notif-db InnoDB: page cleaner flushed 586 pages, buffer pool hit rate 98.5%\n#166 2026-11-02T09:51:56Z INFO notif-db InnoDB: page cleaner flushed 471 pages, buffer pool hit rate 99.1%\n#168 2026-11-02T09:52:11Z WARN notif-db restore: table notifications reloaded from snapshot (2186750 rows); AUTO_INCREMENT left at 2167241\n#180 2026-11-02T09:53:06Z ERROR notif-db Duplicate entry '2183043' for key 'notifications.PRIMARY'\n#190 2026-11-02T09:54:05Z INFO notif-db InnoDB: page cleaner flushed 815 pages, buffer pool hit rate 99%\n#195 2026-11-02T09:54:45Z ERROR notif-db Duplicate entry '2183048' for key 'notifications.PRIMARY'\n#204 2026-11-02T09:55:41Z INFO notif-db InnoDB: page cleaner flushed 603 pages, buffer pool hit rate 99.8%\n#205 2026-11-02T09:55:50Z ERROR notif-db Duplicate entry '2183051' for key 'notifications.PRIMARY'\n#211 2026-11-02T09:56:54Z ERROR notif-db Duplicate entry '2183055' for key 'notifications.PRIMARY'\n#218 2026-11-02T09:58:09Z INFO notif-db InnoDB: page cleaner flushed 882 pages, buffer pool hit rate 98.6%\n#231 2026-11-02T10:00:00Z INFO notif-db InnoDB: page cleaner flushed 532 pages, buffer pool hit rate 99.2%\n#256 2026-11-02T10:02:36Z INFO notif-db InnoDB: page cleaner flushed 560 pages, buffer pool hit rate 98.5%\n#269 2026-11-02T10:04:31Z INFO notif-db InnoDB: page cleaner flushed 677 pages, buffer pool hit rate 99.6%\n#286 2026-11-02T10:06:52Z INFO notif-db InnoDB: page cleaner flushed 655 pages, buffer pool hit rate 99.6%"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 168,
+          "before": 12,
+          "after": 6
+        },
+        "output": "#156 2026-11-02T09:51:02Z INFO api-gateway [t-6823] POST /v1/notify 200 129ms\n#157 2026-11-02T09:51:17Z INFO notification-svc [t-6827] message m-1615 accepted, calling template-svc POST /render\n#158 2026-11-02T09:51:17Z INFO template-svc [t-6827] POST /render m-1615 ok 54ms\n#159 2026-11-02T09:51:17Z INFO api-gateway [t-6827] POST /v1/notify 200 113ms\n#160 2026-11-02T09:51:26Z INFO notif-worker processed batch of 62 messages from notifications.outbound (lag 285ms)\n#161 2026-11-02T09:51:28Z INFO notification-svc [t-6829] message m-1617 accepted, calling template-svc POST /render\n#162 2026-11-02T09:51:28Z INFO api-gateway [t-6829] POST /v1/notify 200 99ms\n#163 2026-11-02T09:51:39Z INFO redis stats: hits=11364 misses=684 evicted=0 connected_clients=59\n#164 2026-11-02T09:51:47Z INFO notification-svc [t-6830] message m-1620 accepted, calling template-svc POST /render\n#165 2026-11-02T09:51:47Z INFO api-gateway [t-6830] POST /v1/notify 200 97ms\n#166 2026-11-02T09:51:56Z INFO notif-db InnoDB: page cleaner flushed 471 pages, buffer pool hit rate 99.1%\n#167 2026-11-02T09:51:58Z INFO notif-worker processed batch of 110 messages from notifications.outbound (lag 108ms)\n#168 2026-11-02T09:52:11Z WARN notif-db restore: table notifications reloaded from snapshot (2186750 rows); AUTO_INCREMENT left at 2167241\n#169 2026-11-02T09:52:13Z INFO notification-svc [t-6833] message m-1623 accepted, calling template-svc POST /render\n#170 2026-11-02T09:52:13Z INFO api-gateway [t-6833] POST /v1/notify 200 125ms\n#171 2026-11-02T09:52:34Z DEBUG api-gateway upstream health: notification-svc ok, template-svc ok\n#172 2026-11-02T09:52:35Z INFO notification-svc [t-6835] message m-1624 accepted, calling template-svc POST /render\n#173 2026-11-02T09:52:35Z INFO api-gateway [t-6835] POST /v1/notify 200 139ms\n#174 2026-11-02T09:52:44Z INFO notif-worker processed batch of 57 messages from notifications.outbound (lag 122ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "restore",
+          "limit": 30
+        },
+        "output": "1 match(es):\n#168 2026-11-02T09:52:11Z WARN notif-db restore: table notifications reloaded from snapshot (2186750 rows); AUTO_INCREMENT left at 2167241"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 180,
+          "before": 3,
+          "after": 3
+        },
+        "output": "#177 2026-11-02T09:52:59Z INFO notification-svc [t-6837] message m-1625 accepted, calling template-svc POST /render\n#178 2026-11-02T09:52:59Z INFO template-svc [t-6837] POST /render m-1625 ok 27ms\n#179 2026-11-02T09:53:00Z INFO api-gateway [t-6837] POST /v1/notify 200 163ms\n#180 2026-11-02T09:53:06Z ERROR notif-db Duplicate entry '2183043' for key 'notifications.PRIMARY'\n#181 2026-11-02T09:53:15Z INFO notif-worker processed batch of 33 messages from notifications.outbound (lag 78ms)\n#182 2026-11-02T09:53:18Z DEBUG template-svc GC pause 12ms (young), heap 38%\n#183 2026-11-02T09:53:25Z INFO notification-svc [t-6841] message m-1627 accepted, calling template-svc POST /render"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-6844"
+        },
+        "output": "1 line(s) for t-6844:\n#186 2026-11-02T09:53:42Z ERROR notification-svc [t-6844] create message failed: unique violation on notifications.id, returning 409"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"data_integrity\",\"confidence\":0.9,\"evidenceLines\":[168,180,195,205,211,186,189],\"reasoning\":\"At 09:52:11Z notif-db reloaded the notifications table from a snapshot (2,186,750 rows) but AUTO_INCREMENT was left at 2,167,241, about 19.5k IDs behind the actual max row id. Starting at 09:53:06Z, every insert that reuses an ID already in the table fails with Duplicate entry on notifications.PRIMARY (#180, #195, #205, #211). notification-svc turns these into 409 unique-violation/500 create failures (#186), and api-gateway surfaces them as POST /v1/notify 500s (#189), which is the alert. Before the restore the service was healthy (e.g. #156-#173 all 200). Gateway 5xx and the 409s are downstream symptoms. Other findings are not causal: the audit_log slow query (#66), InnoDB flush and hit-rate lines, and template-svc and redis, which show no errors. The restore is the origin; the AUTO_INCREMENT counter was not advanced after the restore.\",\"}, {\"rootCause\":\"config_error\",\"confidence\":0.3,\"evidenceLines\":[168],\"reasoning\":\"The restore procedure's post-restore step (resetting AUTO_INCREMENT to max(id)+1) may have been skipped because of a misconfigured or missing runbook step. This is an alternative reading of the same line, but the fault itself is the stale counter, so data_integrity is the better fit.\"}]",
+          "recommendedAction": "Immediately set notifications AUTO_INCREMENT to max(id)+1 (about 2186751 or higher) on notif-db so inserts stop colliding. Verify that no ID gap or duplicate data was introduced by the restore, and check the snapshot's rows against the notifications written after the restore. Add a post-restore validation step that checks AUTO_INCREMENT against MAX(id) before traffic is re-enabled. Then retry or replay the failed POST /v1/notify requests, which were rejected rather than saved."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                168,
+                180,
+                195,
+                205,
+                211,
+                186,
+                189
+              ],
+              "reasoning": "At 09:52:11Z notif-db reloaded the notifications table from a snapshot (2,186,750 rows), but AUTO_INCREMENT was left at 2,167,241, about 19.5k IDs behind the real max id. From 09:53:06Z onward, inserts that reuse IDs already in the table fail with Duplicate entry on notifications.PRIMARY (#180, #195, #205, #211). notification-svc turns these into 409 unique-violation/500 create failures (#186), and api-gateway surfaces them as POST /v1/notify 500s (#189), which is the alert. Before the restore the service was healthy (e.g. #156-#173 all 200). The gateway 5xx and the 409s are downstream symptoms. The audit_log slow query (#66), the InnoDB flush lines, and template-svc and redis, which show no errors, are not causal. The restore is the origin; the AUTO_INCREMENT counter was not advanced afterward."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.3,
+              "evidenceLines": [
+                168
+              ],
+              "reasoning": "The restore runbook's post-restore step (resetting AUTO_INCREMENT to max(id)+1) may have been skipped or misconfigured. This is an alternative reading of the same line, but the fault itself is the stale counter, so data_integrity is the better fit."
+            }
+          ],
+          "recommendedAction": "Immediately set the notifications AUTO_INCREMENT on notif-db to max(id)+1 (at least 2186751) so inserts stop colliding. Verify that the restore did not lose or duplicate data by comparing the snapshot with notifications written since. Add a post-restore check that compares AUTO_INCREMENT with MAX(id) before traffic is re-enabled. Replay the rejected POST /v1/notify requests from the window, since they failed rather than saved."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 2210,
+      "cacheReadTokens": 31491,
+      "cacheWriteTokens": 8554
+    },
+    "durationMs": 11588,
+    "stopReason": "tool_use"
+  }
+}

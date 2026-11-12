@@ -1,0 +1,158 @@
+{
+  "score": {
+    "incidentId": "test-024",
+    "difficulty": "hard",
+    "scenario": "dependency_timeout/external-hang",
+    "truth": "dependency_timeout",
+    "acceptable": [
+      "external_outage"
+    ],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 8,
+      "precision": 1,
+      "recall": 0.8888888888888888,
+      "f1": 0.9411764705882353
+    },
+    "herringsCited": 0,
+    "costUsd": 0.00239572,
+    "durationMs": 10038,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 2080,
+      "cacheRead": 17597,
+      "cacheWrite": 9430
+    }
+  },
+  "result": {
+    "incidentId": "test-024",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.85,
+          "evidenceLines": [
+            182,
+            183,
+            185,
+            190,
+            204,
+            209,
+            191,
+            205
+          ],
+          "reasoning": "The fault originates at the external identity provider (idp.example/oauth2/token) called by auth-svc. Starting around 05:39:12 (#182) its latency climbs from 4.5s to 11-13s (#183, #185), past the 2s soft threshold, and by 05:40:43 calls hang until the 30s timeout (#190, #204, #209). account-svc's AuthClient.issueToken calls to auth-svc POST /tokens then time out (#191, #205). Those hung calls hold account-svc's 50-connection pool to auth-svc, which saturates (queued requests and pool checkout timeouts), and edge-proxy returns 503s on POST /login. The pool saturation and the 503s are downstream symptoms and are not cited. accounts-db, session-cache and audit-consumer show no errors, so they are not the cause. A rate-limited client (#181) is minor noise. No 5xx or connection-refused responses come from the IdP, so this reads as a hang rather than an outage."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.15,
+          "evidenceLines": [
+            190,
+            204,
+            209
+          ],
+          "reasoning": "The identity provider could be treated as a third-party outage, since its failures persist for several minutes. The logs show slow then hung calls rather than fast 5xx or connection-refused errors, which favours dependency_timeout, so this is a lower-probability reading of the same lines."
+        }
+      ],
+      "recommendedAction": "Escalate to the identity provider owners and check its status and latency. Meanwhile, shorten the auth-svc to IdP timeout (30s is too long) and add a circuit breaker so auth-svc fails fast. Also bound the account-svc to auth-svc connection pool and shed load at the edge, so a hung dependency does not exhaust the pool and cause 503s for all logins."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "29 match(es):\n#48 2026-10-07T05:30:04Z WARN edge-proxy disk usage 77% on /var/log (threshold 75%)\n#164 2026-10-07T05:37:51Z WARN audit-consumer GC pause 1001ms (G1 Old Gen), heap 66% after collection\n#181 2026-10-07T05:39:06Z WARN edge-proxy rate limiter: client key k-7858 throttled (429), 127 req/s over quota\n#182 2026-10-07T05:39:12Z WARN auth-svc [t-5807] identity provider call slow: 4484ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#183 2026-10-07T05:39:24Z WARN auth-svc [t-5810] identity provider call slow: 11224ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#185 2026-10-07T05:39:41Z WARN auth-svc [t-5811] identity provider call slow: 12978ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#190 2026-10-07T05:40:43Z ERROR auth-svc [t-5812] identity provider call FAILED: upstream timeout after 30000ms POST https://idp.example/oauth2/token\n#191 2026-10-07T05:40:43Z ERROR account-svc [t-5812] AuthClient.issueToken timed out after 30000ms calling auth-svc POST /tokens (u-6691)\n#204 2026-10-07T05:41:47Z ERROR auth-svc [t-5823] identity provider call FAILED: upstream timeout after 30000ms POST https://idp.example/oauth2/token\n#205 2026-10-07T05:41:47Z ERROR account-svc [t-5823] AuthClient.issueToken timed out after 30000ms calling auth-svc POST /tokens (u-6700)\n#209 2026-10-07T05:42:25Z ERROR auth-svc [t-5827] identity provider call FAILED: upstream timeout after 30000ms POST https://idp.example/oauth2/token\n#210 2026-10-07T05:42:25Z ERROR account-svc [t-5827] AuthClient.issueToken timed out after 30000ms calling auth-svc POST /tokens (u-6704)\n#211 2026-10-07T05:42:30Z ERROR edge-proxy [t-5829] POST /login 503 7742ms: upstream account-svc returned 503 Service Unavailable\n#215 2026-10-07T05:42:58Z WARN account-svc HTTP connection pool to auth-svc at capacity (50/50 in use), 30 requests queued\n#217 2026-10-07T05:43:05Z ERROR edge-proxy [t-5832] POST /login 503 16890ms: upstream account-svc returned 503 Service Unavailable\n#219 2026-10-07T05:43:23Z WARN account-svc HTTP connection pool to auth-svc at capacity (50/50 in use), 57 requests queued\n#222 2026-10-07T05:43:45Z ERROR edge-proxy [t-5834] POST /login 503 9292ms: upstream account-svc returned 503 Service Unavailable\n#224 2026-10-07T05:44:11Z WARN account-svc HTTP connection pool to auth-svc at capacity (50/50 in use), 81 requests queued\n#225 2026-10-07T05:44:12Z ERROR edge-proxy [t-5836] POST /login 503 19457ms: upstream account-svc returned 503 Service Unavailable\n#228 2026-10-07T05:44:28Z ERROR edge-proxy [t-5841] POST /login 503 8581ms: upstream account-svc returned 503 Service Unavailable\n#232 2026-10-07T05:44:59Z WARN account-svc HTTP connection pool to auth-svc at capacity (50/50 in use), 101 requests queued\n#236 2026-10-07T05:45:06Z ERROR edge-proxy [t-5845] POST /login 503 23392ms: upstream account-svc returned 503 Service Unavailable\n#239 2026-10-07T05:45:31Z ERROR edge-proxy [t-5852] POST /login 503 5384ms: upstream account-svc returned 503 Service Unavailable\n#241 2026-10-07T05:45:44Z ERROR edge-proxy [t-5856] POST /login 503 9536ms: upstream account-svc returned 503 Service Unavailable\n#243 2026-10-07T05:45:58Z ERROR account-svc pool checkout timeout: no connection to auth-svc available after 5000ms\n#245 2026-10-07T05:46:14Z ERROR edge-proxy [t-5860] POST /login 503 26049ms: upstream account-svc returned 503 Service Unavailable\n#251 2026-10-07T05:46:54Z ERROR edge-proxy [t-5865] POST /login 503 13505ms: upstream account-svc returned 503 Service Unavailable\n#254 2026-10-07T05:47:22Z ERROR edge-proxy [t-5866] POST /login 503 15338ms: upstream account-svc returned 503 Service Unavailable\n#256 2026-10-07T05:47:45Z ERROR edge-proxy [t-5869] POST /login 503 6373ms: upstream account-svc returned 503 Service Unavailable"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "accounts-db"
+        },
+        "output": "10 match(es):\n#10 2026-10-07T05:27:36Z INFO accounts-db checkpoint complete: wrote 424 buffers (2.6%)\n#42 2026-10-07T05:29:44Z INFO accounts-db checkpoint complete: wrote 1301 buffers (7.7%)\n#75 2026-10-07T05:31:38Z INFO accounts-db checkpoint complete: wrote 964 buffers (1.5%)\n#105 2026-10-07T05:33:42Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 18\n#137 2026-10-07T05:35:56Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 18\n#174 2026-10-07T05:38:33Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 0\n#192 2026-10-07T05:40:56Z INFO accounts-db checkpoint complete: wrote 1251 buffers (6.1%)\n#214 2026-10-07T05:42:43Z INFO accounts-db checkpoint complete: wrote 351 buffers (5.1%)\n#230 2026-10-07T05:44:43Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 33\n#253 2026-10-07T05:47:06Z INFO accounts-db checkpoint complete: wrote 1349 buffers (3.1%)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 182,
+          "before": 15,
+          "after": 5
+        },
+        "output": "#167 2026-10-07T05:37:54Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#168 2026-10-07T05:38:07Z INFO audit-consumer processed batch of 75 messages from audit.events (lag 390ms)\n#169 2026-10-07T05:38:10Z INFO account-svc [t-5800] user u-6682 accepted, calling auth-svc POST /tokens\n#170 2026-10-07T05:38:10Z INFO edge-proxy [t-5800] POST /login 200 88ms\n#171 2026-10-07T05:38:23Z DEBUG account-svc GC pause 13ms (young), heap 37%\n#172 2026-10-07T05:38:29Z INFO account-svc [t-5801] user u-6684 accepted, calling auth-svc POST /tokens\n#173 2026-10-07T05:38:29Z INFO edge-proxy [t-5801] POST /login 200 102ms\n#174 2026-10-07T05:38:33Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 0\n#175 2026-10-07T05:38:34Z INFO session-cache stats: hits=10556 misses=490 evicted=0 connected_clients=39\n#176 2026-10-07T05:38:46Z INFO account-svc [t-5805] user u-6687 accepted, calling auth-svc POST /tokens\n#177 2026-10-07T05:38:46Z INFO edge-proxy [t-5805] POST /login 200 145ms\n#178 2026-10-07T05:38:55Z INFO account-svc [t-5806] user u-6690 accepted, calling auth-svc POST /tokens\n#179 2026-10-07T05:38:55Z INFO edge-proxy [t-5806] POST /login 200 144ms\n#180 2026-10-07T05:39:00Z INFO audit-consumer processed batch of 98 messages from audit.events (lag 384ms)\n#181 2026-10-07T05:39:06Z WARN edge-proxy rate limiter: client key k-7858 throttled (429), 127 req/s over quota\n#182 2026-10-07T05:39:12Z WARN auth-svc [t-5807] identity provider call slow: 4484ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#183 2026-10-07T05:39:24Z WARN auth-svc [t-5810] identity provider call slow: 11224ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#184 2026-10-07T05:39:38Z INFO session-cache stats: hits=9074 misses=364 evicted=0 connected_clients=43\n#185 2026-10-07T05:39:41Z WARN auth-svc [t-5811] identity provider call slow: 12978ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#186 2026-10-07T05:39:42Z INFO audit-consumer processed batch of 87 messages from audit.events (lag 147ms)\n#187 2026-10-07T05:40:16Z INFO audit-consumer processed batch of 116 messages from audit.events (lag 86ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc"
+        },
+        "output": "43 match(es), showing first 25:\n#2 2026-10-07T05:27:06Z INFO auth-svc [t-5687] POST /tokens u-6582 ok 66ms\n#7 2026-10-07T05:27:20Z INFO auth-svc [t-5689] POST /tokens u-6583 ok 62ms\n#14 2026-10-07T05:27:50Z INFO auth-svc [t-5695] POST /tokens u-6586 ok 83ms\n#19 2026-10-07T05:28:04Z INFO auth-svc [t-5698] POST /tokens u-6587 ok 82ms\n#22 2026-10-07T05:28:11Z INFO auth-svc [t-5701] POST /tokens u-6590 ok 85ms\n#25 2026-10-07T05:28:27Z INFO auth-svc [t-5704] POST /tokens u-6593 ok 33ms\n#27 2026-10-07T05:28:36Z DEBUG auth-svc GC pause 18ms (young), heap 37%\n#36 2026-10-07T05:29:19Z INFO auth-svc [t-5713] POST /tokens u-6602 ok 29ms\n#44 2026-10-07T05:29:51Z INFO auth-svc [t-5721] POST /tokens u-6605 ok 63ms\n#50 2026-10-07T05:30:09Z INFO auth-svc [t-5726] POST /tokens u-6608 ok 51ms\n#53 2026-10-07T05:30:16Z INFO auth-svc [t-5727] POST /tokens u-6611 ok 89ms\n#60 2026-10-07T05:30:39Z DEBUG auth-svc GC pause 20ms (young), heap 40%\n#64 2026-10-07T05:30:55Z INFO auth-svc [t-5732] POST /tokens u-6617 ok 23ms\n#68 2026-10-07T05:31:13Z INFO auth-svc [t-5733] POST /tokens u-6620 ok 64ms\n#79 2026-10-07T05:31:47Z INFO auth-svc [t-5738] POST /tokens u-6624 ok 43ms\n#84 2026-10-07T05:32:18Z INFO auth-svc [t-5743] POST /tokens u-6627 ok 62ms\n#88 2026-10-07T05:32:34Z INFO auth-svc [t-5747] POST /tokens u-6628 ok 76ms\n#93 2026-10-07T05:32:47Z DEBUG auth-svc GC pause 22ms (young), heap 39%\n#95 2026-10-07T05:32:55Z INFO auth-svc [t-5755] POST /tokens u-6631 ok 59ms\n#111 2026-10-07T05:34:02Z INFO auth-svc [t-5764] POST /tokens u-6644 ok 43ms\n#122 2026-10-07T05:35:07Z INFO auth-svc [t-5772] POST /tokens u-6652 ok 37ms\n#126 2026-10-07T05:35:18Z INFO auth-svc [t-5776] POST /tokens u-6655 ok 71ms\n#129 2026-10-07T05:35:33Z INFO auth-svc [t-5778] POST /tokens u-6656 ok 66ms\n#131 2026-10-07T05:35:41Z DEBUG auth-svc GC pause 10ms (young), heap 28%\n#133 2026-10-07T05:35:47Z INFO auth-svc [t-5780] POST /tokens u-6658 ok 64ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"dependency_timeout\",\"confidence\":0.85,\"evidenceLines\":[182,183,185,190,204,209,191,205],\"reasoning\":\"The fault originates at the external identity provider (idp.example/oauth2/token) called by auth-svc. Starting around 05:39:12 (#182) its latency climbs from 4.5s to 11-13s (#183, #185), past the 2s soft threshold, and by 05:40:43 calls hang until the 30s timeout (#190, #204, #209). account-svc's AuthClient.issueToken calls to auth-svc POST /tokens then time out (#191, #205, #210). Those hung calls hold account-svc's 50-connection pool to auth-svc, which saturates (queued requests and pool checkout timeouts, e.g. #215-#243), and edge-proxy returns 503s on POST /login (#211 onward). The pool saturation and the 503s are downstream symptoms and are not cited. accounts-db, session-cache and audit-consumer show no errors, so they are not the cause. A rate-limited client (#181) is minor noise. No 5xx or connection-refused responses appear from the IdP, so this reads as a hang rather than an outage.\",\"}, {\"rootCause\":\"external_outage\",\"confidence\":0.15,\"evidenceLines\":[190,204,209],\"reasoning\":\"The identity provider could be treated as a third-party outage, since its timeouts persist for several minutes. The logs show slow then hung calls rather than fast 5xx or connection-refused errors, which favours dependency_timeout, so this is a lower-probability reading of the same lines.\"}]",
+          "recommendedAction": "Escalate to the identity provider owners and check its status and latency. Meanwhile, shorten the auth-svc to IdP timeout (30s is too long) and add a circuit breaker so auth-svc fails fast. Also size or bound the account-svc to auth-svc connection pool and shed load at the edge, so a hung dependency does not exhaust the pool and cause 503s for all logins."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.85,
+              "evidenceLines": [
+                182,
+                183,
+                185,
+                190,
+                204,
+                209,
+                191,
+                205
+              ],
+              "reasoning": "The fault originates at the external identity provider (idp.example/oauth2/token) called by auth-svc. Starting around 05:39:12 (#182) its latency climbs from 4.5s to 11-13s (#183, #185), past the 2s soft threshold, and by 05:40:43 calls hang until the 30s timeout (#190, #204, #209). account-svc's AuthClient.issueToken calls to auth-svc POST /tokens then time out (#191, #205). Those hung calls hold account-svc's 50-connection pool to auth-svc, which saturates (queued requests and pool checkout timeouts), and edge-proxy returns 503s on POST /login. The pool saturation and the 503s are downstream symptoms and are not cited. accounts-db, session-cache and audit-consumer show no errors, so they are not the cause. A rate-limited client (#181) is minor noise. No 5xx or connection-refused responses come from the IdP, so this reads as a hang rather than an outage."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.15,
+              "evidenceLines": [
+                190,
+                204,
+                209
+              ],
+              "reasoning": "The identity provider could be treated as a third-party outage, since its failures persist for several minutes. The logs show slow then hung calls rather than fast 5xx or connection-refused errors, which favours dependency_timeout, so this is a lower-probability reading of the same lines."
+            }
+          ],
+          "recommendedAction": "Escalate to the identity provider owners and check its status and latency. Meanwhile, shorten the auth-svc to IdP timeout (30s is too long) and add a circuit breaker so auth-svc fails fast. Also bound the account-svc to auth-svc connection pool and shed load at the edge, so a hung dependency does not exhaust the pool and cause 503s for all logins."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 2080,
+      "cacheReadTokens": 17597,
+      "cacheWriteTokens": 9430
+    },
+    "durationMs": 10038,
+    "stopReason": "tool_use"
+  }
+}

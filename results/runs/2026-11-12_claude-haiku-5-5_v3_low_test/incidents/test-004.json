@@ -1,0 +1,197 @@
+{
+  "score": {
+    "incidentId": "test-004",
+    "difficulty": "medium",
+    "scenario": "data_integrity/sequence-collision",
+    "truth": "data_integrity",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 5,
+      "precision": 0.8333333333333334,
+      "recall": 1,
+      "f1": 0.9090909090909091
+    },
+    "herringsCited": 1,
+    "costUsd": 0.0022752650000000003,
+    "durationMs": 10246,
+    "iterations": 5,
+    "toolCalls": 3,
+    "tokens": {
+      "input": 12,
+      "output": 2186,
+      "cacheRead": 22344,
+      "cacheWrite": 7661
+    }
+  },
+  "result": {
+    "incidentId": "test-004",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.9,
+          "evidenceLines": [
+            168,
+            180,
+            195,
+            205,
+            211,
+            186
+          ],
+          "reasoning": "At 09:52:11 the notifications table was reloaded from a snapshot (2186750 rows) but AUTO_INCREMENT was left at 2167241, below existing max ids. Subsequent inserts collide with existing primary keys (Duplicate entry '2183043', '2183048', '2183051', '2183055'), notification-svc returns 409/500 on create, and api-gateway returns 500 on POST /v1/notify. Gateway 5xx and latency are downstream symptoms. Ruled out: the audit_log seq-scan slow query (#66) is unrelated; template-svc, redis and notif-worker show no errors; the failures start exactly at the restore."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.15,
+          "evidenceLines": [
+            66
+          ],
+          "reasoning": "Slow audit_log seq scan at 09:43 predates the failures and does not cause inserts to fail. Considered only as an alternative."
+        }
+      ],
+      "recommendedAction": "Immediately reset the notifications AUTO_INCREMENT to above MAX(id) (e.g. ALTER TABLE notifications AUTO_INCREMENT = 2186751, verified against MAX(id)), then verify inserts succeed. Fix the snapshot restore procedure so it resets the sequence. Consider re-driving the failed notify requests from 09:52 to 10:06. Add an audit_log(created_at) index as separate hygiene."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "17 match(es):\n#66 2026-11-02T09:43:18Z WARN notif-db slow query 1584ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#168 2026-11-02T09:52:11Z WARN notif-db restore: table notifications reloaded from snapshot (2186750 rows); AUTO_INCREMENT left at 2167241\n#180 2026-11-02T09:53:06Z ERROR notif-db Duplicate entry '2183043' for key 'notifications.PRIMARY'\n#186 2026-11-02T09:53:42Z ERROR notification-svc [t-6844] create message failed: unique violation on notifications.id, returning 409\n#189 2026-11-02T09:54:05Z ERROR api-gateway [t-6848] POST /v1/notify 500 11347ms: upstream notification-svc returned 500 (create failed)\n#195 2026-11-02T09:54:45Z ERROR notif-db Duplicate entry '2183048' for key 'notifications.PRIMARY'\n#199 2026-11-02T09:55:28Z ERROR api-gateway [t-6855] POST /v1/notify 500 11866ms: upstream notification-svc returned 500 (create failed)\n#205 2026-11-02T09:55:50Z ERROR notif-db Duplicate entry '2183051' for key 'notifications.PRIMARY'\n#211 2026-11-02T09:56:54Z ERROR notif-db Duplicate entry '2183055' for key 'notifications.PRIMARY'\n#217 2026-11-02T09:58:02Z ERROR notification-svc [t-6861] create message failed: unique violation on notifications.id, returning 409\n#222 2026-11-02T09:58:47Z ERROR api-gateway [t-6867] POST /v1/notify 500 5446ms: upstream notification-svc returned 500 (create failed)\n#233 2026-11-02T10:00:06Z ERROR notification-svc [t-6874] create message failed: unique violation on notifications.id, returning 409\n#234 2026-11-02T10:00:09Z ERROR api-gateway [t-6877] POST /v1/notify 500 13787ms: upstream notification-svc returned 500 (create failed)\n#250 2026-11-02T10:01:52Z ERROR api-gateway [t-6893] POST /v1/notify 500 28780ms: upstream notification-svc returned 500 (create failed)\n#260 2026-11-02T10:03:07Z ERROR api-gateway [t-6901] POST /v1/notify 500 23680ms: upstream notification-svc returned 500 (create failed)\n#279 2026-11-02T10:06:36Z ERROR notification-svc [t-6908] create message failed: unique violation on notifications.id, returning 409\n#280 2026-11-02T10:06:38Z ERROR api-gateway [t-6912] POST /v1/notify 500 12774ms: upstream notification-svc returned 500 (create failed)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-db",
+          "limit": 30
+        },
+        "output": "21 match(es):\n#12 2026-11-02T09:38:01Z INFO notif-db InnoDB: page cleaner flushed 812 pages, buffer pool hit rate 98.9%\n#36 2026-11-02T09:40:13Z INFO notif-db InnoDB: page cleaner flushed 289 pages, buffer pool hit rate 98.8%\n#52 2026-11-02T09:42:01Z INFO notif-db InnoDB: page cleaner flushed 123 pages, buffer pool hit rate 98.8%\n#66 2026-11-02T09:43:18Z WARN notif-db slow query 1584ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#73 2026-11-02T09:44:08Z INFO notif-db InnoDB: page cleaner flushed 111 pages, buffer pool hit rate 99.1%\n#97 2026-11-02T09:46:13Z INFO notif-db InnoDB: page cleaner flushed 822 pages, buffer pool hit rate 99.2%\n#117 2026-11-02T09:47:51Z INFO notif-db InnoDB: page cleaner flushed 398 pages, buffer pool hit rate 98.5%\n#141 2026-11-02T09:50:10Z INFO notif-db InnoDB: page cleaner flushed 586 pages, buffer pool hit rate 98.5%\n#166 2026-11-02T09:51:56Z INFO notif-db InnoDB: page cleaner flushed 471 pages, buffer pool hit rate 99.1%\n#168 2026-11-02T09:52:11Z WARN notif-db restore: table notifications reloaded from snapshot (2186750 rows); AUTO_INCREMENT left at 2167241\n#180 2026-11-02T09:53:06Z ERROR notif-db Duplicate entry '2183043' for key 'notifications.PRIMARY'\n#190 2026-11-02T09:54:05Z INFO notif-db InnoDB: page cleaner flushed 815 pages, buffer pool hit rate 99%\n#195 2026-11-02T09:54:45Z ERROR notif-db Duplicate entry '2183048' for key 'notifications.PRIMARY'\n#204 2026-11-02T09:55:41Z INFO notif-db InnoDB: page cleaner flushed 603 pages, buffer pool hit rate 99.8%\n#205 2026-11-02T09:55:50Z ERROR notif-db Duplicate entry '2183051' for key 'notifications.PRIMARY'\n#211 2026-11-02T09:56:54Z ERROR notif-db Duplicate entry '2183055' for key 'notifications.PRIMARY'\n#218 2026-11-02T09:58:09Z INFO notif-db InnoDB: page cleaner flushed 882 pages, buffer pool hit rate 98.6%\n#231 2026-11-02T10:00:00Z INFO notif-db InnoDB: page cleaner flushed 532 pages, buffer pool hit rate 99.2%\n#256 2026-11-02T10:02:36Z INFO notif-db InnoDB: page cleaner flushed 560 pages, buffer pool hit rate 98.5%\n#269 2026-11-02T10:04:31Z INFO notif-db InnoDB: page cleaner flushed 677 pages, buffer pool hit rate 99.6%\n#286 2026-11-02T10:06:52Z INFO notif-db InnoDB: page cleaner flushed 655 pages, buffer pool hit rate 99.6%"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 168,
+          "before": 4,
+          "after": 3
+        },
+        "output": "#164 2026-11-02T09:51:47Z INFO notification-svc [t-6830] message m-1620 accepted, calling template-svc POST /render\n#165 2026-11-02T09:51:47Z INFO api-gateway [t-6830] POST /v1/notify 200 97ms\n#166 2026-11-02T09:51:56Z INFO notif-db InnoDB: page cleaner flushed 471 pages, buffer pool hit rate 99.1%\n#167 2026-11-02T09:51:58Z INFO notif-worker processed batch of 110 messages from notifications.outbound (lag 108ms)\n#168 2026-11-02T09:52:11Z WARN notif-db restore: table notifications reloaded from snapshot (2186750 rows); AUTO_INCREMENT left at 2167241\n#169 2026-11-02T09:52:13Z INFO notification-svc [t-6833] message m-1623 accepted, calling template-svc POST /render\n#170 2026-11-02T09:52:13Z INFO api-gateway [t-6833] POST /v1/notify 200 125ms\n#171 2026-11-02T09:52:34Z DEBUG api-gateway upstream health: notification-svc ok, template-svc ok"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                168,
+                180,
+                195,
+                205,
+                211,
+                186
+              ],
+              "reasoning": "At 09:52:11 the notifications table was reloaded from a snapshot (2186750 rows) but AUTO_INCREMENT was left at 2167241, below existing max ids. Subsequent inserts collide with existing primary keys (Duplicate entry '2183043', '2183048', '2183051', '2183055'), notification-svc returns 409/500 on create, and api-gateway returns 500 on POST /v1/notify. Gateway 5xx and latency are downstream symptoms. Ruled out: the audit_log seq-scan slow query (#66) is unrelated; template-svc, redis and notif-worker show no errors; the failures start exactly at the restore.",
+              "recommendedAction": "Immediately reset notifications AUTO_INCREMENT to above MAX(id) (e.g. ALTER TABLE notifications AUTO_INCREMENT = 2186751 or higher, verified against MAX(id)). Verify no duplicate or gap issues, and confirm that the snapshot restore procedure resets the sequence. Consider replaying or re-driving the failed notify requests from the window 09:52-10:06."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.15,
+              "evidenceLines": [
+                66
+              ],
+              "reasoning": "Slow audit_log seq scan at 09:43 is a red herring; it predates the failures and does not produce inserts failing. Included only as a considered alternative.",
+              "recommendedAction": "Add an index on audit_log(created_at) as a separate hygiene item."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                168,
+                180,
+                195,
+                205,
+                211,
+                186
+              ],
+              "reasoning": "At 09:52:11 the notifications table was reloaded from a snapshot (2186750 rows) but AUTO_INCREMENT was left at 2167241, below existing max ids. Subsequent inserts collide with existing primary keys (Duplicate entry '2183043', '2183048', '2183051', '2183055'), notification-svc returns 409/500 on create, and api-gateway returns 500 on POST /v1/notify. Gateway 5xx and latency are downstream symptoms. Ruled out: the audit_log seq-scan slow query (#66) is unrelated; template-svc, redis and notif-worker show no errors; the failures start exactly at the restore.",
+              "recommendedAction": "Immediately reset notifications AUTO_INCREMENT to above MAX(id) (e.g. ALTER TABLE notifications AUTO_INCREMENT = 2186751 or higher, verified against MAX(id)). Then verify inserts succeed. Confirm the snapshot restore procedure resets the sequence. Consider re-driving the failed notify requests from 09:52-10:06."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.15,
+              "evidenceLines": [
+                66
+              ],
+              "reasoning": "Slow audit_log seq scan at 09:43 is a red herring; it predates the failures and does not cause inserts to fail. Included only as a considered alternative.",
+              "recommendedAction": "Add an index on audit_log(created_at) as a separate hygiene item."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                168,
+                180,
+                195,
+                205,
+                211,
+                186
+              ],
+              "reasoning": "At 09:52:11 the notifications table was reloaded from a snapshot (2186750 rows) but AUTO_INCREMENT was left at 2167241, below existing max ids. Subsequent inserts collide with existing primary keys (Duplicate entry '2183043', '2183048', '2183051', '2183055'), notification-svc returns 409/500 on create, and api-gateway returns 500 on POST /v1/notify. Gateway 5xx and latency are downstream symptoms. Ruled out: the audit_log seq-scan slow query (#66) is unrelated; template-svc, redis and notif-worker show no errors; the failures start exactly at the restore."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.15,
+              "evidenceLines": [
+                66
+              ],
+              "reasoning": "Slow audit_log seq scan at 09:43 predates the failures and does not cause inserts to fail. Considered only as an alternative."
+            }
+          ],
+          "recommendedAction": "Immediately reset the notifications AUTO_INCREMENT to above MAX(id) (e.g. ALTER TABLE notifications AUTO_INCREMENT = 2186751, verified against MAX(id)), then verify inserts succeed. Fix the snapshot restore procedure so it resets the sequence. Consider re-driving the failed notify requests from 09:52 to 10:06. Add an audit_log(created_at) index as separate hygiene."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 3,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 2186,
+      "cacheReadTokens": 22344,
+      "cacheWriteTokens": 7661
+    },
+    "durationMs": 10246,
+    "stopReason": "tool_use"
+  }
+}

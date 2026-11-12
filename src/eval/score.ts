@@ -1,6 +1,7 @@
 import type { Outcome, TriageResult } from "../agent.js";
 import { ROOT_CAUSE_CATEGORIES, type Incident, type RootCauseCategory } from "../types.js";
 import { costUsd } from "./pricing.js";
+import { intervals, type Intervals } from "./stats.js";
 
 /**
  * Scoring is deterministic code over (label, verdict): no LLM judge. Root
@@ -141,6 +142,8 @@ export interface Summary {
   cost: { totalUsd: number | null; meanUsd: number | null };
   latency: { p50Ms: number; p95Ms: number; meanMs: number };
   effort: { meanIterations: number; meanToolCalls: number; meanTokens: number };
+  /** 95% bootstrap intervals for the headline metrics. Absent in summaries written before Phase 5. */
+  intervals?: Intervals;
 }
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
@@ -241,5 +244,6 @@ export function summarize(scores: IncidentScore[]): Summary {
       meanToolCalls: mean(scores.map((s) => s.toolCalls)),
       meanTokens: mean(scores.map((s) => s.tokens.input + s.tokens.output + s.tokens.cacheRead + s.tokens.cacheWrite)),
     },
+    intervals: intervals(scores),
   };
 }

@@ -1,12 +1,14 @@
 # Eval run `2026-11-12_claude-opus-5-5`
 
-Model **claude-opus-5-5** · 48 incidents · generator v1 seed `log-triage-v1` · commit `8d500a0` (dirty)
+Model **claude-opus-5-5** · prompt **v1** · 48 incidents from `incidents/generated` · generator v1 seed `log-triage-v1` · commit `8d500a0` (dirty)
 
 ## Headline
 
 | top-1 | top-1 (lenient) | top-3 | evidence P / R | herring cites | ECE | Brier | cost / incident | p50 / p95 latency |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | **96%** | 96% | 100% | 64% / 94% | 0.29 (12/48) | 0.16 | 0.06 | $0.05 | 13.0s / 17.0s |
+
+95% bootstrap intervals (resampling incidents): top-1 [90–100], lenient [90–100], evidence precision [61–67], recall [90–97], cost / incident [$0.05–$0.05]. To compare two runs on the same incidents, use `npm run compare`, which is much tighter.
 
 Outcomes: 48 submitted, 0 budget exhausted, 0 no verdict, 0 refused, 0 API error. Total cost $2.36. Mean 4.0 turns, 4.0 tool calls, 17,303 tokens per incident.
 

@@ -2,7 +2,7 @@
 
 An LLM agent that investigates production logs and returns a **ranked root-cause triage** — each hypothesis backed by the specific log lines it cites, with a calibrated confidence and a recommended next action. It is built to be **measured**: the point of the project is the eval harness, not the demo.
 
-> Status: **Phase 4**. Prompt iteration, checked on a held-out test set: on 48 incidents it was never tuned on, Opus 5.5 gets the root cause right on **47/48** (v1: 45/48; keyword baseline: 26/48). Evidence precision rose from **63% to 89–91%**, and calibration error fell from 0.17 to 0.07. At low effort that costs **$0.04 and ~8s per incident**. See the [results](results/README.md) and the [iteration log](results/ITERATIONS.md).
+> Status: **Phase 5**. Model comparison on a held-out test set of 48 incidents: **Haiku 5.5 gets every root cause right at $0.003 per incident**, the same accuracy and evidence quality as Opus 5.5 for 1/15 of the cost. Prompt work (Phase 4) raised evidence precision from 63% to ~90%. The keyword baseline gets 54%. See the [results](results/README.md), the [iteration log](results/ITERATIONS.md) and the [model comparison](#model-comparison-phase-5).
 
 ## Why this exists
 
@@ -64,6 +64,8 @@ npm run eval -- --prompt v2 --effort low          # a prompt version from src/pr
 npm run eval -- --test                            # the held-out test set (incidents/test)
 npm run eval -- --model claude-haiku-5-5 --limit 8
 npm run eval -- --run-id <id> --resume ...        # continue an interrupted run (the exact command is printed)
+npm run compare -- <runA> <runB>                  # paired difference between two runs, with 95% intervals (free)
+npm run rescore                                   # rebuild summaries and reports from saved scores (free)
 ```
 
 **Interrupted runs.** Each incident is saved the moment it finishes, so nothing paid for is lost.
@@ -99,9 +101,38 @@ Prompts are versioned in [`src/prompts.ts`](src/prompts.ts), tuned on the dev se
 | **v3, low effort** | **98%** | **100%** | **91%** / 85% | 0.08 | **$0.038** | **7.7s** |
 
 - **v2: what counts as evidence.** Cite the fault at its origin and its direct failures, not gateway 5xxs or saturated pools further downstream. Add a confidence rubric. Precision went from 64% to 89%, and ECE from 0.16 to 0.04.
-- **v3: define the categories.** The prompt had listed eight bare category names. Adding a definition for each and tie-break rules fixed every boundary miss, including the lock-wait scenario that v1 always missed. Those rules came from dev-set errors, so they could have been overfitting, but the held-out set says they generalize.
+- **v3: define the categories.** The prompt had listed eight bare category names. Adding a definition for each and tie-break rules fixed every boundary miss, including the lock-wait scenario that v1 always missed. Those rules came from dev-set errors, so they could have been overfitting. On the held-out set v3 fixed the same kinds of misses, but with 48 easy incidents the top-1 gain (+4 pts) is within noise; the evidence-precision gain (+26 pts, 95% interval +21 to +30) is not.
 - **v4: seed the overview with each service's earliest warning (rejected).** It anchored the agent on red herrings: recall dropped and herring citations rose.
 - **Measuring cost needs a cold cache.** Runs that share a prompt prefix and start within 5 minutes of each other read each other's prompt cache. One dev run looked 40% cheaper than it was. The held-out runs were ordered so none could share cache.
+
+### Model comparison (Phase 5)
+
+Prompt v3 on the held-out test set. Each model ran at `low` and `medium` effort. Opus's "default" run is `medium`, its default; Sonnet's default is `high`, so explicit levels keep the comparison even. Every run was cold (no cache shared across runs).
+
+| model, effort | top-1 | lenient | evidence P / R | ECE | cost / incident | p50 latency | tool calls |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **Haiku 5.5, low** | **100%** | 100% | 90% / 87% | 0.16 | **$0.0026** | 10.3s | 5.0 |
+| Haiku 5.5, medium | 100% | 100% | 88% / 88% | 0.15 | $0.0030 | 12.4s | 7.4 |
+| Sonnet 5.5, low | 98% | 100% | 92% / 73% | 0.09 | $0.017 | **4.6s** | 1.5 |
+| Sonnet 5.5, medium | 98% | 100% | 92% / 74% | 0.10 | $0.018 | 5.2s | 1.7 |
+| Opus 5.5, low | 98% | 100% | 91% / 85% | 0.08 | $0.038 | 7.7s | 1.8 |
+| Opus 5.5, medium | 98% | 100% | 89% / 89% | 0.07 | $0.055 | 12.5s | 4.2 |
+
+Paired differences against Opus at low effort (`npm run compare`, 95% bootstrap intervals over the same 48 incidents):
+
+| vs. Opus, low | top-1 | evidence precision | evidence recall | cost / incident | latency |
+|---|---:|---:|---:|---:|---:|
+| Haiku, low | +2 pts [0, +6] | −0 pts [−4, +3] | +2 pts [−4, +7] | **−$0.036** [−0.038, −0.034] | +3.1s [+2.0, +4.1] |
+| Sonnet, low | 0 pts [0, 0] | +2 pts [0, +4] | **−12 pts** [−16, −8] | **−$0.021** [−0.023, −0.020] | **−3.2s** [−4.0, −2.5] |
+
+What this says:
+
+- **On this dataset the cheapest model is the right one.** Haiku matches Opus on root cause and on evidence, within noise, at 1/15 of the cost. It gets there by doing more work: about 5 tool calls to Opus's 2, which is why it's 3s slower. Effort barely matters for Haiku. Medium costs more and takes longer, and the evidence numbers don't move outside noise.
+- **Sonnet is the fastest, but cites the least.** It reads the fewest lines (1.5 tool calls) and cites 5.0 lines per incident against 6.5 labeled, so its recall is 12 points below Opus's. Its confidence is the most informative: its one miss was its only answer below 0.8.
+- **Haiku is under-confident, not miscalibrated the dangerous way.** It was right on all 48, at 0.84 average confidence. No model gave a confidently wrong answer.
+- **All three models are at the ceiling on root cause** (98–100%, the only misses picking the labeled alternative). The dataset can rank them on cost, latency and evidence, but not on diagnosis. A harder incident set is the next step before trusting a model choice on real incidents. Until then, the default stays Opus 5.5, and `TRIAGE_MODEL=claude-haiku-5-5` is the cost-optimal setting this eval supports.
+
+Phase 5 cost $2.00: the four runs above (Opus's two are from Phase 4) plus a one-incident smoke test per model.
 
 ## The incident dataset
 
@@ -128,9 +159,10 @@ The eval is only as good as its labels, so incidents are generated by **code, no
 | [`incidents/sample-001-…`](incidents/sample-001-payment-timeout.json) | The original hand-built incident. |
 | [`scripts/test-tools.ts`](scripts/test-tools.ts) | Unit tests for the deterministic layer — **no API key required**. |
 | [`scripts/test-generator.ts`](scripts/test-generator.ts) | Dataset checks: balance, determinism, label consistency, no answer leakage. |
-| [`src/eval/`](src/eval/) | Scorer, aggregation, pricing, report rendering, and the no-LLM keyword baseline. |
+| [`src/eval/`](src/eval/) | Scorer, aggregation, bootstrap intervals and paired comparisons, pricing, report rendering, and the no-LLM keyword baseline. |
 | [`scripts/eval.ts`](scripts/eval.ts) | Runs a model over the dataset and writes a run directory under [`results/runs/`](results/runs/). |
-| [`scripts/test-eval.ts`](scripts/test-eval.ts) | Scorer, calibration and report checks. |
+| [`scripts/test-eval.ts`](scripts/test-eval.ts) | Scorer, calibration, interval, report and runner checks. |
+| [`scripts/compare.ts`](scripts/compare.ts), [`scripts/rescore.ts`](scripts/rescore.ts) | Paired run comparison; rebuild summaries and reports from saved scores. Both free. |
 | [`scripts/test-agent.ts`](scripts/test-agent.ts) | The agent loop driven by a scripted fake model — every failure path, **no API key**. |
 
 ## Running it
@@ -184,5 +216,5 @@ Default model is `claude-opus-5-5`, with prompt `v3`. `TRIAGE_PROMPT=v1` picks a
 - [x] **Phase 2** — harden the loop (budgets, retries, parallel-tool handling).
 - [x] **Phase 3** — **eval harness**: scorer (root-cause top-1/top-3, evidence precision/recall, calibration, cost/latency), committed run results.
 - [x] **Phase 4** — iterate prompt + retrieval strategy against the eval, with a held-out test set and a before/after history ([ITERATIONS.md](results/ITERATIONS.md)).
-- [ ] **Phase 5** — model matrix (Haiku / Sonnet / Opus): accuracy vs. cost.
+- [x] **Phase 5** — model matrix (Haiku / Sonnet / Opus × effort): accuracy vs. cost, with bootstrap intervals and paired comparisons.
 - [ ] **Phase 6** — showcase page (metrics, model comparison, recorded demo, the iteration story).

@@ -1,0 +1,192 @@
+{
+  "score": {
+    "incidentId": "test-036",
+    "difficulty": "easy",
+    "scenario": "resource_exhaustion/db-disk-full",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.00216496,
+    "durationMs": 9909,
+    "iterations": 4,
+    "toolCalls": 2,
+    "tokens": {
+      "input": 10,
+      "output": 2409,
+      "cacheRead": 13971,
+      "cacheWrite": 6558
+    }
+  },
+  "result": {
+    "incidentId": "test-036",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.88,
+          "evidenceLines": [
+            38,
+            57,
+            90,
+            91,
+            101,
+            107
+          ],
+          "reasoning": "events-db's /var/lib/mysql volume filled up. Disk warnings climbed from 95% (#38, WAL/binlog growth 635MB/h) to 99% (#57, growth 834MB/h). Once the disk was full, InnoDB writes to events.ibd failed with 'No space left on device' (#90, #101), and ingest-api inserts failed with error 1114 'The table is full' (#91, #107). ingest-api's failed inserts propagated as 500s to ingest-gateway (#87, #100, #123, #130), which are downstream symptoms. Reads stay healthy because they don't write. Enrichment, geo-cache and event-processor logged no errors, which fits a write-path-only failure at the database. Alternative: the binlog/WAL growth could be a retention misconfiguration (config_error), but the direct failure is disk exhaustion."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.2,
+          "evidenceLines": [
+            38,
+            57
+          ],
+          "reasoning": "If binlog/WAL retention was misconfigured so logs never purged, the disk fill would be a configuration fault rather than a plain capacity limit. The logs show only the growth rate, not the retention setting, so this is a weaker reading."
+        }
+      ],
+      "recommendedAction": "Immediately free disk on events-db: purge expired binlogs/WAL, or expand the volume. Then confirm inserts succeed and the 500 rate drops. Afterwards, add disk-usage alerting well before 95%, and set binlog retention/expiry so WAL growth cannot fill the volume. Check whether the growth rate (~835MB/h) came from a recent change in event volume or in retention settings."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "10 match(es):\n#38 2026-11-02T12:55:41Z WARN events-db disk usage 95% on /var/lib/mysql (WAL/binlog growth 635MB/h)\n#57 2026-11-02T12:57:46Z WARN events-db disk usage 99% on /var/lib/mysql (WAL/binlog growth 834MB/h)\n#87 2026-11-02T13:01:16Z ERROR ingest-gateway [t-1199] POST /v1/events 500 24014ms: upstream ingest-api returned 500 Internal Server Error\n#90 2026-11-02T13:01:29Z ERROR events-db [ERROR] [MY-012639] InnoDB: Write to file ./events.ibd failed: No space left on device\n#91 2026-11-02T13:01:59Z ERROR ingest-api [t-1206] insert into events failed for e-5927: error 1114: The table is full\n#100 2026-11-02T13:03:17Z ERROR ingest-gateway [t-1211] POST /v1/events 500 15025ms: upstream ingest-api returned 500 Internal Server Error\n#101 2026-11-02T13:03:22Z ERROR events-db [ERROR] [MY-012639] InnoDB: Write to file ./events.ibd failed: No space left on device\n#107 2026-11-02T13:04:15Z ERROR ingest-api [t-1217] insert into events failed for e-5932: error 1114: The table is full\n#123 2026-11-02T13:07:17Z ERROR ingest-gateway [t-1222] POST /v1/events 500 29264ms: upstream ingest-api returned 500 Internal Server Error\n#130 2026-11-02T13:08:25Z ERROR ingest-gateway [t-1227] POST /v1/events 500 25911ms: upstream ingest-api returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "events-db",
+          "limit": 50
+        },
+        "output": "13 match(es):\n#5 2026-11-02T12:51:57Z INFO events-db InnoDB: page cleaner flushed 663 pages, buffer pool hit rate 98.5%\n#26 2026-11-02T12:54:20Z INFO events-db InnoDB: page cleaner flushed 127 pages, buffer pool hit rate 99.7%\n#38 2026-11-02T12:55:41Z WARN events-db disk usage 95% on /var/lib/mysql (WAL/binlog growth 635MB/h)\n#41 2026-11-02T12:56:01Z INFO events-db InnoDB: page cleaner flushed 819 pages, buffer pool hit rate 99.2%\n#54 2026-11-02T12:57:41Z INFO events-db InnoDB: page cleaner flushed 646 pages, buffer pool hit rate 98.7%\n#57 2026-11-02T12:57:46Z WARN events-db disk usage 99% on /var/lib/mysql (WAL/binlog growth 834MB/h)\n#76 2026-11-02T13:00:09Z INFO events-db InnoDB: page cleaner flushed 726 pages, buffer pool hit rate 99.2%\n#90 2026-11-02T13:01:29Z ERROR events-db [ERROR] [MY-012639] InnoDB: Write to file ./events.ibd failed: No space left on device\n#95 2026-11-02T13:02:28Z INFO events-db InnoDB: page cleaner flushed 307 pages, buffer pool hit rate 99.6%\n#101 2026-11-02T13:03:22Z ERROR events-db [ERROR] [MY-012639] InnoDB: Write to file ./events.ibd failed: No space left on device\n#110 2026-11-02T13:04:31Z INFO events-db InnoDB: page cleaner flushed 665 pages, buffer pool hit rate 99.6%\n#119 2026-11-02T13:06:38Z INFO events-db InnoDB: page cleaner flushed 881 pages, buffer pool hit rate 99.7%\n#132 2026-11-02T13:08:50Z INFO events-db InnoDB: page cleaner flushed 756 pages, buffer pool hit rate 99%"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.88,
+              "evidenceLines": [
+                38,
+                57,
+                90,
+                91,
+                101,
+                107
+              ],
+              "reasoning": "events-db's /var/lib/mysql volume filled up. Disk warnings climbed from 95% (#38, WAL/binlog growth 635MB/h) to 99% (#57, growth 834MB/h). Once the disk was full, InnoDB writes to events.ibd failed with 'No space left on device' (#90, #101), and ingest-api inserts failed with error 1114 'The table is full' (#91, #107). ingest-api's failed inserts propagated as 500s to ingest-gateway (#87, #100, #123, #130). The gateway 500s are downstream symptoms, not the origin. Reads stay healthy because they don't write. Enrichment, geo-cache and event-processor logged no errors, which fits a write-path-only failure at the database. Alternative: the binlog/WAL growth could be a retention misconfiguration (config_error), but the direct failure is disk exhaustion.",
+              "recommendedAction": "Immediately free disk on events-db: purge expired binlogs/WAL, or expand the volume. Then confirm inserts succeed and the 500 rate drops. Afterwards, add disk-usage alerting well before 95%, and set binlog retention/expiry so WAL growth cannot fill the volume. Check whether the growth rate (~835MB/h) came from a recent change in event volume or in retention settings."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.2,
+              "evidenceLines": [
+                38,
+                57
+              ],
+              "reasoning": "If binlog/WAL retention was misconfigured so that logs never purged, the disk fill would be a configuration fault rather than a plain capacity limit. The logs show only the growth rate, not the retention setting, so this is a weaker reading.",
+              "recommendedAction": "Inspect binlog expire/retention settings on events-db and confirm whether they changed recently."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.88,
+              "evidenceLines": [
+                38,
+                57,
+                90,
+                91,
+                101,
+                107
+              ],
+              "reasoning": "events-db's /var/lib/mysql volume filled up. Disk warnings climbed from 95% (#38, WAL/binlog growth 635MB/h) to 99% (#57, growth 834MB/h). Once the disk was full, InnoDB writes to events.ibd failed with 'No space left on device' (#90, #101), and ingest-api inserts failed with error 1114 'The table is full' (#91, #107). ingest-api's failed inserts propagated as 500s to ingest-gateway (#87, #100, #123, #130). The gateway 500s are downstream symptoms, not the origin. Reads stay healthy because they don't write. Enrichment, geo-cache and event-processor logged no errors, which fits a write-path-only failure at the database. Alternative: the binlog/WAL growth could be a retention misconfiguration (config_error), but the direct failure is disk exhaustion.",
+              "recommendedAction": "Immediately free disk on events-db: purge expired binlogs/WAL, or expand the volume. Then confirm inserts succeed and the 500 rate drops. Afterwards, add disk-usage alerting well before 95%, and set binlog retention/expiry so WAL growth cannot fill the volume. Check whether the growth rate (~835MB/h) came from a recent change in event volume or in retention settings."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.2,
+              "evidenceLines": [
+                38,
+                57
+              ],
+              "reasoning": "If binlog/WAL retention was misconfigured so that logs never purged, the disk fill would be a configuration fault rather than a plain capacity limit. The logs show only the growth rate, not the retention setting, so this is a weaker reading.",
+              "recommendedAction": "Inspect binlog expire/retention settings on events-db and confirm whether they changed recently."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "recommendedAction": "Immediately free disk on events-db: purge expired binlogs/WAL, or expand the volume. Then confirm inserts succeed and the 500 rate drops. Afterwards, add disk-usage alerting well before 95%, and set binlog retention/expiry so WAL growth cannot fill the volume. Check whether the growth rate (~835MB/h) came from a recent change in event volume or in retention settings.",
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.88,
+              "evidenceLines": [
+                38,
+                57,
+                90,
+                91,
+                101,
+                107
+              ],
+              "reasoning": "events-db's /var/lib/mysql volume filled up. Disk warnings climbed from 95% (#38, WAL/binlog growth 635MB/h) to 99% (#57, growth 834MB/h). Once the disk was full, InnoDB writes to events.ibd failed with 'No space left on device' (#90, #101), and ingest-api inserts failed with error 1114 'The table is full' (#91, #107). ingest-api's failed inserts propagated as 500s to ingest-gateway (#87, #100, #123, #130), which are downstream symptoms. Reads stay healthy because they don't write. Enrichment, geo-cache and event-processor logged no errors, which fits a write-path-only failure at the database. Alternative: the binlog/WAL growth could be a retention misconfiguration (config_error), but the direct failure is disk exhaustion."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.2,
+              "evidenceLines": [
+                38,
+                57
+              ],
+              "reasoning": "If binlog/WAL retention was misconfigured so logs never purged, the disk fill would be a configuration fault rather than a plain capacity limit. The logs show only the growth rate, not the retention setting, so this is a weaker reading."
+            }
+          ]
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 2,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 2409,
+      "cacheReadTokens": 13971,
+      "cacheWriteTokens": 6558
+    },
+    "durationMs": 9909,
+    "stopReason": "tool_use"
+  }
+}

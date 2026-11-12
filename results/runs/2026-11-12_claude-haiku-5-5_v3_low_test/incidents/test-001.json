@@ -1,0 +1,157 @@
+{
+  "score": {
+    "incidentId": "test-001",
+    "difficulty": "medium",
+    "scenario": "poison_message/redelivery-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "poison_message",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 9,
+      "correct": 8,
+      "precision": 0.8888888888888888,
+      "recall": 1,
+      "f1": 0.9411764705882353
+    },
+    "herringsCited": 0,
+    "costUsd": 0.00212648,
+    "durationMs": 8637,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 1736,
+      "cacheRead": 17773,
+      "cacheWrite": 8638
+    }
+  },
+  "result": {
+    "incidentId": "test-001",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.9,
+          "evidenceLines": [
+            159,
+            160,
+            166,
+            167,
+            175,
+            176,
+            189,
+            190,
+            174
+          ],
+          "reasoning": "Consumer partition 10 is jammed by msg-798041 (offset 269792), which fails JSON parsing on a NUL byte at position 1341 on every attempt. The consumer nacks and redelivers it with no max-retry or dead-letter limit (attempt 5 -> 24+), so the partition stops advancing and lag grows (996 msgs at 02:54, 8208 at 03:03). Consumer CPU is normal because it is stuck retrying one message, not overloaded. Order-service timeouts (#188, #241, #257, #286) and the gateway impact are downstream of orders not being confirmed. Earlier GC pause (#61) and card processor reset (#70) are minor and do not explain the stall."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.4,
+          "evidenceLines": [
+            159,
+            175
+          ],
+          "reasoning": "The malformed payload (embedded NUL byte) may have been corrupted upstream at the producer. This is the origin of the bad record, but the logs here do not show the producer, so it is an alternative reading of the same lines."
+        }
+      ],
+      "recommendedAction": "Immediately skip or dead-letter msg-798041 (partition 10, offset 269792) so the partition resumes, then replay it after fixing it. Add a max-retry limit with a dead-letter queue to order-consumer. Find the producer that wrote a NUL byte into the payload and fix its serialization or validation. Reconcile orders that order-service marked failed after confirmation timeouts (e.g. o-2460, o-2487, o-2496, o-2515)."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "21 match(es):\n#61 2026-11-07T02:44:19Z WARN order-consumer GC pause 830ms (G1 Old Gen), heap 57% after collection\n#70 2026-11-07T02:44:53Z WARN payment-svc [t-7948] card processor call failed: connection reset by peer POST https://api.cardproc.example/v1/charges, retry 1/3\n#159 2026-11-07T02:52:50Z ERROR order-consumer failed to process msg-798041 (partition 10, offset 269792): JSON parse error: unexpected token '\\u0000' at position 1341\n#160 2026-11-07T02:52:50Z WARN order-consumer nack msg-798041, redelivering (attempt 5, no max-retries configured)\n#166 2026-11-07T02:53:46Z ERROR order-consumer failed to process msg-798041 (partition 10, offset 269792): JSON parse error: unexpected token '\\u0000' at position 1341\n#167 2026-11-07T02:53:47Z WARN order-consumer nack msg-798041, redelivering (attempt 12, no max-retries configured)\n#174 2026-11-07T02:54:18Z WARN order-consumer consumer lag on orders.events partition 10: 996 messages behind (56s)\n#175 2026-11-07T02:54:21Z ERROR order-consumer failed to process msg-798041 (partition 10, offset 269792): JSON parse error: unexpected token '\\u0000' at position 1341\n#176 2026-11-07T02:54:22Z WARN order-consumer nack msg-798041, redelivering (attempt 15, no max-retries configured)\n#188 2026-11-07T02:55:26Z ERROR order-service [t-8032] order o-2460 timed out waiting for downstream confirmation (120s), marked failed\n#189 2026-11-07T02:55:36Z ERROR order-consumer failed to process msg-798041 (partition 10, offset 269792): JSON parse error: unexpected token '\\u0000' at position 1341\n#190 2026-11-07T02:55:37Z WARN order-consumer nack msg-798041, redelivering (attempt 24, no max-retries configured)\n#207 2026-11-07T02:57:03Z WARN order-consumer consumer lag on orders.events partition 10: 1566 messages behind (140s)\n#227 2026-11-07T02:58:57Z WARN order-consumer consumer lag on orders.events partition 10: 3009 messages behind (162s)\n#238 2026-11-07T03:00:05Z WARN order-consumer consumer lag on orders.events partition 10: 2684 messages behind (320s)\n#241 2026-11-07T03:00:09Z ERROR order-service [t-8070] order o-2487 timed out waiting for downstream confirmation (120s), marked failed\n#257 2026-11-07T03:01:53Z ERROR order-service [t-8086] order o-2496 timed out waiting for downstream confirmation (120s), marked failed\n#266 2026-11-07T03:02:48Z WARN order-consumer consumer lag on orders.events partition 10: 3320 messages behind (245s)\n#274 2026-11-07T03:03:41Z WARN order-consumer consumer lag on orders.events partition 10: 8208 messages behind (522s)\n#286 2026-11-07T03:04:40Z ERROR order-service [t-8111] order o-2515 timed out waiting for downstream confirmation (120s), marked failed\n#297 2026-11-07T03:05:49Z WARN order-consumer consumer lag on orders.events partition 10: 6776 messages behind (294s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "order-consumer",
+          "limit": 50
+        },
+        "output": "35 match(es):\n#4 2026-11-07T02:39:24Z INFO order-consumer processed batch of 92 messages from orders.events (lag 344ms)\n#13 2026-11-07T02:40:15Z INFO order-consumer processed batch of 50 messages from orders.events (lag 208ms)\n#20 2026-11-07T02:40:57Z INFO order-consumer processed batch of 115 messages from orders.events (lag 387ms)\n#26 2026-11-07T02:41:33Z INFO order-consumer processed batch of 32 messages from orders.events (lag 306ms)\n#35 2026-11-07T02:42:11Z INFO order-consumer processed batch of 101 messages from orders.events (lag 328ms)\n#44 2026-11-07T02:42:52Z INFO order-consumer processed batch of 54 messages from orders.events (lag 320ms)\n#52 2026-11-07T02:43:25Z INFO order-consumer processed batch of 74 messages from orders.events (lag 222ms)\n#57 2026-11-07T02:43:56Z INFO order-consumer processed batch of 49 messages from orders.events (lag 371ms)\n#61 2026-11-07T02:44:19Z WARN order-consumer GC pause 830ms (G1 Old Gen), heap 57% after collection\n#64 2026-11-07T02:44:31Z INFO order-consumer processed batch of 50 messages from orders.events (lag 134ms)\n#77 2026-11-07T02:45:24Z INFO order-consumer processed batch of 52 messages from orders.events (lag 388ms)\n#85 2026-11-07T02:46:17Z INFO order-consumer processed batch of 97 messages from orders.events (lag 397ms)\n#93 2026-11-07T02:46:54Z INFO order-consumer processed batch of 65 messages from orders.events (lag 286ms)\n#99 2026-11-07T02:47:25Z INFO order-consumer processed batch of 39 messages from orders.events (lag 326ms)\n#104 2026-11-07T02:47:55Z INFO order-consumer processed batch of 104 messages from orders.events (lag 378ms)\n#112 2026-11-07T02:48:40Z INFO order-consumer processed batch of 47 messages from orders.events (lag 236ms)\n#120 2026-11-07T02:49:18Z INFO order-consumer processed batch of 114 messages from orders.events (lag 250ms)\n#130 2026-11-07T02:49:59Z INFO order-consumer processed batch of 64 messages from orders.events (lag 230ms)\n#133 2026-11-07T02:50:39Z INFO order-consumer processed batch of 54 messages from orders.events (lag 78ms)\n#146 2026-11-07T02:51:27Z INFO order-consumer processed batch of 28 messages from orders.events (lag 75ms)\n#159 2026-11-07T02:52:50Z ERROR order-consumer failed to process msg-798041 (partition 10, offset 269792): JSON parse error: unexpected token '\\u0000' at position 1341\n#160 2026-11-07T02:52:50Z WARN order-consumer nack msg-798041, redelivering (attempt 5, no max-retries configured)\n#166 2026-11-07T02:53:46Z ERROR order-consumer failed to process msg-798041 (partition 10, offset 269792): JSON parse error: unexpected token '\\u0000' at position 1341\n#167 2026-11-07T02:53:47Z WARN order-consumer nack msg-798041, redelivering (attempt 12, no max-retries configured)\n#174 2026-11-07T02:54:18Z WARN order-consumer consumer lag on orders.events partition 10: 996 messages behind (56s)\n#175 2026-11-07T02:54:21Z ERROR order-consumer failed to process msg-798041 (partition 10, offset 269792): JSON parse error: unexpected token '\\u0000' at position 1341\n#176 2026-11-07T02:54:22Z WARN order-consumer nack msg-798041, redelivering (attempt 15, no max-retries configured)\n#189 2026-11-07T02:55:36Z ERROR order-consumer failed to process msg-798041 (partition 10, offset 269792): JSON parse error: unexpected token '\\u0000' at position 1341\n#190 2026-11-07T02:55:37Z WARN order-consumer nack msg-798041, redelivering (attempt 24, no max-retries configured)\n#207 2026-11-07T02:57:03Z WARN order-consumer consumer lag on orders.events partition 10: 1566 messages behind (140s)\n#227 2026-11-07T02:58:57Z WARN order-consumer consumer lag on orders.events partition 10: 3009 messages behind (162s)\n#238 2026-11-07T03:00:05Z WARN order-consumer consumer lag on orders.events partition 10: 2684 messages behind (320s)\n#266 2026-11-07T03:02:48Z WARN order-consumer consumer lag on orders.events partition 10: 3320 messages behind (245s)\n#274 2026-11-07T03:03:41Z WARN order-consumer consumer lag on orders.events partition 10: 8208 messages behind (522s)\n#297 2026-11-07T03:05:49Z WARN order-consumer consumer lag on orders.events partition 10: 6776 messages behind (294s)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 159,
+          "before": 6,
+          "after": 3
+        },
+        "output": "#153 2026-11-07T02:52:23Z INFO payment-svc [t-8005] POST /charge o-2440 ok 21ms\n#154 2026-11-07T02:52:23Z INFO api-gateway [t-8005] POST /checkout 200 199ms\n#155 2026-11-07T02:52:32Z INFO redis stats: hits=10741 misses=629 evicted=0 connected_clients=44\n#156 2026-11-07T02:52:42Z INFO order-service [t-8008] order o-2442 accepted, calling payment-svc POST /charge\n#157 2026-11-07T02:52:42Z INFO payment-svc [t-8008] POST /charge o-2442 ok 26ms\n#158 2026-11-07T02:52:42Z INFO api-gateway [t-8008] POST /checkout 200 126ms\n#159 2026-11-07T02:52:50Z ERROR order-consumer failed to process msg-798041 (partition 10, offset 269792): JSON parse error: unexpected token '\\u0000' at position 1341\n#160 2026-11-07T02:52:50Z WARN order-consumer nack msg-798041, redelivering (attempt 5, no max-retries configured)\n#161 2026-11-07T02:53:07Z INFO order-service [t-8012] order o-2444 accepted, calling payment-svc POST /charge\n#162 2026-11-07T02:53:07Z INFO api-gateway [t-8012] POST /checkout 200 233ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "msg-798041"
+        },
+        "output": "8 match(es):\n#159 2026-11-07T02:52:50Z ERROR order-consumer failed to process msg-798041 (partition 10, offset 269792): JSON parse error: unexpected token '\\u0000' at position 1341\n#160 2026-11-07T02:52:50Z WARN order-consumer nack msg-798041, redelivering (attempt 5, no max-retries configured)\n#166 2026-11-07T02:53:46Z ERROR order-consumer failed to process msg-798041 (partition 10, offset 269792): JSON parse error: unexpected token '\\u0000' at position 1341\n#167 2026-11-07T02:53:47Z WARN order-consumer nack msg-798041, redelivering (attempt 12, no max-retries configured)\n#175 2026-11-07T02:54:21Z ERROR order-consumer failed to process msg-798041 (partition 10, offset 269792): JSON parse error: unexpected token '\\u0000' at position 1341\n#176 2026-11-07T02:54:22Z WARN order-consumer nack msg-798041, redelivering (attempt 15, no max-retries configured)\n#189 2026-11-07T02:55:36Z ERROR order-consumer failed to process msg-798041 (partition 10, offset 269792): JSON parse error: unexpected token '\\u0000' at position 1341\n#190 2026-11-07T02:55:37Z WARN order-consumer nack msg-798041, redelivering (attempt 24, no max-retries configured)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"poison_message\",\"confidence\":0.9,\"evidenceLines\":[159,160,166,167,175,176,189,190,174],\"reasoning\":\"Consumer partition 10 is jammed by msg-798041 (offset 269792), which fails JSON parsing on a NUL byte at position 1341 on every attempt. The consumer nacks and redelivers it with no max-retry or dead-letter limit (attempt 5 -> 24+), so the partition stops advancing and lag grows (996 msgs at 02:54, 8208 at 03:03). Consumer CPU is normal because it is stuck retrying one message, not overloaded. Order-service timeouts (#188, #241, #257, #286) and the gateway impact are downstream of orders not being confirmed. Earlier GC pause (#61) and card processor reset (#70) are minor and do not explain the stall.\",\"}, {\"rootCause\":\"data_integrity\",\"confidence\":0.4,\"evidenceLines\":[159,175],\"reasoning\":\"The malformed payload (embedded \\\\u0000) may have been corrupted upstream at the producer. This is the origin of the bad record, but the logs available here do not show the producer, so it is an alternative explanation for the same lines.\"}]",
+          "recommendationAction": "Immediately skip or dead-letter msg-798041 (partition 10, offset 269792) so the partition resumes, then replay it after fixing it. Add a max-retry limit with a dead-letter queue to order-consumer. Find the producer that wrote a NUL byte into the payload and fix its serialization or validation. Check the order-service timeouts (o-2460 and others) for orders that were marked failed and need reconciliation."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string; recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.9,
+              "evidenceLines": [
+                159,
+                160,
+                166,
+                167,
+                175,
+                176,
+                189,
+                190,
+                174
+              ],
+              "reasoning": "Consumer partition 10 is jammed by msg-798041 (offset 269792), which fails JSON parsing on a NUL byte at position 1341 on every attempt. The consumer nacks and redelivers it with no max-retry or dead-letter limit (attempt 5 -> 24+), so the partition stops advancing and lag grows (996 msgs at 02:54, 8208 at 03:03). Consumer CPU is normal because it is stuck retrying one message, not overloaded. Order-service timeouts (#188, #241, #257, #286) and the gateway impact are downstream of orders not being confirmed. Earlier GC pause (#61) and card processor reset (#70) are minor and do not explain the stall."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.4,
+              "evidenceLines": [
+                159,
+                175
+              ],
+              "reasoning": "The malformed payload (embedded NUL byte) may have been corrupted upstream at the producer. This is the origin of the bad record, but the logs here do not show the producer, so it is an alternative reading of the same lines."
+            }
+          ],
+          "recommendedAction": "Immediately skip or dead-letter msg-798041 (partition 10, offset 269792) so the partition resumes, then replay it after fixing it. Add a max-retry limit with a dead-letter queue to order-consumer. Find the producer that wrote a NUL byte into the payload and fix its serialization or validation. Reconcile orders that order-service marked failed after confirmation timeouts (e.g. o-2460, o-2487, o-2496, o-2515)."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1736,
+      "cacheReadTokens": 17773,
+      "cacheWriteTokens": 8638
+    },
+    "durationMs": 8637,
+    "stopReason": "tool_use"
+  }
+}

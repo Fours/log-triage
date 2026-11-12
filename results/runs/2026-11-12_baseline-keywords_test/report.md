@@ -8,6 +8,8 @@ Model **baseline:keywords** · prompt **—** · 48 incidents from `incidents/te
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | **54%** | 56% | 85% | 47% / 47% | 0.27 (12/48) | 0.24 | 0.32 | — | 0.0s / 0.0s |
 
+95% bootstrap intervals (resampling incidents): top-1 [40–69], lenient [42–71], evidence precision [35–59], recall [35–58]. To compare two runs on the same incidents, use `npm run compare`, which is much tighter.
+
 Outcomes: 48 submitted, 0 budget exhausted, 0 no verdict, 0 refused, 0 API error. Total cost —. Mean 0.0 turns, 0.0 tool calls, 0 tokens per incident.
 
 *top-1 (lenient)* also accepts a labeled defensible alternative on ambiguous incidents. Evidence precision/recall compare the top hypothesis's cited lines with the labeled evidence. *Herring cites* is mean red-herring lines cited (incidents citing any). ECE/Brier measure how well top-1 confidence tracks correctness (lower is better). An incident without a verdict counts as wrong.

@@ -1,0 +1,141 @@
+{
+  "score": {
+    "incidentId": "test-013",
+    "difficulty": "easy",
+    "scenario": "dependency_timeout/external-hang",
+    "truth": "dependency_timeout",
+    "acceptable": [
+      "external_outage"
+    ],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 4,
+      "correct": 4,
+      "precision": 1,
+      "recall": 0.6666666666666666,
+      "f1": 0.8
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0027173450000000004,
+    "durationMs": 12474,
+    "iterations": 5,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 12,
+      "output": 2572,
+      "cacheRead": 24702,
+      "cacheWrite": 9465
+    }
+  },
+  "result": {
+    "incidentId": "test-013",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.88,
+          "evidenceLines": [
+            140,
+            143,
+            147,
+            156
+          ],
+          "reasoning": "Earliest anomaly: payment-svc's call to the external card processor slows at 12:11:42 (#140, 5144ms vs 2000ms soft threshold), reaching 10014ms (#143), then hangs to the 30s timeout and fails (#147, #156). payment-svc is otherwise healthy (small GC pauses, normal /charge latencies before 12:11). Order-service pool saturation and checkout pool timeouts (#159, #169) and gateway 503s (#163, #171, #183, #198) are downstream amplification, not causes. Postgres, redis and order-consumer show no errors."
+        }
+      ],
+      "recommendedAction": "Engage the card processor (api.cardproc.example) owners and check their status and latency. Meanwhile, shorten the payment-svc timeout to the processor, add a circuit breaker so payment-svc fails fast, and watch the order-service to payment-svc connection pool. Once the processor recovers, confirm the pool drains and the 503 rate returns to baseline."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "12 match(es):\n#140 2026-11-11T12:11:42Z WARN payment-svc [t-2419] card processor call slow: 5144ms (soft threshold 2000ms) POST https://api.cardproc.example/v1/charges\n#143 2026-11-11T12:12:01Z WARN payment-svc [t-2420] card processor call slow: 10014ms (soft threshold 2000ms) POST https://api.cardproc.example/v1/charges\n#147 2026-11-11T12:12:57Z ERROR payment-svc [t-2423] card processor call FAILED: upstream timeout after 30000ms POST https://api.cardproc.example/v1/charges\n#148 2026-11-11T12:12:57Z ERROR order-service [t-2423] PaymentClient.charge timed out after 30000ms calling payment-svc POST /charge (o-5122)\n#156 2026-11-11T12:14:49Z ERROR payment-svc [t-2425] card processor call FAILED: upstream timeout after 30000ms POST https://api.cardproc.example/v1/charges\n#157 2026-11-11T12:14:49Z ERROR order-service [t-2425] PaymentClient.charge timed out after 30000ms calling payment-svc POST /charge (o-5123)\n#159 2026-11-11T12:15:10Z WARN order-service HTTP connection pool to payment-svc at capacity (50/50 in use), 22 requests queued\n#163 2026-11-11T12:16:23Z ERROR api-gateway [t-2426] POST /checkout 503 29420ms: upstream order-service returned 503 Service Unavailable\n#169 2026-11-11T12:17:37Z ERROR order-service pool checkout timeout: no connection to payment-svc available after 5000ms\n#171 2026-11-11T12:18:10Z ERROR api-gateway [t-2430] POST /checkout 503 24666ms: upstream order-service returned 503 Service Unavailable\n#183 2026-11-11T12:20:33Z ERROR api-gateway [t-2436] POST /checkout 503 26809ms: upstream order-service returned 503 Service Unavailable\n#198 2026-11-11T12:23:31Z ERROR api-gateway [t-2442] POST /checkout 503 24144ms: upstream order-service returned 503 Service Unavailable"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "postgres",
+          "limit": 20
+        },
+        "output": "15 match(es):\n#4 2026-11-11T11:54:11Z INFO postgres checkpoint complete: wrote 313 buffers (6.9%)\n#21 2026-11-11T11:56:29Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 10\n#36 2026-11-11T11:58:14Z INFO postgres checkpoint complete: wrote 553 buffers (5.8%)\n#52 2026-11-11T12:00:19Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 10\n#64 2026-11-11T12:02:11Z INFO postgres checkpoint complete: wrote 855 buffers (5.3%)\n#83 2026-11-11T12:04:16Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 19\n#98 2026-11-11T12:06:11Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 7\n#116 2026-11-11T12:08:42Z INFO postgres checkpoint complete: wrote 1245 buffers (3.1%)\n#135 2026-11-11T12:11:00Z INFO postgres checkpoint complete: wrote 1032 buffers (6.0%)\n#146 2026-11-11T12:12:43Z INFO postgres checkpoint complete: wrote 467 buffers (3.3%)\n#155 2026-11-11T12:14:42Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 2\n#164 2026-11-11T12:16:42Z INFO postgres checkpoint complete: wrote 1203 buffers (4.2%)\n#173 2026-11-11T12:18:37Z INFO postgres checkpoint complete: wrote 1190 buffers (4.3%)\n#185 2026-11-11T12:20:45Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 32\n#194 2026-11-11T12:23:05Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 7"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 140,
+          "before": 12,
+          "after": 4
+        },
+        "output": "#128 2026-11-11T12:10:16Z INFO order-service [t-2408] order o-5114 accepted, calling payment-svc POST /charge\n#129 2026-11-11T12:10:16Z INFO payment-svc [t-2408] POST /charge o-5114 ok 28ms\n#130 2026-11-11T12:10:17Z INFO api-gateway [t-2408] POST /checkout 200 129ms\n#131 2026-11-11T12:10:21Z INFO order-consumer processed batch of 68 messages from orders.events (lag 273ms)\n#132 2026-11-11T12:10:38Z INFO order-service [t-2411] order o-5117 accepted, calling payment-svc POST /charge\n#133 2026-11-11T12:10:38Z INFO payment-svc [t-2411] POST /charge o-5117 ok 75ms\n#134 2026-11-11T12:10:38Z INFO api-gateway [t-2411] POST /checkout 200 144ms\n#135 2026-11-11T12:11:00Z INFO postgres checkpoint complete: wrote 1032 buffers (6.0%)\n#136 2026-11-11T12:11:04Z INFO order-consumer processed batch of 96 messages from orders.events (lag 220ms)\n#137 2026-11-11T12:11:14Z INFO order-service [t-2415] order o-5120 accepted, calling payment-svc POST /charge\n#138 2026-11-11T12:11:14Z INFO api-gateway [t-2415] POST /checkout 200 140ms\n#139 2026-11-11T12:11:27Z INFO redis stats: hits=14610 misses=860 evicted=0 connected_clients=54\n#140 2026-11-11T12:11:42Z WARN payment-svc [t-2419] card processor call slow: 5144ms (soft threshold 2000ms) POST https://api.cardproc.example/v1/charges\n#141 2026-11-11T12:11:43Z DEBUG order-service GC pause 22ms (young), heap 35%\n#142 2026-11-11T12:11:58Z INFO order-consumer processed batch of 100 messages from orders.events (lag 190ms)\n#143 2026-11-11T12:12:01Z WARN payment-svc [t-2420] card processor call slow: 10014ms (soft threshold 2000ms) POST https://api.cardproc.example/v1/charges\n#144 2026-11-11T12:12:05Z DEBUG payment-svc GC pause 9ms (young), heap 33%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "limit": 40
+        },
+        "output": "31 match(es):\n#2 2026-11-11T11:54:01Z INFO payment-svc [t-2347] POST /charge o-5061 ok 62ms\n#9 2026-11-11T11:54:39Z DEBUG payment-svc GC pause 13ms (young), heap 33%\n#23 2026-11-11T11:56:41Z DEBUG payment-svc GC pause 16ms (young), heap 44%\n#25 2026-11-11T11:56:47Z INFO payment-svc [t-2360] POST /charge o-5072 ok 21ms\n#39 2026-11-11T11:58:49Z INFO payment-svc [t-2369] POST /charge o-5080 ok 78ms\n#44 2026-11-11T11:59:16Z INFO payment-svc [t-2373] POST /charge o-5083 ok 89ms\n#48 2026-11-11T11:59:52Z DEBUG payment-svc GC pause 19ms (young), heap 32%\n#66 2026-11-11T12:02:22Z DEBUG payment-svc GC pause 7ms (young), heap 30%\n#68 2026-11-11T12:02:22Z INFO payment-svc [t-2385] POST /charge o-5094 ok 36ms\n#77 2026-11-11T12:03:31Z INFO payment-svc [t-2389] POST /charge o-5096 ok 47ms\n#81 2026-11-11T12:04:15Z INFO payment-svc [t-2390] POST /charge o-5098 ok 26ms\n#92 2026-11-11T12:05:17Z DEBUG payment-svc GC pause 23ms (young), heap 40%\n#96 2026-11-11T12:06:03Z INFO payment-svc [t-2397] POST /charge o-5103 ok 63ms\n#103 2026-11-11T12:06:52Z INFO payment-svc [t-2399] POST /charge o-5105 ok 78ms\n#106 2026-11-11T12:07:31Z DEBUG payment-svc GC pause 15ms (young), heap 29%\n#113 2026-11-11T12:08:29Z INFO payment-svc [t-2401] POST /charge o-5109 ok 30ms\n#119 2026-11-11T12:09:02Z INFO payment-svc [t-2404] POST /charge o-5111 ok 72ms\n#121 2026-11-11T12:09:19Z DEBUG payment-svc GC pause 13ms (young), heap 36%\n#125 2026-11-11T12:09:46Z INFO payment-svc [t-2405] POST /charge o-5113 ok 76ms\n#129 2026-11-11T12:10:16Z INFO payment-svc [t-2408] POST /charge o-5114 ok 28ms\n#133 2026-11-11T12:10:38Z INFO payment-svc [t-2411] POST /charge o-5117 ok 75ms\n#140 2026-11-11T12:11:42Z WARN payment-svc [t-2419] card processor call slow: 5144ms (soft threshold 2000ms) POST https://api.cardproc.example/v1/charges\n#143 2026-11-11T12:12:01Z WARN payment-svc [t-2420] card processor call slow: 10014ms (soft threshold 2000ms) POST https://api.cardproc.example/v1/charges\n#144 2026-11-11T12:12:05Z DEBUG payment-svc GC pause 9ms (young), heap 33%\n#147 2026-11-11T12:12:57Z ERROR payment-svc [t-2423] card processor call FAILED: upstream timeout after 30000ms POST https://api.cardproc.example/v1/charges\n#152 2026-11-11T12:14:14Z DEBUG payment-svc GC pause 25ms (young), heap 28%\n#156 2026-11-11T12:14:49Z ERROR payment-svc [t-2425] card processor call FAILED: upstream timeout after 30000ms POST https://api.cardproc.example/v1/charges\n#167 2026-11-11T12:17:09Z DEBUG payment-svc GC pause 6ms (young), heap 33%\n#175 2026-11-11T12:19:09Z DEBUG payment-svc GC pause 14ms (young), heap 30%\n#178 2026-11-11T12:19:14Z INFO payment-svc [t-2433] POST /charge o-5125 ok 43ms\n#192 2026-11-11T12:22:16Z DEBUG payment-svc GC pause 18ms (young), heap 38%"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"dependency_timeout\",\"confidence\":0.88,\"evidenceLines\":[140,143,147,156],\"reasoning\":\"The earliest anomaly is payment-svc's outbound call to the external card processor (api.cardproc.example) going slow at 12:11:42 (#140, 5144ms vs a 2000ms soft threshold), escalating to 10014ms at 12:12:01 (#143). The calls then hang until the 30s timeout and fail (#147, #156). Payment-svc itself is healthy: its GC pauses are small and its own /charge calls before 12:11 completed in 28-75ms, so the hang is in the downstream processor. Downstream, order-service's 50-connection pool to payment-svc saturated and its checkout pool timed out (#159, #169), and the gateway returned 503s (#163, #171, #183, #198). Those are amplification symptoms, not the cause. Postgres, redis and order-consumer show no errors and no anomalies. Alternatives such as resource exhaustion in payment-svc or the database are not supported by the logs. The processor's own status is not visible in the logs, so the upstream cause inside the third party cannot be confirmed from here.\",\"},{\"rootCause\":\"cascading_failure\",\"confidence\":0.25,\"evidenceLines\":[159,169],\"reasoning\":\"The connection pool saturation and queued requests in order-service (22 queued, pool checkout timeouts) could be read as a cascade, with retries or backpressure amplifying a small slowdown. However, the pool is only saturated because payment calls hang, so this is a secondary effect of the dependency timeout rather than the origin.\"}]",
+          "recommendedAction": "Engage the card processor (api.cardproc.example) owners and check their status and latency. In the meantime, lower the payment-svc timeout to the processor below the 30s hang, add a circuit breaker so payment-svc fails fast when the processor is slow, and consider raising or shedding load on the order-service to payment-svc connection pool so it cannot back up checkouts. Once the processor recovers, verify the pool drains and the 503 rate returns to baseline."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"dependency_timeout\",\"confidence\":0.88,\"evidenceLines\":[140,143,147,156],\"reasoning\":\"The earliest anomaly is payment-svc's outbound call to the external card processor (api.cardproc.example) going slow at 12:11:42 (#140, 5144ms vs a 2000ms soft threshold), escalating to 10014ms at 12:12:01 (#143). The calls then hang until the 30s timeout and fail (#147, #156). Payment-svc itself is healthy: its GC pauses are small and its own /charge calls before 12:11 completed in 28-75ms, so the hang is in the downstream processor. Downstream, order-service's 50-connection pool to payment-svc saturated and its checkout pool timed out (#159, #169), and the gateway returned 503s (#163, #171, #183, #198). Those are amplification symptoms, not the cause. Postgres, redis and order-consumer show no errors. The processor's internal status is not visible in these logs, so the upstream cause cannot be confirmed from here.\",\"},{\"rootCause\":\"cascading_failure\",\"confidence\":0.25,\"evidenceLines\":[159,169],\"reasoning\":\"The connection pool saturation and queued requests in order-service could be read as a cascade amplifying a small slowdown. However, the pool saturates only because payment calls hang, so this is a secondary effect of the dependency timeout rather than the origin.\"}]",
+          "recommendedAction": "Engage the card processor (api.cardproc.example) owners and check their status and latency. In the meantime, lower the payment-svc timeout to the processor below the 30s hang, add a circuit breaker so payment-svc fails fast when the processor is slow, and watch the order-service to payment-svc connection pool so it cannot back up checkouts. Once the processor recovers, verify the pool drains and the 503 rate returns to baseline."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.88,
+              "evidenceLines": [
+                140,
+                143,
+                147,
+                156
+              ],
+              "reasoning": "Earliest anomaly: payment-svc's call to the external card processor slows at 12:11:42 (#140, 5144ms vs 2000ms soft threshold), reaching 10014ms (#143), then hangs to the 30s timeout and fails (#147, #156). payment-svc is otherwise healthy (small GC pauses, normal /charge latencies before 12:11). Order-service pool saturation and checkout pool timeouts (#159, #169) and gateway 503s (#163, #171, #183, #198) are downstream amplification, not causes. Postgres, redis and order-consumer show no errors."
+            }
+          ],
+          "recommendedAction": "Engage the card processor (api.cardproc.example) owners and check their status and latency. Meanwhile, shorten the payment-svc timeout to the processor, add a circuit breaker so payment-svc fails fast, and watch the order-service to payment-svc connection pool. Once the processor recovers, confirm the pool drains and the 503 rate returns to baseline."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 2572,
+      "cacheReadTokens": 24702,
+      "cacheWriteTokens": 9465
+    },
+    "durationMs": 12474,
+    "stopReason": "tool_use"
+  }
+}

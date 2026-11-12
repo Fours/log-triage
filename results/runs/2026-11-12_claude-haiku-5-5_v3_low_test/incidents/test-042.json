@@ -1,0 +1,151 @@
+{
+  "score": {
+    "incidentId": "test-042",
+    "difficulty": "medium",
+    "scenario": "poison_message/consumer-crash-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "poison_message",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.002037375,
+    "durationMs": 7850,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 1750,
+      "cacheRead": 15350,
+      "cacheWrite": 8063
+    }
+  },
+  "result": {
+    "incidentId": "test-042",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.9,
+          "evidenceLines": [
+            214,
+            220,
+            226,
+            217,
+            225,
+            238
+          ],
+          "reasoning": "audit-consumer (v3.23.3) crashes with a RangeError (maximum call stack size exceeded) in expandReferences while processing msg-982640 at offset 620792. On every restart it resumes at the same committed offset 620792 because the offset was never advanced past the bad message, so it crashes again in a loop (restarts 1-3, with growing backoff). The message is malformed or deeply nested and repeatedly jams the consumer, which explains the CrashLoopBackOff and the rising audit.events lag. Upstream services (account-svc, auth-svc, edge-proxy, session-cache, accounts-db) show no errors, so they are not the origin. accounts-db vacuum and checkpoint lines are routine and unrelated."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.1,
+          "evidenceLines": [
+            214
+          ],
+          "reasoning": "A stack overflow could in principle come from recursion depth, but the trigger is one specific message that fails identically on every retry, and no memory or pool pressure appears in the logs. Less likely than a poison message."
+        }
+      ],
+      "recommendedAction": "Skip or quarantine msg-982640 (offset 620792) from audit.events, moving it to a dead-letter topic, so the consumer can advance past the offset. Then resume the consumer and let it drain the lag. Add a guard in expandReferences against deep or cyclic references, and make the consumer dead-letter messages that throw instead of crashing the process on each restart."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "audit-consumer",
+          "level": "WARN",
+          "limit": 50
+        },
+        "output": "6 match(es):\n#214 2026-10-06T07:54:49Z FATAL audit-consumer unhandled exception processing msg-982640 (offset 620792): RangeError: Maximum call stack size exceeded at expandReferences\n#215 2026-10-06T07:54:49Z ERROR audit-consumer process exited with code 1, restarting (restart 1, backoff 10s)\n#220 2026-10-06T07:55:05Z FATAL audit-consumer unhandled exception processing msg-982640 (offset 620792): RangeError: Maximum call stack size exceeded at expandReferences\n#221 2026-10-06T07:55:06Z ERROR audit-consumer process exited with code 1, restarting (restart 2, backoff 20s)\n#226 2026-10-06T07:55:32Z FATAL audit-consumer unhandled exception processing msg-982640 (offset 620792): RangeError: Maximum call stack size exceeded at expandReferences\n#227 2026-10-06T07:55:33Z ERROR audit-consumer process exited with code 1, restarting (restart 3, backoff 40s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "accounts-db",
+          "limit": 50
+        },
+        "output": "15 match(es):\n#18 2026-10-06T07:38:35Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 13\n#40 2026-10-06T07:40:23Z INFO accounts-db checkpoint complete: wrote 252 buffers (2.0%)\n#63 2026-10-06T07:42:00Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 36\n#86 2026-10-06T07:44:00Z INFO accounts-db checkpoint complete: wrote 1242 buffers (4.2%)\n#117 2026-10-06T07:46:31Z INFO accounts-db checkpoint complete: wrote 1193 buffers (4.4%)\n#138 2026-10-06T07:48:11Z INFO accounts-db checkpoint complete: wrote 997 buffers (1.3%)\n#159 2026-10-06T07:50:07Z INFO accounts-db checkpoint complete: wrote 623 buffers (3.7%)\n#178 2026-10-06T07:51:54Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 25\n#209 2026-10-06T07:54:33Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 37\n#249 2026-10-06T07:57:10Z INFO accounts-db checkpoint complete: wrote 1356 buffers (1.5%)\n#262 2026-10-06T07:58:49Z INFO accounts-db checkpoint complete: wrote 468 buffers (7.4%)\n#281 2026-10-06T08:00:22Z INFO accounts-db checkpoint complete: wrote 1066 buffers (2.8%)\n#298 2026-10-06T08:02:25Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 36\n#319 2026-10-06T08:04:22Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 18\n#341 2026-10-06T08:06:41Z INFO accounts-db checkpoint complete: wrote 465 buffers (4.3%)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "audit-consumer",
+          "limit": 40
+        },
+        "output": "36 match(es):\n#5 2026-10-06T07:37:10Z INFO audit-consumer processed batch of 41 messages from audit.events (lag 257ms)\n#10 2026-10-06T07:37:42Z INFO audit-consumer processed batch of 25 messages from audit.events (lag 338ms)\n#15 2026-10-06T07:38:13Z INFO audit-consumer processed batch of 114 messages from audit.events (lag 199ms)\n#24 2026-10-06T07:39:07Z INFO audit-consumer processed batch of 87 messages from audit.events (lag 322ms)\n#36 2026-10-06T07:40:01Z INFO audit-consumer processed batch of 106 messages from audit.events (lag 161ms)\n#47 2026-10-06T07:40:45Z INFO audit-consumer processed batch of 53 messages from audit.events (lag 41ms)\n#59 2026-10-06T07:41:33Z INFO audit-consumer processed batch of 69 messages from audit.events (lag 209ms)\n#71 2026-10-06T07:42:23Z INFO audit-consumer processed batch of 42 messages from audit.events (lag 191ms)\n#76 2026-10-06T07:43:05Z INFO audit-consumer processed batch of 102 messages from audit.events (lag 85ms)\n#85 2026-10-06T07:43:41Z INFO audit-consumer processed batch of 58 messages from audit.events (lag 349ms)\n#90 2026-10-06T07:44:32Z INFO audit-consumer processed batch of 28 messages from audit.events (lag 237ms)\n#102 2026-10-06T07:45:25Z INFO audit-consumer processed batch of 89 messages from audit.events (lag 123ms)\n#112 2026-10-06T07:46:10Z INFO audit-consumer processed batch of 68 messages from audit.events (lag 286ms)\n#125 2026-10-06T07:47:00Z INFO audit-consumer processed batch of 41 messages from audit.events (lag 361ms)\n#133 2026-10-06T07:47:40Z INFO audit-consumer processed batch of 80 messages from audit.events (lag 351ms)\n#142 2026-10-06T07:48:28Z INFO audit-consumer processed batch of 118 messages from audit.events (lag 92ms)\n#150 2026-10-06T07:49:12Z INFO audit-consumer processed batch of 115 messages from audit.events (lag 377ms)\n#158 2026-10-06T07:50:03Z INFO audit-consumer processed batch of 23 messages from audit.events (lag 132ms)\n#166 2026-10-06T07:50:41Z INFO audit-consumer processed batch of 73 messages from audit.events (lag 278ms)\n#172 2026-10-06T07:51:21Z INFO audit-consumer processed batch of 105 messages from audit.events (lag 212ms)\n#182 2026-10-06T07:52:08Z INFO audit-consumer processed batch of 88 messages from audit.events (lag 200ms)\n#188 2026-10-06T07:52:55Z INFO audit-consumer processed batch of 78 messages from audit.events (lag 330ms)\n#196 2026-10-06T07:53:45Z INFO audit-consumer processed batch of 87 messages from audit.events (lag 103ms)\n#210 2026-10-06T07:54:35Z INFO audit-consumer processed batch of 67 messages from audit.events (lag 304ms)\n#214 2026-10-06T07:54:49Z FATAL audit-consumer unhandled exception processing msg-982640 (offset 620792): RangeError: Maximum call stack size exceeded at expandReferences\n#215 2026-10-06T07:54:49Z ERROR audit-consumer process exited with code 1, restarting (restart 1, backoff 10s)\n#216 2026-10-06T07:54:59Z INFO audit-consumer started audit-consumer v3.23.3, pid 1\n#217 2026-10-06T07:55:00Z INFO audit-consumer resuming audit.events at committed offset 620792\n#220 2026-10-06T07:55:05Z FATAL audit-consumer unhandled exception processing msg-982640 (offset 620792): RangeError: Maximum call stack size exceeded at expandReferences\n#221 2026-10-06T07:55:06Z ERROR audit-consumer process exited with code 1, restarting (restart 2, backoff 20s)\n#224 2026-10-06T07:55:25Z INFO audit-consumer started audit-consumer v3.23.3, pid 1\n#225 2026-10-06T07:55:26Z INFO audit-consumer resuming audit.events at committed offset 620792\n#226 2026-10-06T07:55:32Z FATAL audit-consumer unhandled exception processing msg-982640 (offset 620792): RangeError: Maximum call stack size exceeded at expandReferences\n#227 2026-10-06T07:55:33Z ERROR audit-consumer process exited with code 1, restarting (restart 3, backoff 40s)\n#237 2026-10-06T07:56:12Z INFO audit-consumer started audit-consumer v3.23.3, pid 1\n#238 2026-10-06T07:56:13Z INFO audit-consumer resuming audit.events at committed offset 620792"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 214,
+          "before": 8,
+          "after": 2
+        },
+        "output": "#206 2026-10-06T07:54:30Z INFO account-svc [t-3403] user u-3238 accepted, calling auth-svc POST /tokens\n#207 2026-10-06T07:54:30Z INFO edge-proxy [t-3403] POST /login 200 166ms\n#208 2026-10-06T07:54:31Z INFO session-cache stats: hits=8010 misses=698 evicted=0 connected_clients=30\n#209 2026-10-06T07:54:33Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 37\n#210 2026-10-06T07:54:35Z INFO audit-consumer processed batch of 67 messages from audit.events (lag 304ms)\n#211 2026-10-06T07:54:44Z INFO account-svc [t-3406] user u-3241 accepted, calling auth-svc POST /tokens\n#212 2026-10-06T07:54:44Z INFO auth-svc [t-3406] POST /tokens u-3241 ok 42ms\n#213 2026-10-06T07:54:44Z INFO edge-proxy [t-3406] POST /login 200 147ms\n#214 2026-10-06T07:54:49Z FATAL audit-consumer unhandled exception processing msg-982640 (offset 620792): RangeError: Maximum call stack size exceeded at expandReferences\n#215 2026-10-06T07:54:49Z ERROR audit-consumer process exited with code 1, restarting (restart 1, backoff 10s)\n#216 2026-10-06T07:54:59Z INFO audit-consumer started audit-consumer v3.23.3, pid 1"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"poison_message\",\"confidence\":0.9,\"evidenceLines\":[214,220,226,217,225,238],\"reasoning\":\"audit-consumer (v3.23.3) crashes with a RangeError (maximum call stack size exceeded) in expandReferences while processing msg-982640 at offset 620792. On every restart it resumes at the same committed offset 620792 because the offset was never advanced past the bad message, so it crashes again in a loop (restarts 1-3, with growing backoff). The message is malformed or deeply nested and repeatedly jams the consumer, which explains the CrashLoopBackOff and the rising audit.events lag. Upstream services (account-svc, auth-svc, edge-proxy, session-cache, accounts-db) show no errors, so they are not the origin. accounts-db vacuum and checkpoint lines are routine and unrelated.\",\"}, {\"rootCause\":\"resource_exhaustion\",\"confidence\":0.1,\"evidenceLines\":[214],\"reasoning\":\"A stack overflow could in principle come from recursion depth, but the trigger is one specific message that fails identically on every retry, and no memory or pool pressure appears in the logs. Less likely than a poison message.\"}]",
+          "recommendedAction": "Skip or quarantine msg-982640 (offset 620792) from audit.events, moving it to a dead-letter topic, so the consumer can advance past the offset. Then resume the consumer and let it drain the lag. Add a guard in expandReferences against deep or cyclic references, and make the consumer dead-letter messages that throw instead of crashing the process on each restart."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.9,
+              "evidenceLines": [
+                214,
+                220,
+                226,
+                217,
+                225,
+                238
+              ],
+              "reasoning": "audit-consumer (v3.23.3) crashes with a RangeError (maximum call stack size exceeded) in expandReferences while processing msg-982640 at offset 620792. On every restart it resumes at the same committed offset 620792 because the offset was never advanced past the bad message, so it crashes again in a loop (restarts 1-3, with growing backoff). The message is malformed or deeply nested and repeatedly jams the consumer, which explains the CrashLoopBackOff and the rising audit.events lag. Upstream services (account-svc, auth-svc, edge-proxy, session-cache, accounts-db) show no errors, so they are not the origin. accounts-db vacuum and checkpoint lines are routine and unrelated."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.1,
+              "evidenceLines": [
+                214
+              ],
+              "reasoning": "A stack overflow could in principle come from recursion depth, but the trigger is one specific message that fails identically on every retry, and no memory or pool pressure appears in the logs. Less likely than a poison message."
+            }
+          ],
+          "recommendedAction": "Skip or quarantine msg-982640 (offset 620792) from audit.events, moving it to a dead-letter topic, so the consumer can advance past the offset. Then resume the consumer and let it drain the lag. Add a guard in expandReferences against deep or cyclic references, and make the consumer dead-letter messages that throw instead of crashing the process on each restart."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1750,
+      "cacheReadTokens": 15350,
+      "cacheWriteTokens": 8063
+    },
+    "durationMs": 7850,
+    "stopReason": "tool_use"
+  }
+}

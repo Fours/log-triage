@@ -1,0 +1,140 @@
+{
+  "score": {
+    "incidentId": "test-003",
+    "difficulty": "easy",
+    "scenario": "data_integrity/sequence-collision",
+    "truth": "data_integrity",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 4,
+      "precision": 0.8,
+      "recall": 1,
+      "f1": 0.888888888888889
+    },
+    "herringsCited": 0,
+    "costUsd": 0.001816945,
+    "durationMs": 9499,
+    "iterations": 4,
+    "toolCalls": 3,
+    "tokens": {
+      "input": 10,
+      "output": 1763,
+      "cacheRead": 13682,
+      "cacheWrite": 6381
+    }
+  },
+  "result": {
+    "incidentId": "test-003",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.9,
+          "evidenceLines": [
+            79,
+            96,
+            109,
+            118,
+            106
+          ],
+          "reasoning": "At #79 catalog-db restored the products table from a snapshot (832146 rows) but the sequence products_id_seq was left at 816769, behind the table's max id. New inserts then generate ids that already exist, causing unique-key violations on products_pkey (#96 id 828562, #109 id 828567, #118 id 828570). search-api maps these to 409 'create failed' (#106), and web-bff returns 500s on GET /search (#93, #115, #127, #140). The BFF 5xx and the 409s are downstream symptoms; the sequence/restore mismatch is the origin. Errors begin right after the restore at 19:21:46 and none appear before it. Vacuum and checkpoint lines are normal. Redis, index-worker and catalog-svc show no errors. Pool or dependency timeouts do not fit because the failures are constraint violations, not hangs."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.3,
+          "evidenceLines": [
+            79
+          ],
+          "reasoning": "The restore procedure is an operational change outside a release that left the sequence unsynchronized. This is the same origin viewed as an operator mistake rather than a data-state fault, so it ranks below data_integrity."
+        }
+      ],
+      "recommendedAction": "Immediately resync products_id_seq to max(id) of the products table (e.g. SELECT setval('products_id_seq', (SELECT MAX(id) FROM products))) and verify inserts succeed. Check whether other sequences were left behind by the same restore. Add a post-restore step that resets sequences, and alert on unique-violation errors from catalog-db. Re-run the product creates that failed with 409/500 for customers."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "10 match(es):\n#79 2026-10-28T19:21:46Z WARN catalog-db restore: table products reloaded from snapshot (832146 rows); sequence products_id_seq left at 816769\n#93 2026-10-28T19:23:14Z ERROR web-bff [t-1961] GET /search 500 17221ms: upstream search-api returned 500 (create failed)\n#96 2026-10-28T19:23:51Z ERROR catalog-db duplicate key value violates unique constraint \"products_pkey\" DETAIL: Key (id)=(828562) already exists.\n#106 2026-10-28T19:25:17Z ERROR search-api [t-1969] create product failed: unique violation on products.id, returning 409\n#109 2026-10-28T19:25:49Z ERROR catalog-db duplicate key value violates unique constraint \"products_pkey\" DETAIL: Key (id)=(828567) already exists.\n#115 2026-10-28T19:26:29Z ERROR web-bff [t-1973] GET /search 500 9749ms: upstream search-api returned 500 (create failed)\n#118 2026-10-28T19:27:15Z ERROR catalog-db duplicate key value violates unique constraint \"products_pkey\" DETAIL: Key (id)=(828570) already exists.\n#127 2026-10-28T19:28:49Z ERROR web-bff [t-1980] GET /search 500 5287ms: upstream search-api returned 500 (create failed)\n#130 2026-10-28T19:29:13Z ERROR search-api [t-1982] create product failed: unique violation on products.id, returning 409\n#140 2026-10-28T19:30:40Z ERROR web-bff [t-1992] GET /search 500 12851ms: upstream search-api returned 500 (create failed)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-db",
+          "limit": 50
+        },
+        "output": "13 match(es):\n#4 2026-10-28T19:12:22Z INFO catalog-db checkpoint complete: wrote 492 buffers (2.2%)\n#17 2026-10-28T19:14:26Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 22\n#34 2026-10-28T19:16:00Z INFO catalog-db checkpoint complete: wrote 1052 buffers (2.2%)\n#53 2026-10-28T19:18:26Z INFO catalog-db checkpoint complete: wrote 326 buffers (4.3%)\n#66 2026-10-28T19:20:26Z INFO catalog-db checkpoint complete: wrote 1130 buffers (3.0%)\n#79 2026-10-28T19:21:46Z WARN catalog-db restore: table products reloaded from snapshot (832146 rows); sequence products_id_seq left at 816769\n#92 2026-10-28T19:23:00Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 3\n#96 2026-10-28T19:23:51Z ERROR catalog-db duplicate key value violates unique constraint \"products_pkey\" DETAIL: Key (id)=(828562) already exists.\n#108 2026-10-28T19:25:31Z INFO catalog-db checkpoint complete: wrote 894 buffers (2.7%)\n#109 2026-10-28T19:25:49Z ERROR catalog-db duplicate key value violates unique constraint \"products_pkey\" DETAIL: Key (id)=(828567) already exists.\n#118 2026-10-28T19:27:15Z ERROR catalog-db duplicate key value violates unique constraint \"products_pkey\" DETAIL: Key (id)=(828570) already exists.\n#122 2026-10-28T19:28:08Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 19\n#139 2026-10-28T19:30:37Z INFO catalog-db checkpoint complete: wrote 426 buffers (1.1%)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 79,
+          "before": 6,
+          "after": 6
+        },
+        "output": "#73 2026-10-28T19:21:08Z INFO index-worker processed batch of 49 messages from catalog.updates (lag 338ms)\n#74 2026-10-28T19:21:17Z INFO redis-cache stats: hits=9660 misses=703 evicted=0 connected_clients=41\n#75 2026-10-28T19:21:33Z INFO search-api [t-1950] product p-2245 accepted, calling catalog-svc GET /products/batch\n#76 2026-10-28T19:21:33Z INFO web-bff [t-1950] GET /search 200 127ms\n#77 2026-10-28T19:21:35Z DEBUG search-api GC pause 12ms (young), heap 39%\n#78 2026-10-28T19:21:44Z INFO index-worker processed batch of 41 messages from catalog.updates (lag 209ms)\n#79 2026-10-28T19:21:46Z WARN catalog-db restore: table products reloaded from snapshot (832146 rows); sequence products_id_seq left at 816769\n#80 2026-10-28T19:22:10Z INFO search-api [t-1952] product p-2246 accepted, calling catalog-svc GET /products/batch\n#81 2026-10-28T19:22:10Z INFO catalog-svc [t-1952] GET /products/batch p-2246 ok 75ms\n#82 2026-10-28T19:22:10Z INFO web-bff [t-1952] GET /search 200 128ms\n#83 2026-10-28T19:22:31Z INFO redis-cache stats: hits=17361 misses=475 evicted=0 connected_clients=47\n#84 2026-10-28T19:22:37Z INFO search-api [t-1956] product p-2247 accepted, calling catalog-svc GET /products/batch\n#85 2026-10-28T19:22:37Z INFO catalog-svc [t-1956] GET /products/batch p-2247 ok 31ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"data_integrity\",\"confidence\":0.9,\"evidenceLines\":[79,96,109,118,106],\"reasoning\":\"At #79 catalog-db restored the products table from a snapshot (832146 rows) but the sequence products_id_seq was left at 816769, so it is behind the table's max id. New inserts then generate ids that already exist, producing unique-key violations on products_pkey (#96 id 828562, #109 id 828567, #118 id 828570). search-api maps these to 409 'create failed' (#106), and web-bff returns 500s on GET /search (#93, #115, #127, #140). The 5xx at the BFF and the 409s are downstream symptoms; the sequence/restore mismatch is the origin. Errors begin right after the restore at 19:21:46 and no errors appear before it. Vacuum and checkpoint lines are normal and unrelated. Redis, index-worker and catalog-svc show no errors. Alternatives such as a pool or dependency timeout do not fit: the failures are constraint violations, not hangs.\",\"}, {\"rootCause\":\"config_error\",\"confidence\":0.3,\"evidenceLines\":[79],\"reasoning\":\"The restore procedure is an operational change outside a release that left the sequence unsynchronized. This is the same origin viewed as an operator/config mistake rather than a data-state fault. Less likely than data_integrity because the fault is the broken data state itself.\",\"}]",
+          "recommendedAction": "Immediately resync the products_id_seq to max(id) of the products table (for example SELECT setval('products_id_seq', (SELECT MAX(id) FROM products))), then verify inserts succeed. Confirm no other tables were restored with the same sequence gap. Add a post-restore step that resets sequences, and add an alert on unique-violation errors from catalog-db. Consider replaying or re-running the failed product creates that returned 409/500 to customers."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                79,
+                96,
+                109,
+                118,
+                106
+              ],
+              "reasoning": "At #79 catalog-db restored the products table from a snapshot (832146 rows) but the sequence products_id_seq was left at 816769, behind the table's max id. New inserts then generate ids that already exist, causing unique-key violations on products_pkey (#96 id 828562, #109 id 828567, #118 id 828570). search-api maps these to 409 'create failed' (#106), and web-bff returns 500s on GET /search (#93, #115, #127, #140). The BFF 5xx and the 409s are downstream symptoms; the sequence/restore mismatch is the origin. Errors begin right after the restore at 19:21:46 and none appear before it. Vacuum and checkpoint lines are normal. Redis, index-worker and catalog-svc show no errors. Pool or dependency timeouts do not fit because the failures are constraint violations, not hangs."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.3,
+              "evidenceLines": [
+                79
+              ],
+              "reasoning": "The restore procedure is an operational change outside a release that left the sequence unsynchronized. This is the same origin viewed as an operator mistake rather than a data-state fault, so it ranks below data_integrity."
+            }
+          ],
+          "recommendedAction": "Immediately resync products_id_seq to max(id) of the products table (e.g. SELECT setval('products_id_seq', (SELECT MAX(id) FROM products))) and verify inserts succeed. Check whether other sequences were left behind by the same restore. Add a post-restore step that resets sequences, and alert on unique-violation errors from catalog-db. Re-run the product creates that failed with 409/500 for customers."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 3,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1763,
+      "cacheReadTokens": 13682,
+      "cacheWriteTokens": 6381
+    },
+    "durationMs": 9499,
+    "stopReason": "tool_use"
+  }
+}

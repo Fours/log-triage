@@ -1,0 +1,125 @@
+{
+  "score": {
+    "incidentId": "test-011",
+    "difficulty": "hard",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 0.6666666666666666,
+      "f1": 0.8
+    },
+    "herringsCited": 0,
+    "costUsd": 0.001853185,
+    "durationMs": 6861,
+    "iterations": 3,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 8,
+      "output": 1344,
+      "cacheRead": 9251,
+      "cacheWrite": 8703
+    }
+  },
+  "result": {
+    "incidentId": "test-011",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.85,
+          "evidenceLines": [
+            99,
+            135,
+            179,
+            182,
+            214,
+            243
+          ],
+          "reasoning": "ingest-api heap climbs steadily from 00:21 onward: #99 shows 78% heap after full GC with old gen not reclaimed, #135 84% with GC overhead 35%, #179 90% with GC overhead 50%. This looks like a leak in the in-memory eventCache, which is never evicted. The heap then runs out: #182 FATAL OutOfMemoryError at eventCache.put, and #183 shows ingest-api-2 OOMKilled at the 2Gi limit. The same pattern repeats for ingest-api-1 (#214, #215) and ingest-api-2 again (#243, #244). Each restart drops the pod, and the gateway's 502s ('upstream ingest-api connection reset, no healthy upstream', e.g. #185, #203, #211) follow every OOM. Those 502s are downstream symptoms and are not cited as evidence of cause. Geo-cache (evicted=0, normal hit/miss ratios), enrichment-svc (0 errors) and events-db (only a slow audit_log scan at #189, unrelated to the ingest path) look healthy, so they are not the origin. The cache's lack of eviction is the likely leak mechanism. Alternative reading: a config problem such as an undersized heap or a missing cache TTL would also produce this pattern, but the logs show no deploy or config line to point at."
+        }
+      ],
+      "recommendedAction": "Restart the affected ingest-api pods as immediate mitigation. Then investigate the eventCache in ingest-api: confirm it has a size bound or TTL and that eviction is running (capture a heap dump if possible). Add an eviction limit or TTL, and alert on heap growth before OOM. Check whether a recent change removed eviction. Consider raising the 2Gi memory limit only as a stopgap. Also review the gateway's retry and timeout behaviour, since 502s take 6-27s to return."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "23 match(es):\n#99 2026-10-19T00:21:03Z WARN ingest-api heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#135 2026-10-19T00:23:01Z WARN ingest-api heap usage 84% after full GC (old gen not reclaimed), GC overhead 35%\n#179 2026-10-19T00:26:00Z WARN ingest-api heap usage 90% after full GC (old gen not reclaimed), GC overhead 50%\n#182 2026-10-19T00:26:15Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#183 2026-10-19T00:26:16Z ERROR ingest-api container ingest-api-2 killed: OOMKilled (memory limit 2Gi), restart count 1\n#185 2026-10-19T00:26:24Z ERROR ingest-gateway [t-5421] POST /v1/events 502 26030ms: upstream ingest-api connection reset (no healthy upstream)\n#186 2026-10-19T00:26:26Z WARN ingest-gateway rate limiter: client key k-4124 throttled (429), 139 req/s over quota\n#189 2026-10-19T00:26:31Z WARN events-db slow query 1224ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#203 2026-10-19T00:28:12Z ERROR ingest-gateway [t-5433] POST /v1/events 502 21233ms: upstream ingest-api connection reset (no healthy upstream)\n#211 2026-10-19T00:28:55Z ERROR ingest-gateway [t-5440] POST /v1/events 502 19275ms: upstream ingest-api connection reset (no healthy upstream)\n#214 2026-10-19T00:29:03Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#215 2026-10-19T00:29:04Z ERROR ingest-api container ingest-api-1 killed: OOMKilled (memory limit 2Gi), restart count 2\n#226 2026-10-19T00:29:53Z ERROR ingest-gateway [t-5452] POST /v1/events 502 9061ms: upstream ingest-api connection reset (no healthy upstream)\n#242 2026-10-19T00:31:36Z ERROR ingest-gateway [t-5464] POST /v1/events 502 26135ms: upstream ingest-api connection reset (no healthy upstream)\n#243 2026-10-19T00:31:46Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#244 2026-10-19T00:31:47Z ERROR ingest-api container ingest-api-2 killed: OOMKilled (memory limit 2Gi), restart count 3\n#259 2026-10-19T00:32:49Z ERROR ingest-gateway [t-5473] POST /v1/events 502 27204ms: upstream ingest-api connection reset (no healthy upstream)\n#261 2026-10-19T00:33:23Z ERROR ingest-gateway [t-5475] POST /v1/events 502 7627ms: upstream ingest-api connection reset (no healthy upstream)\n#269 2026-10-19T00:34:48Z ERROR ingest-gateway [t-5481] POST /v1/events 502 6242ms: upstream ingest-api connection reset (no healthy upstream)\n#281 2026-10-19T00:36:00Z ERROR ingest-gateway [t-5492] POST /v1/events 502 23471ms: upstream ingest-api connection reset (no healthy upstream)\n#289 2026-10-19T00:36:50Z ERROR ingest-gateway [t-5499] POST /v1/events 502 27327ms: upstream ingest-api connection reset (no healthy upstream)\n#303 2026-10-19T00:38:43Z ERROR ingest-gateway [t-5507] POST /v1/events 502 13237ms: upstream ingest-api connection reset (no healthy upstream)\n#312 2026-10-19T00:39:26Z ERROR ingest-gateway [t-5515] POST /v1/events 502 24697ms: upstream ingest-api connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "geo-cache",
+          "limit": 30
+        },
+        "output": "18 match(es):\n#8 2026-10-19T00:15:26Z INFO geo-cache stats: hits=10217 misses=591 evicted=0 connected_clients=60\n#35 2026-10-19T00:17:00Z INFO geo-cache stats: hits=11727 misses=547 evicted=0 connected_clients=42\n#58 2026-10-19T00:18:29Z INFO geo-cache stats: hits=18430 misses=492 evicted=0 connected_clients=30\n#79 2026-10-19T00:20:07Z INFO geo-cache stats: hits=18773 misses=634 evicted=0 connected_clients=39\n#106 2026-10-19T00:21:29Z INFO geo-cache stats: hits=9321 misses=317 evicted=0 connected_clients=53\n#126 2026-10-19T00:22:38Z INFO geo-cache stats: hits=13333 misses=254 evicted=0 connected_clients=42\n#152 2026-10-19T00:24:14Z INFO geo-cache stats: hits=11309 misses=501 evicted=0 connected_clients=43\n#176 2026-10-19T00:25:48Z INFO geo-cache stats: hits=11466 misses=471 evicted=0 connected_clients=55\n#195 2026-10-19T00:27:00Z INFO geo-cache stats: hits=16305 misses=638 evicted=0 connected_clients=46\n#202 2026-10-19T00:28:08Z INFO geo-cache stats: hits=12493 misses=236 evicted=0 connected_clients=51\n#217 2026-10-19T00:29:12Z INFO geo-cache stats: hits=11704 misses=724 evicted=0 connected_clients=42\n#228 2026-10-19T00:30:24Z INFO geo-cache stats: hits=15098 misses=541 evicted=0 connected_clients=37\n#247 2026-10-19T00:32:00Z INFO geo-cache stats: hits=13710 misses=314 evicted=0 connected_clients=45\n#262 2026-10-19T00:33:29Z INFO geo-cache stats: hits=12952 misses=367 evicted=0 connected_clients=43\n#270 2026-10-19T00:34:54Z INFO geo-cache stats: hits=18848 misses=518 evicted=0 connected_clients=34\n#283 2026-10-19T00:36:19Z INFO geo-cache stats: hits=12981 misses=512 evicted=0 connected_clients=58\n#294 2026-10-19T00:37:33Z INFO geo-cache stats: hits=9122 misses=566 evicted=0 connected_clients=36\n#307 2026-10-19T00:39:05Z INFO geo-cache stats: hits=10306 misses=742 evicted=0 connected_clients=38"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "eventCache",
+          "limit": 40
+        },
+        "output": "3 match(es):\n#182 2026-10-19T00:26:15Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#214 2026-10-19T00:29:03Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#243 2026-10-19T00:31:46Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "limit": 40
+        },
+        "output": "104 match(es), showing first 40:\n#1 2026-10-19T00:15:06Z INFO ingest-api [t-5292] event e-3437 accepted, calling enrichment-svc POST /enrich\n#4 2026-10-19T00:15:15Z DEBUG ingest-api GC pause 15ms (young), heap 39%\n#6 2026-10-19T00:15:19Z INFO ingest-api [t-5294] event e-3438 accepted, calling enrichment-svc POST /enrich\n#9 2026-10-19T00:15:28Z INFO ingest-api [t-5295] event e-3439 accepted, calling enrichment-svc POST /enrich\n#12 2026-10-19T00:15:39Z INFO ingest-api [t-5298] event e-3441 accepted, calling enrichment-svc POST /enrich\n#14 2026-10-19T00:15:50Z INFO ingest-api [t-5300] event e-3443 accepted, calling enrichment-svc POST /enrich\n#17 2026-10-19T00:16:06Z INFO ingest-api [t-5301] event e-3444 accepted, calling enrichment-svc POST /enrich\n#21 2026-10-19T00:16:12Z INFO ingest-api [t-5303] event e-3445 accepted, calling enrichment-svc POST /enrich\n#24 2026-10-19T00:16:28Z INFO ingest-api [t-5306] event e-3446 accepted, calling enrichment-svc POST /enrich\n#27 2026-10-19T00:16:40Z INFO ingest-api [t-5310] event e-3447 accepted, calling enrichment-svc POST /enrich\n#31 2026-10-19T00:16:50Z INFO ingest-api [t-5314] event e-3450 accepted, calling enrichment-svc POST /enrich\n#34 2026-10-19T00:17:00Z INFO ingest-api [t-5316] event e-3453 accepted, calling enrichment-svc POST /enrich\n#37 2026-10-19T00:17:01Z DEBUG ingest-api GC pause 5ms (young), heap 36%\n#39 2026-10-19T00:17:10Z INFO ingest-api [t-5319] event e-3454 accepted, calling enrichment-svc POST /enrich\n#42 2026-10-19T00:17:22Z INFO ingest-api [t-5320] event e-3456 accepted, calling enrichment-svc POST /enrich\n#46 2026-10-19T00:17:34Z INFO ingest-api [t-5322] event e-3459 accepted, calling enrichment-svc POST /enrich\n#48 2026-10-19T00:17:48Z INFO ingest-api [t-5324] event e-3462 accepted, calling enrichment-svc POST /enrich\n#51 2026-10-19T00:18:04Z INFO ingest-api [t-5325] event e-3464 accepted, calling enrichment-svc POST /enrich\n#53 2026-10-19T00:18:13Z INFO ingest-api [t-5329] event e-3467 accepted, calling enrichment-svc POST /enrich\n#56 2026-10-19T00:18:26Z INFO ingest-api [t-5332] event e-3468 accepted, calling enrichment-svc POST /enrich\n#60 2026-10-19T00:18:45Z INFO ingest-api [t-5333] event e-3469 accepted, calling enrichment-svc POST /enrich\n#64 2026-10-19T00:18:55Z INFO ingest-api [t-5335] event e-3470 accepted, calling enrichment-svc POST /enrich\n#66 2026-10-19T00:19:08Z INFO ingest-api [t-5338] event e-3473 accepted, calling enrichment-svc POST /enrich\n#68 2026-10-19T00:19:25Z INFO ingest-api [t-5339] event e-3475 accepted, calling enrichment-svc POST /enrich\n#72 2026-10-19T00:19:29Z DEBUG ingest-api GC pause 5ms (young), heap 33%\n#74 2026-10-19T00:19:41Z INFO ingest-api [t-5343] event e-3476 accepted, calling enrichment-svc POST /enrich\n#77 2026-10-19T00:19:54Z INFO ingest-api [t-5345] event e-3479 accepted, calling enrichment-svc POST /enrich\n#81 2026-10-19T00:20:09Z INFO ingest-api [t-5347] event e-3481 accepted, calling enrichment-svc POST /enrich\n#84 2026-10-19T00:20:20Z INFO ingest-api [t-5350] event e-3482 accepted, calling enrichment-svc POST /enrich\n#86 2026-10-19T00:20:28Z INFO ingest-api [t-5352] event e-3483 accepted, calling enrichment-svc POST /enrich\n#90 2026-10-19T00:20:42Z INFO ingest-api [t-5353] event e-3486 accepted, calling enrichment-svc POST /enrich\n#92 2026-10-19T00:20:56Z INFO ingest-api [t-5354] event e-3487 accepted, calling enrichment-svc POST /enrich\n#96 2026-10-19T00:21:03Z INFO ingest-api [t-5356] event e-3489 accepted, calling enrichment-svc POST /enrich\n#99 2026-10-19T00:21:03Z WARN ingest-api heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#100 2026-10-19T00:21:11Z INFO ingest-api [t-5359] event e-3490 accepted, calling enrichment-svc POST /enrich\n#104 2026-10-19T00:21:24Z INFO ingest-api [t-5362] event e-3493 accepted, calling enrichment-svc POST /enrich\n#108 2026-10-19T00:21:38Z INFO ingest-api [t-5366] event e-3495 accepted, calling enrichment-svc POST /enrich\n#111 2026-10-19T00:21:45Z DEBUG ingest-api GC pause 19ms (young), heap 32%\n#112 2026-10-19T00:21:47Z INFO ingest-api [t-5367] event e-3496 accepted, calling enrichment-svc POST /enrich\n#115 2026-10-19T00:21:58Z INFO ingest-api [t-5370] event e-3499 accepted, calling enrichment-svc POST /enrich"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.85,
+              "evidenceLines": [
+                99,
+                135,
+                179,
+                182,
+                214,
+                243
+              ],
+              "reasoning": "ingest-api heap climbs steadily from 00:21 onward: #99 shows 78% heap after full GC with old gen not reclaimed, #135 84% with GC overhead 35%, #179 90% with GC overhead 50%. This looks like a leak in the in-memory eventCache, which is never evicted. The heap then runs out: #182 FATAL OutOfMemoryError at eventCache.put, and #183 shows ingest-api-2 OOMKilled at the 2Gi limit. The same pattern repeats for ingest-api-1 (#214, #215) and ingest-api-2 again (#243, #244). Each restart drops the pod, and the gateway's 502s ('upstream ingest-api connection reset, no healthy upstream', e.g. #185, #203, #211) follow every OOM. Those 502s are downstream symptoms and are not cited as evidence of cause. Geo-cache (evicted=0, normal hit/miss ratios), enrichment-svc (0 errors) and events-db (only a slow audit_log scan at #189, unrelated to the ingest path) look healthy, so they are not the origin. The cache's lack of eviction is the likely leak mechanism. Alternative reading: a config problem such as an undersized heap or a missing cache TTL would also produce this pattern, but the logs show no deploy or config line to point at.",
+              "": ""
+            }
+          ],
+          "recommendedAction": "Restart the affected ingest-api pods as immediate mitigation. Then investigate the eventCache in ingest-api: confirm it has a size bound or TTL and that eviction is running (capture a heap dump if possible). Add an eviction limit or TTL, and alert on heap growth before OOM. Check whether a recent change removed eviction. Consider raising the 2Gi memory limit only as a stopgap. Also review the gateway's retry and timeout behaviour, since 502s take 6-27s to return."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 1344,
+      "cacheReadTokens": 9251,
+      "cacheWriteTokens": 8703
+    },
+    "durationMs": 6861,
+    "stopReason": "tool_use"
+  }
+}

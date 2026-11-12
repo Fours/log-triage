@@ -1,0 +1,189 @@
+{
+  "score": {
+    "incidentId": "test-027",
+    "difficulty": "easy",
+    "scenario": "poison_message/redelivery-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "poison_message",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 6,
+      "precision": 0.75,
+      "recall": 1,
+      "f1": 0.8571428571428571
+    },
+    "herringsCited": 0,
+    "costUsd": 0.003032295,
+    "durationMs": 10855,
+    "iterations": 5,
+    "toolCalls": 9,
+    "tokens": {
+      "input": 12,
+      "output": 2011,
+      "cacheRead": 32397,
+      "cacheWrite": 13613
+    }
+  },
+  "result": {
+    "incidentId": "test-027",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.9,
+          "evidenceLines": [
+            138,
+            139,
+            154,
+            155,
+            164,
+            165,
+            163,
+            189
+          ],
+          "reasoning": "audit-consumer on partition 9 is stuck on one malformed message, msg-205216 (offset 341819). Its JSON parse fails with an unexpected '\\u0000' at position 1451 (#138). The consumer nacks and redelivers it with no max-retry limit (#139, #155, #165 at attempts 6, 15, 21), so partition 9 never advances. Lag then grows from 1388 messages/63s (#163) to 3585/213s (#211), which matches the alert. The first failure is at 10:11:52, right after a run of healthy batches, so the message is the trigger. CPU stays normal because the consumer is blocked on retries, not compute-bound. The account-svc 120s confirmation timeouts (#166, #202, #220) are a separate symptom with no trace linkage to the audit path in the logs, so they are not the cause of the lag."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.15,
+          "evidenceLines": [
+            139,
+            155,
+            165
+          ],
+          "reasoning": "The unbounded redelivery loop (no max-retries) amplifies a single bad message into a partition-wide stall. This is a contributing factor rather than the originating fault, since the trigger is the malformed record itself."
+        }
+      ],
+      "recommendedAction": "1. Move msg-205216 (partition 9, offset 341819) to a dead-letter queue or skip it so partition 9 resumes, then confirm lag drains. 2. Inspect the producer that emitted the payload with a NUL byte at position 1451 and fix its serialization or validation. 3. Configure a max-retry limit and DLQ routing on audit-consumer so one bad message cannot block a partition. 4. Separately investigate the account-svc 120s \"downstream confirmation\" timeouts (#166, #202, #220), which are not explained by this trace."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "13 match(es):\n#138 2026-11-22T10:11:52Z ERROR audit-consumer failed to process msg-205216 (partition 9, offset 341819): JSON parse error: unexpected token '\\u0000' at position 1451\n#139 2026-11-22T10:11:52Z WARN audit-consumer nack msg-205216, redelivering (attempt 6, no max-retries configured)\n#154 2026-11-22T10:14:09Z ERROR audit-consumer failed to process msg-205216 (partition 9, offset 341819): JSON parse error: unexpected token '\\u0000' at position 1451\n#155 2026-11-22T10:14:10Z WARN audit-consumer nack msg-205216, redelivering (attempt 15, no max-retries configured)\n#163 2026-11-22T10:14:58Z WARN audit-consumer consumer lag on audit.events partition 9: 1388 messages behind (63s)\n#164 2026-11-22T10:15:03Z ERROR audit-consumer failed to process msg-205216 (partition 9, offset 341819): JSON parse error: unexpected token '\\u0000' at position 1451\n#165 2026-11-22T10:15:04Z WARN audit-consumer nack msg-205216, redelivering (attempt 21, no max-retries configured)\n#166 2026-11-22T10:15:06Z ERROR account-svc [t-4518] user u-6912 timed out waiting for downstream confirmation (120s), marked failed\n#189 2026-11-22T10:18:05Z WARN audit-consumer consumer lag on audit.events partition 9: 2774 messages behind (128s)\n#202 2026-11-22T10:20:17Z ERROR account-svc [t-4543] user u-6934 timed out waiting for downstream confirmation (120s), marked failed\n#211 2026-11-22T10:21:26Z WARN audit-consumer consumer lag on audit.events partition 9: 3585 messages behind (213s)\n#216 2026-11-22T10:22:22Z WARN audit-consumer consumer lag on audit.events partition 9: 3432 messages behind (240s)\n#220 2026-11-22T10:22:42Z ERROR account-svc [t-4556] user u-6942 timed out waiting for downstream confirmation (120s), marked failed"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "audit-consumer",
+          "limit": 50
+        },
+        "output": "33 match(es):\n#3 2026-11-22T09:55:41Z INFO audit-consumer processed batch of 86 messages from audit.events (lag 194ms)\n#7 2026-11-22T09:56:22Z INFO audit-consumer processed batch of 91 messages from audit.events (lag 247ms)\n#15 2026-11-22T09:57:13Z INFO audit-consumer processed batch of 46 messages from audit.events (lag 69ms)\n#20 2026-11-22T09:57:51Z INFO audit-consumer processed batch of 48 messages from audit.events (lag 394ms)\n#25 2026-11-22T09:58:31Z INFO audit-consumer processed batch of 101 messages from audit.events (lag 219ms)\n#29 2026-11-22T09:59:14Z INFO audit-consumer processed batch of 34 messages from audit.events (lag 278ms)\n#37 2026-11-22T10:00:05Z INFO audit-consumer processed batch of 70 messages from audit.events (lag 222ms)\n#46 2026-11-22T10:00:54Z INFO audit-consumer processed batch of 69 messages from audit.events (lag 69ms)\n#50 2026-11-22T10:01:39Z INFO audit-consumer processed batch of 109 messages from audit.events (lag 136ms)\n#57 2026-11-22T10:02:18Z INFO audit-consumer processed batch of 31 messages from audit.events (lag 318ms)\n#63 2026-11-22T10:03:10Z INFO audit-consumer processed batch of 70 messages from audit.events (lag 138ms)\n#66 2026-11-22T10:03:41Z INFO audit-consumer processed batch of 64 messages from audit.events (lag 147ms)\n#72 2026-11-22T10:04:13Z INFO audit-consumer processed batch of 89 messages from audit.events (lag 144ms)\n#77 2026-11-22T10:04:53Z INFO audit-consumer processed batch of 47 messages from audit.events (lag 320ms)\n#83 2026-11-22T10:05:35Z INFO audit-consumer processed batch of 54 messages from audit.events (lag 181ms)\n#90 2026-11-22T10:06:12Z INFO audit-consumer processed batch of 31 messages from audit.events (lag 237ms)\n#98 2026-11-22T10:06:55Z INFO audit-consumer processed batch of 120 messages from audit.events (lag 46ms)\n#105 2026-11-22T10:07:26Z INFO audit-consumer processed batch of 25 messages from audit.events (lag 340ms)\n#111 2026-11-22T10:08:06Z INFO audit-consumer processed batch of 57 messages from audit.events (lag 390ms)\n#114 2026-11-22T10:08:49Z INFO audit-consumer processed batch of 51 messages from audit.events (lag 324ms)\n#121 2026-11-22T10:09:34Z INFO audit-consumer processed batch of 112 messages from audit.events (lag 278ms)\n#129 2026-11-22T10:10:21Z INFO audit-consumer processed batch of 70 messages from audit.events (lag 297ms)\n#134 2026-11-22T10:11:09Z INFO audit-consumer processed batch of 98 messages from audit.events (lag 58ms)\n#138 2026-11-22T10:11:52Z ERROR audit-consumer failed to process msg-205216 (partition 9, offset 341819): JSON parse error: unexpected token '\\u0000' at position 1451\n#139 2026-11-22T10:11:52Z WARN audit-consumer nack msg-205216, redelivering (attempt 6, no max-retries configured)\n#154 2026-11-22T10:14:09Z ERROR audit-consumer failed to process msg-205216 (partition 9, offset 341819): JSON parse error: unexpected token '\\u0000' at position 1451\n#155 2026-11-22T10:14:10Z WARN audit-consumer nack msg-205216, redelivering (attempt 15, no max-retries configured)\n#163 2026-11-22T10:14:58Z WARN audit-consumer consumer lag on audit.events partition 9: 1388 messages behind (63s)\n#164 2026-11-22T10:15:03Z ERROR audit-consumer failed to process msg-205216 (partition 9, offset 341819): JSON parse error: unexpected token '\\u0000' at position 1451\n#165 2026-11-22T10:15:04Z WARN audit-consumer nack msg-205216, redelivering (attempt 21, no max-retries configured)\n#189 2026-11-22T10:18:05Z WARN audit-consumer consumer lag on audit.events partition 9: 2774 messages behind (128s)\n#211 2026-11-22T10:21:26Z WARN audit-consumer consumer lag on audit.events partition 9: 3585 messages behind (213s)\n#216 2026-11-22T10:22:22Z WARN audit-consumer consumer lag on audit.events partition 9: 3432 messages behind (240s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "msg-205216"
+        },
+        "output": "6 match(es):\n#138 2026-11-22T10:11:52Z ERROR audit-consumer failed to process msg-205216 (partition 9, offset 341819): JSON parse error: unexpected token '\\u0000' at position 1451\n#139 2026-11-22T10:11:52Z WARN audit-consumer nack msg-205216, redelivering (attempt 6, no max-retries configured)\n#154 2026-11-22T10:14:09Z ERROR audit-consumer failed to process msg-205216 (partition 9, offset 341819): JSON parse error: unexpected token '\\u0000' at position 1451\n#155 2026-11-22T10:14:10Z WARN audit-consumer nack msg-205216, redelivering (attempt 15, no max-retries configured)\n#164 2026-11-22T10:15:03Z ERROR audit-consumer failed to process msg-205216 (partition 9, offset 341819): JSON parse error: unexpected token '\\u0000' at position 1451\n#165 2026-11-22T10:15:04Z WARN audit-consumer nack msg-205216, redelivering (attempt 21, no max-retries configured)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 138,
+          "before": 12,
+          "after": 3
+        },
+        "output": "#126 2026-11-22T10:09:42Z INFO edge-proxy [t-4500] POST /login 200 132ms\n#127 2026-11-22T10:10:19Z INFO account-svc [t-4503] user u-6893 accepted, calling auth-svc POST /tokens\n#128 2026-11-22T10:10:19Z INFO edge-proxy [t-4503] POST /login 200 78ms\n#129 2026-11-22T10:10:21Z INFO audit-consumer processed batch of 70 messages from audit.events (lag 297ms)\n#130 2026-11-22T10:10:22Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#131 2026-11-22T10:10:25Z INFO session-cache stats: hits=8466 misses=371 evicted=0 connected_clients=58\n#132 2026-11-22T10:10:58Z INFO account-svc [t-4505] user u-6895 accepted, calling auth-svc POST /tokens\n#133 2026-11-22T10:10:58Z INFO edge-proxy [t-4505] POST /login 200 158ms\n#134 2026-11-22T10:11:09Z INFO audit-consumer processed batch of 98 messages from audit.events (lag 58ms)\n#135 2026-11-22T10:11:21Z DEBUG auth-svc GC pause 8ms (young), heap 35%\n#136 2026-11-22T10:11:39Z INFO account-svc [t-4507] user u-6897 accepted, calling auth-svc POST /tokens\n#137 2026-11-22T10:11:39Z INFO edge-proxy [t-4507] POST /login 200 146ms\n#138 2026-11-22T10:11:52Z ERROR audit-consumer failed to process msg-205216 (partition 9, offset 341819): JSON parse error: unexpected token '\\u0000' at position 1451\n#139 2026-11-22T10:11:52Z WARN audit-consumer nack msg-205216, redelivering (attempt 6, no max-retries configured)\n#140 2026-11-22T10:11:56Z DEBUG account-svc GC pause 7ms (young), heap 34%\n#141 2026-11-22T10:11:59Z INFO session-cache stats: hits=15649 misses=641 evicted=0 connected_clients=54"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "account-svc",
+          "limit": 80
+        },
+        "output": "68 match(es):\n#1 2026-11-22T09:55:21Z INFO account-svc [t-4432] user u-6846 accepted, calling auth-svc POST /tokens\n#4 2026-11-22T09:56:01Z INFO account-svc [t-4435] user u-6847 accepted, calling auth-svc POST /tokens\n#8 2026-11-22T09:56:26Z INFO account-svc [t-4439] user u-6848 accepted, calling auth-svc POST /tokens\n#11 2026-11-22T09:56:45Z INFO account-svc [t-4441] user u-6851 accepted, calling auth-svc POST /tokens\n#16 2026-11-22T09:57:24Z INFO account-svc [t-4442] user u-6853 accepted, calling auth-svc POST /tokens\n#19 2026-11-22T09:57:49Z DEBUG account-svc GC pause 19ms (young), heap 31%\n#23 2026-11-22T09:58:15Z INFO account-svc [t-4445] user u-6854 accepted, calling auth-svc POST /tokens\n#26 2026-11-22T09:58:53Z INFO account-svc [t-4447] user u-6855 accepted, calling auth-svc POST /tokens\n#30 2026-11-22T09:59:28Z INFO account-svc [t-4449] user u-6856 accepted, calling auth-svc POST /tokens\n#33 2026-11-22T09:59:46Z INFO account-svc [t-4451] user u-6858 accepted, calling auth-svc POST /tokens\n#38 2026-11-22T10:00:21Z INFO account-svc [t-4455] user u-6860 accepted, calling auth-svc POST /tokens\n#42 2026-11-22T10:00:33Z DEBUG account-svc GC pause 18ms (young), heap 45%\n#43 2026-11-22T10:00:40Z INFO account-svc [t-4459] user u-6863 accepted, calling auth-svc POST /tokens\n#48 2026-11-22T10:01:32Z INFO account-svc [t-4462] user u-6864 accepted, calling auth-svc POST /tokens\n#54 2026-11-22T10:02:11Z INFO account-svc [t-4466] user u-6865 accepted, calling auth-svc POST /tokens\n#58 2026-11-22T10:02:52Z INFO account-svc [t-4469] user u-6866 accepted, calling auth-svc POST /tokens\n#64 2026-11-22T10:03:23Z INFO account-svc [t-4470] user u-6867 accepted, calling auth-svc POST /tokens\n#67 2026-11-22T10:03:47Z DEBUG account-svc GC pause 11ms (young), heap 45%\n#69 2026-11-22T10:04:09Z INFO account-svc [t-4474] user u-6869 accepted, calling auth-svc POST /tokens\n#73 2026-11-22T10:04:32Z INFO account-svc [t-4475] user u-6870 accepted, calling auth-svc POST /tokens\n#78 2026-11-22T10:05:01Z INFO account-svc [t-4477] user u-6871 accepted, calling auth-svc POST /tokens\n#84 2026-11-22T10:05:36Z INFO account-svc [t-4481] user u-6872 accepted, calling auth-svc POST /tokens\n#87 2026-11-22T10:06:11Z INFO account-svc [t-4484] user u-6875 accepted, calling auth-svc POST /tokens\n#91 2026-11-22T10:06:39Z INFO account-svc [t-4486] user u-6877 accepted, calling auth-svc POST /tokens\n#97 2026-11-22T10:06:53Z DEBUG account-svc GC pause 11ms (young), heap 38%\n#99 2026-11-22T10:06:58Z INFO account-svc [t-4487] user u-6878 accepted, calling auth-svc POST /tokens\n#102 2026-11-22T10:07:20Z INFO account-svc [t-4488] user u-6879 accepted, calling auth-svc POST /tokens\n#106 2026-11-22T10:07:38Z INFO account-svc [t-4489] user u-6880 accepted, calling auth-svc POST /tokens\n#112 2026-11-22T10:08:14Z INFO account-svc [t-4493] user u-6883 accepted, calling auth-svc POST /tokens\n#115 2026-11-22T10:08:50Z INFO account-svc [t-4495] user u-6886 accepted, calling auth-svc POST /tokens\n#118 2026-11-22T10:09:16Z INFO account-svc [t-4498] user u-6889 accepted, calling auth-svc POST /tokens\n#122 2026-11-22T10:09:37Z DEBUG account-svc GC pause 20ms (young), heap 45%\n#125 2026-11-22T10:09:41Z INFO account-svc [t-4500] user u-6890 accepted, calling auth-svc POST /tokens\n#127 2026-11-22T10:10:19Z INFO account-svc [t-4503] user u-6893 accepted, calling auth-svc POST /tokens\n#132 2026-11-22T10:10:58Z INFO account-svc [t-4505] user u-6895 accepted, calling auth-svc POST /tokens\n#136 2026-11-22T10:11:39Z INFO account-svc [t-4507] user u-6897 accepted, calling auth-svc POST /tokens\n#140 2026-11-22T10:11:56Z DEBUG account-svc GC pause 7ms (young), heap 34%\n#143 2026-11-22T10:12:30Z INFO account-svc [t-4508] user u-6900 accepted, calling auth-svc POST /tokens\n#146 2026-11-22T10:12:53Z INFO account-svc [t-4510] user u-6902 accepted, calling auth-svc POST /tokens\n#151 2026-11-22T10:13:43Z INFO account-svc [t-4514] user u-6904 accepted, calling auth-svc POST /tokens\n#153 2026-11-22T10:14:05Z DEBUG account-svc GC pause 16ms (young), heap 30%\n#157 2026-11-22T10:14:35Z INFO account-svc [t-4516] user u-6907 accepted, calling auth-svc POST /tokens\n#160 2026-11-22T10:14:53Z INFO account-svc [t-4517] user u-6909 accepted, calling auth-svc POST /tokens\n#166 2026-11-22T10:15:06Z ERROR account-svc [t-4518] user u-6912 timed out waiting for downstream confirmation (120s), marked failed\n#167 2026-11-22T10:15:25Z INFO account-svc [t-4520] user u-6913 accepted, calling auth-svc POST /tokens\n#171 2026-11-22T10:15:58Z INFO account-svc [t-4524] user u-6916 accepted, calling auth-svc POST /tokens\n#174 2026-11-22T10:16:07Z DEBUG account-svc GC pause 20ms (young), heap 47%\n#176 2026-11-22T10:16:30Z INFO account-svc [t-4527] user u-6918 accepted, calling auth-svc POST /tokens\n#178 2026-11-22T10:17:04Z INFO account-svc [t-4531] user u-6920 accepted, calling auth-svc POST /tokens\n#182 2026-11-22T10:17:35Z INFO account-svc [t-4534] user u-6922 accepted, calling auth-svc POST /tokens\n#185 2026-11-22T10:17:55Z INFO account-svc [t-4535] user u-6923 accepted, calling auth-svc POST /tokens\n#188 2026-11-22T10:18:02Z DEBUG account-svc GC pause 7ms (young), heap 38%\n#191 2026-11-22T10:18:44Z INFO account-svc [t-4536] user u-6926 accepted, calling auth-svc POST /tokens\n#193 2026-11-22T10:19:11Z INFO account-svc [t-4538] user u-6928 accepted, calling auth-svc POST /tokens\n#197 2026-11-22T10:19:52Z INFO account-svc [t-4541] user u-6931 accepted, calling auth-svc POST /tokens\n#201 2026-11-22T10:20:11Z DEBUG account-svc GC pause 9ms (young), heap 42%\n#202 2026-11-22T10:20:17Z ERROR account-svc [t-4543] user u-6934 timed out waiting for downstream confirmation (120s), marked failed\n#203 2026-11-22T10:20:35Z INFO account-svc [t-4546] user u-6935 accepted, calling auth-svc POST /tokens\n#205 2026-11-22T10:20:55Z INFO account-svc [t-4547] user u-6936 accepted, calling auth-svc POST /tokens\n#209 2026-11-22T10:21:25Z INFO account-svc [t-4549] user u-6937 accepted, calling auth-svc POST /tokens\n#213 2026-11-22T10:21:51Z INFO account-svc [t-4551] user u-6938 accepted, calling auth-svc POST /tokens\n#217 2026-11-22T10:22:35Z INFO account-svc [t-4553] user u-6941 accepted, calling auth-svc POST /tokens\n#220 2026-11-22T10:22:42Z ERROR account-svc [t-4556] user u-6942 timed out waiting for downstream confirmation (120s), marked failed\n#222 2026-11-22T10:22:48Z DEBUG account-svc GC pause 11ms (young), heap 32%\n#223 2026-11-22T10:23:12Z INFO account-svc [t-4557] user u-6943 accepted, calling auth-svc POST /tokens\n#225 2026-11-22T10:23:50Z INFO account-svc [t-4560] user u-6946 accepted, calling auth-svc POST /tokens\n#229 2026-11-22T10:24:19Z INFO account-svc [t-4563] user u-6948 accepted, calling auth-svc POST /tokens\n#232 2026-11-22T10:24:42Z INFO account-svc [t-4565] user u-6951 accepted, calling auth-svc POST /tokens"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-4518"
+        },
+        "output": "1 line(s) for t-4518:\n#166 2026-11-22T10:15:06Z ERROR account-svc [t-4518] user u-6912 timed out waiting for downstream confirmation (120s), marked failed"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "confirmation",
+          "limit": 30
+        },
+        "output": "3 match(es):\n#166 2026-11-22T10:15:06Z ERROR account-svc [t-4518] user u-6912 timed out waiting for downstream confirmation (120s), marked failed\n#202 2026-11-22T10:20:17Z ERROR account-svc [t-4543] user u-6934 timed out waiting for downstream confirmation (120s), marked failed\n#220 2026-11-22T10:22:42Z ERROR account-svc [t-4556] user u-6942 timed out waiting for downstream confirmation (120s), marked failed"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "service": "accounts-db"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "audit",
+          "limit": 60
+        },
+        "output": "27 match(es):\n#3 2026-11-22T09:55:41Z INFO audit-consumer processed batch of 86 messages from audit.events (lag 194ms)\n#7 2026-11-22T09:56:22Z INFO audit-consumer processed batch of 91 messages from audit.events (lag 247ms)\n#15 2026-11-22T09:57:13Z INFO audit-consumer processed batch of 46 messages from audit.events (lag 69ms)\n#20 2026-11-22T09:57:51Z INFO audit-consumer processed batch of 48 messages from audit.events (lag 394ms)\n#25 2026-11-22T09:58:31Z INFO audit-consumer processed batch of 101 messages from audit.events (lag 219ms)\n#29 2026-11-22T09:59:14Z INFO audit-consumer processed batch of 34 messages from audit.events (lag 278ms)\n#37 2026-11-22T10:00:05Z INFO audit-consumer processed batch of 70 messages from audit.events (lag 222ms)\n#46 2026-11-22T10:00:54Z INFO audit-consumer processed batch of 69 messages from audit.events (lag 69ms)\n#50 2026-11-22T10:01:39Z INFO audit-consumer processed batch of 109 messages from audit.events (lag 136ms)\n#57 2026-11-22T10:02:18Z INFO audit-consumer processed batch of 31 messages from audit.events (lag 318ms)\n#63 2026-11-22T10:03:10Z INFO audit-consumer processed batch of 70 messages from audit.events (lag 138ms)\n#66 2026-11-22T10:03:41Z INFO audit-consumer processed batch of 64 messages from audit.events (lag 147ms)\n#72 2026-11-22T10:04:13Z INFO audit-consumer processed batch of 89 messages from audit.events (lag 144ms)\n#77 2026-11-22T10:04:53Z INFO audit-consumer processed batch of 47 messages from audit.events (lag 320ms)\n#83 2026-11-22T10:05:35Z INFO audit-consumer processed batch of 54 messages from audit.events (lag 181ms)\n#90 2026-11-22T10:06:12Z INFO audit-consumer processed batch of 31 messages from audit.events (lag 237ms)\n#98 2026-11-22T10:06:55Z INFO audit-consumer processed batch of 120 messages from audit.events (lag 46ms)\n#105 2026-11-22T10:07:26Z INFO audit-consumer processed batch of 25 messages from audit.events (lag 340ms)\n#111 2026-11-22T10:08:06Z INFO audit-consumer processed batch of 57 messages from audit.events (lag 390ms)\n#114 2026-11-22T10:08:49Z INFO audit-consumer processed batch of 51 messages from audit.events (lag 324ms)\n#121 2026-11-22T10:09:34Z INFO audit-consumer processed batch of 112 messages from audit.events (lag 278ms)\n#129 2026-11-22T10:10:21Z INFO audit-consumer processed batch of 70 messages from audit.events (lag 297ms)\n#134 2026-11-22T10:11:09Z INFO audit-consumer processed batch of 98 messages from audit.events (lag 58ms)\n#163 2026-11-22T10:14:58Z WARN audit-consumer consumer lag on audit.events partition 9: 1388 messages behind (63s)\n#189 2026-11-22T10:18:05Z WARN audit-consumer consumer lag on audit.events partition 9: 2774 messages behind (128s)\n#211 2026-11-22T10:21:26Z WARN audit-consumer consumer lag on audit.events partition 9: 3585 messages behind (213s)\n#216 2026-11-22T10:22:22Z WARN audit-consumer consumer lag on audit.events partition 9: 3432 messages behind (240s)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.9,
+              "evidenceLines": [
+                138,
+                139,
+                154,
+                155,
+                164,
+                165,
+                163,
+                189
+              ],
+              "reasoning": "audit-consumer on partition 9 is stuck on one malformed message, msg-205216 (offset 341819). Its JSON parse fails with an unexpected '\\u0000' at position 1451 (#138). The consumer nacks and redelivers it with no max-retry limit (#139, #155, #165 at attempts 6, 15, 21), so partition 9 never advances. Lag then grows from 1388 messages/63s (#163) to 3585/213s (#211), which matches the alert. The first failure is at 10:11:52, right after a run of healthy batches, so the message is the trigger. CPU stays normal because the consumer is blocked on retries, not compute-bound. The account-svc 120s confirmation timeouts (#166, #202, #220) are a separate symptom with no trace linkage to the audit path in the logs, so they are not the cause of the lag.",
+              "recommendation_placeholder": null
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.15,
+              "evidenceLines": [
+                139,
+                155,
+                165
+              ],
+              "reasoning": "The unbounded redelivery loop (no max-retries) amplifies a single bad message into a partition-wide stall. This is a contributing factor rather than the originating fault, since the trigger is the malformed record itself.",
+              "recommendation_placeholder": null
+            }
+          ],
+          "recommendedAction": "1. Move msg-205216 (partition 9, offset 341819) to a dead-letter queue or skip it so partition 9 resumes, then confirm lag drains. 2. Inspect the producer that emitted the payload with a NUL byte at position 1451 and fix its serialization or validation. 3. Configure a max-retry limit and DLQ routing on audit-consumer so one bad message cannot block a partition. 4. Separately investigate the account-svc 120s \"downstream confirmation\" timeouts (#166, #202, #220), which are not explained by this trace."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 9,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 2011,
+      "cacheReadTokens": 32397,
+      "cacheWriteTokens": 13613
+    },
+    "durationMs": 10855,
+    "stopReason": "tool_use"
+  }
+}

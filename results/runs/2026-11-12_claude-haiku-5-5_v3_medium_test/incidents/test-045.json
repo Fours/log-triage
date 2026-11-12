@@ -1,0 +1,165 @@
+{
+  "score": {
+    "incidentId": "test-045",
+    "difficulty": "medium",
+    "scenario": "bad_deploy/dependency-contract-change",
+    "truth": "bad_deploy",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "bad_deploy",
+    "confidence": 0.92,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0022159300000000005,
+    "durationMs": 10088,
+    "iterations": 5,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 12,
+      "output": 2074,
+      "cacheRead": 21223,
+      "cacheWrite": 7724
+    }
+  },
+  "result": {
+    "incidentId": "test-045",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.92,
+          "evidenceLines": [
+            102,
+            107,
+            108,
+            116,
+            119,
+            128
+          ],
+          "reasoning": "payment-svc v1.18.0 (build 1dd893a) was rolled out at 05:43:46 and started at 05:44:12 with 'response serializer v2 enabled'. From then on, order-service fails to decode POST /charge responses because the 'status' field is missing (keys are id, state, updatedAt). The charge itself succeeds (payment-svc logs 'ok' before the deploy), so the break is in the response contract. order-service then returns 502 and api-gateway surfaces these as POST /checkout 502s (#114, #122, #133, etc.). The gateway 502s are downstream symptoms and are not cited as evidence. Payment-svc logs no errors, which is consistent with a serializer change. Alternatives considered: postgres vacuum and checkpoints are routine, redis is healthy, and the 400 validation error at #55 is unrelated client input. None of these explain the decode failures."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.3,
+          "evidenceLines": [
+            107
+          ],
+          "reasoning": "The 'response serializer v2 enabled' flag at #107 could be a config toggle rather than a code change. Either way the fix is to revert or correct the serializer setting, so this is a weaker reading of the same line."
+        }
+      ],
+      "recommendedAction": "Roll back payment-svc from v1.18.0 to v1.17.9 now, or disable the 'response serializer v2' setting so /charge returns the 'status' field that order-service expects. Confirm that order-service stops logging decode errors and that the checkout 502 rate drops. Afterwards, add a contract test between payment-svc and order-service for the /charge response schema before re-rolling v1.18.0. Clean up the /var/log disk warning on api-gateway (#39) as a side item."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "13 match(es):\n#39 2026-11-05T05:37:32Z WARN api-gateway disk usage 80% on /var/log (threshold 75%)\n#55 2026-11-05T05:39:09Z WARN api-gateway [t-5885] POST /checkout 400 8ms: request validation failed: field \"email\" is not a valid address\n#108 2026-11-05T05:44:24Z ERROR order-service [t-5928] failed to decode payment-svc POST /charge response for o-5408: missing required field \"status\" (got keys: id, state, updatedAt)\n#114 2026-11-05T05:45:42Z ERROR api-gateway [t-5930] POST /checkout 502 7265ms: upstream order-service returned 502 Bad Gateway\n#116 2026-11-05T05:45:59Z ERROR order-service [t-5934] failed to decode payment-svc POST /charge response for o-5410: missing required field \"status\" (got keys: id, state, updatedAt)\n#119 2026-11-05T05:46:37Z ERROR order-service [t-5937] failed to decode payment-svc POST /charge response for o-5413: missing required field \"status\" (got keys: id, state, updatedAt)\n#122 2026-11-05T05:47:03Z ERROR api-gateway [t-5941] POST /checkout 502 20950ms: upstream order-service returned 502 Bad Gateway\n#128 2026-11-05T05:47:53Z ERROR order-service [t-5945] failed to decode payment-svc POST /charge response for o-5418: missing required field \"status\" (got keys: id, state, updatedAt)\n#133 2026-11-05T05:48:17Z ERROR api-gateway [t-5953] POST /checkout 502 17115ms: upstream order-service returned 502 Bad Gateway\n#141 2026-11-05T05:50:10Z ERROR api-gateway [t-5957] POST /checkout 502 5002ms: upstream order-service returned 502 Bad Gateway\n#150 2026-11-05T05:51:55Z ERROR api-gateway [t-5960] POST /checkout 502 26217ms: upstream order-service returned 502 Bad Gateway\n#157 2026-11-05T05:53:50Z ERROR api-gateway [t-5962] POST /checkout 502 12121ms: upstream order-service returned 502 Bad Gateway\n#164 2026-11-05T05:54:48Z ERROR api-gateway [t-5970] POST /checkout 502 12344ms: upstream order-service returned 502 Bad Gateway"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "postgres",
+          "limit": 50
+        },
+        "output": "11 match(es):\n#4 2026-11-05T05:34:13Z INFO postgres checkpoint complete: wrote 681 buffers (4.7%)\n#25 2026-11-05T05:35:55Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 5\n#44 2026-11-05T05:38:07Z INFO postgres checkpoint complete: wrote 837 buffers (4.0%)\n#71 2026-11-05T05:40:29Z INFO postgres checkpoint complete: wrote 1110 buffers (1.6%)\n#96 2026-11-05T05:43:04Z INFO postgres checkpoint complete: wrote 559 buffers (4.9%)\n#112 2026-11-05T05:45:28Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 12\n#129 2026-11-05T05:48:01Z INFO postgres checkpoint complete: wrote 679 buffers (2.0%)\n#137 2026-11-05T05:49:41Z INFO postgres checkpoint complete: wrote 470 buffers (4.3%)\n#149 2026-11-05T05:51:53Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 22\n#159 2026-11-05T05:53:58Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 3\n#172 2026-11-05T05:55:49Z INFO postgres checkpoint complete: wrote 957 buffers (4.7%)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "limit": 50
+        },
+        "output": "19 match(es):\n#2 2026-11-05T05:34:09Z INFO payment-svc [t-5846] POST /charge o-5356 ok 62ms\n#6 2026-11-05T05:34:34Z INFO payment-svc [t-5850] POST /charge o-5358 ok 88ms\n#14 2026-11-05T05:35:01Z INFO payment-svc [t-5853] POST /charge o-5361 ok 57ms\n#18 2026-11-05T05:35:18Z DEBUG payment-svc GC pause 21ms (young), heap 38%\n#28 2026-11-05T05:36:11Z INFO payment-svc [t-5863] POST /charge o-5366 ok 24ms\n#41 2026-11-05T05:37:35Z DEBUG payment-svc GC pause 15ms (young), heap 36%\n#49 2026-11-05T05:38:26Z INFO payment-svc [t-5878] POST /charge o-5373 ok 75ms\n#65 2026-11-05T05:40:05Z INFO payment-svc [t-5894] POST /charge o-5384 ok 70ms\n#72 2026-11-05T05:40:41Z DEBUG payment-svc GC pause 9ms (young), heap 44%\n#74 2026-11-05T05:40:47Z INFO payment-svc [t-5900] POST /charge o-5386 ok 57ms\n#91 2026-11-05T05:42:39Z DEBUG payment-svc GC pause 23ms (young), heap 37%\n#102 2026-11-05T05:43:46Z INFO payment-svc deploy: rolling out payment-svc v1.18.0 (build 1dd893a), replacing v1.17.9\n#107 2026-11-05T05:44:12Z INFO payment-svc started payment-svc v1.18.0: response serializer v2 enabled\n#111 2026-11-05T05:45:22Z DEBUG payment-svc GC pause 19ms (young), heap 37%\n#123 2026-11-05T05:47:03Z DEBUG payment-svc GC pause 5ms (young), heap 45%\n#139 2026-11-05T05:49:46Z DEBUG payment-svc GC pause 8ms (young), heap 38%\n#148 2026-11-05T05:51:45Z DEBUG payment-svc GC pause 24ms (young), heap 43%\n#156 2026-11-05T05:53:45Z DEBUG payment-svc GC pause 6ms (young), heap 31%\n#166 2026-11-05T05:55:00Z INFO payment-svc [t-5972] POST /charge o-5424 ok 81ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 20
+        },
+        "output": "1 match(es):\n#102 2026-11-05T05:43:46Z INFO payment-svc deploy: rolling out payment-svc v1.18.0 (build 1dd893a), replacing v1.17.9"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 108,
+          "before": 6,
+          "after": 3
+        },
+        "output": "#102 2026-11-05T05:43:46Z INFO payment-svc deploy: rolling out payment-svc v1.18.0 (build 1dd893a), replacing v1.17.9\n#103 2026-11-05T05:43:52Z INFO order-service [t-5925] order o-5407 accepted, calling payment-svc POST /charge\n#104 2026-11-05T05:43:52Z INFO api-gateway [t-5925] POST /checkout 200 127ms\n#105 2026-11-05T05:43:57Z INFO redis stats: hits=9364 misses=323 evicted=0 connected_clients=30\n#106 2026-11-05T05:44:11Z INFO order-consumer processed batch of 57 messages from orders.events (lag 145ms)\n#107 2026-11-05T05:44:12Z INFO payment-svc started payment-svc v1.18.0: response serializer v2 enabled\n#108 2026-11-05T05:44:24Z ERROR order-service [t-5928] failed to decode payment-svc POST /charge response for o-5408: missing required field \"status\" (got keys: id, state, updatedAt)\n#109 2026-11-05T05:45:00Z DEBUG order-service GC pause 19ms (young), heap 30%\n#110 2026-11-05T05:45:01Z INFO order-consumer processed batch of 109 messages from orders.events (lag 114ms)\n#111 2026-11-05T05:45:22Z DEBUG payment-svc GC pause 19ms (young), heap 37%"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-5928"
+        },
+        "output": "1 line(s) for t-5928:\n#108 2026-11-05T05:44:24Z ERROR order-service [t-5928] failed to decode payment-svc POST /charge response for o-5408: missing required field \"status\" (got keys: id, state, updatedAt)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"bad_deploy\",\"confidence\":0.92,\"evidenceLines\":[102,107,108,116,119,128],\"reasoning\":\"payment-svc v1.18.0 (build 1dd893a) was rolled out at 05:43:46 and started at 05:44:12 with 'response serializer v2 enabled'. From then on, order-service fails to decode POST /charge responses because the 'status' field is missing (keys are id, state, updatedAt). The payment charge itself succeeds (payment-svc logs 'ok' before the deploy), so the break is in the response contract. order-service then returns 502 and api-gateway surfaces these as POST /checkout 502s (#114, #122, #133, etc.). The 502s begin only after the deploy, which matches the onset. The gateway 502s are downstream symptoms and are not cited as evidence. Payment-svc itself logs no errors, which is consistent with a serializer change. Alternatives considered: postgres vacuum/checkpoints are routine, redis is healthy, and the 400 validation error at #55 is unrelated client input. None of these explain the decode failures.\",\"}, {\"rootCause\":\"config_error\",\"confidence\":0.3,\"evidenceLines\":[107],\"reasoning\":\"The 'response serializer v2 enabled' flag at #107 could be a config toggle rather than a code change. Either way the fix is to revert or correct the serializer setting, so this is a weaker reading of the same line.\",\"}]",
+          "recommendedAction": "Roll back payment-svc from v1.18.0 to v1.17.9 now, or disable the 'response serializer v2' setting so /charge returns the 'status' field that order-service expects. Confirm that order-service stops logging decode errors and that the checkout 502 rate drops. Afterwards, add a contract test between payment-svc and order-service for the /charge response schema before re-rolling v1.18.0. Clean up the /var/log disk warning on api-gateway (#39) as a side item."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.92,
+              "evidenceLines": [
+                102,
+                107,
+                108,
+                116,
+                119,
+                128
+              ],
+              "reasoning": "payment-svc v1.18.0 (build 1dd893a) was rolled out at 05:43:46 and started at 05:44:12 with 'response serializer v2 enabled'. From then on, order-service fails to decode POST /charge responses because the 'status' field is missing (keys are id, state, updatedAt). The charge itself succeeds (payment-svc logs 'ok' before the deploy), so the break is in the response contract. order-service then returns 502 and api-gateway surfaces these as POST /checkout 502s (#114, #122, #133, etc.). The gateway 502s are downstream symptoms and are not cited as evidence. Payment-svc logs no errors, which is consistent with a serializer change. Alternatives considered: postgres vacuum and checkpoints are routine, redis is healthy, and the 400 validation error at #55 is unrelated client input. None of these explain the decode failures."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.3,
+              "evidenceLines": [
+                107
+              ],
+              "reasoning": "The 'response serializer v2 enabled' flag at #107 could be a config toggle rather than a code change. Either way the fix is to revert or correct the serializer setting, so this is a weaker reading of the same line."
+            }
+          ],
+          "recommendedAction": "Roll back payment-svc from v1.18.0 to v1.17.9 now, or disable the 'response serializer v2' setting so /charge returns the 'status' field that order-service expects. Confirm that order-service stops logging decode errors and that the checkout 502 rate drops. Afterwards, add a contract test between payment-svc and order-service for the /charge response schema before re-rolling v1.18.0. Clean up the /var/log disk warning on api-gateway (#39) as a side item."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 2074,
+      "cacheReadTokens": 21223,
+      "cacheWriteTokens": 7724
+    },
+    "durationMs": 10088,
+    "stopReason": "tool_use"
+  }
+}

@@ -1,12 +1,14 @@
 # Eval run `2026-11-12_baseline-keywords`
 
-Model **baseline:keywords** · 48 incidents · generator v1 seed `log-triage-v1` · commit `8d500a0` (dirty)
+Model **baseline:keywords** · prompt **—** · 48 incidents from `incidents/generated` · generator v1 seed `log-triage-v1` · commit `8d500a0` (dirty)
 
 ## Headline
 
 | top-1 | top-1 (lenient) | top-3 | evidence P / R | herring cites | ECE | Brier | cost / incident | p50 / p95 latency |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | **50%** | 56% | 85% | 43% / 43% | 0.33 (16/48) | 0.28 | 0.33 | — | 0.0s / 0.0s |
+
+95% bootstrap intervals (resampling incidents): top-1 [35–65], lenient [42–71], evidence precision [32–55], recall [32–53]. To compare two runs on the same incidents, use `npm run compare`, which is much tighter.
 
 Outcomes: 48 submitted, 0 budget exhausted, 0 no verdict, 0 refused, 0 API error. Total cost —. Mean 0.0 turns, 0.0 tool calls, 0 tokens per incident.
 

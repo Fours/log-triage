@@ -61,9 +61,21 @@ Each configuration was run once, cold, after tuning was finished.
 
 **The dev-set gains held up on new incidents.** v1's three held-out misses were a lock wait, a hung third party and a cache stampede. Those are exactly the boundaries v3's definitions address, on incidents and topologies the prompt was never tuned on, and v3 got all three right. Evidence precision rose 26–28 points, at a cost of 6–10 points of recall. Calibration error more than halved.
 
+**What's statistically established, and what isn't** (added in Phase 5, from `npm run compare`: paired bootstrap over the same 48 incidents, 95% intervals):
+
+| v1 → v3, held-out | difference | 95% interval |
+|---|---:|---:|
+| evidence precision | +25.7 pts | +21.0 to +30.1 |
+| evidence recall | −5.6 pts | −8.9 to −2.3 |
+| cost / incident | +$0.007 | +$0.005 to +$0.009 |
+| top-1 | +4.2 pts | **−4.2 to +12.5** |
+| top-1 (lenient) | +2.1 pts | 0.0 to +6.3 |
+
+The evidence gain is large and certain. The top-1 gain is not: two incidents out of 48 is consistent with no change. The misses v3 fixed are the right kind of evidence that the definitions help, but this dataset is too small and too easy to prove it. The same holds on the dev set (v1 → v3 top-1 +2.1 pts, interval −4.2 to +10.4).
+
 **v3's one miss is the same in both runs:** a wrong endpoint that shipped with a release, called `bad_deploy` at 0.80–0.82 confidence. The label accepts `bad_deploy` as a defensible alternative, so it's a top-1 miss but not a wrong answer.
 
-**Low effort is the better trade for this dataset:** the same accuracy at 30% lower cost and 40% lower latency, with 4 points less evidence recall. The default effort is left unchanged for now; the trade-off is recorded here. With every configuration at 98% top-1 on 48 incidents, the dataset no longer separates them on accuracy. That's the case for a harder generator version before the model comparison (Phase 5).
+**Low effort is the better trade for this dataset:** the same accuracy at 30% lower cost and 40% lower latency, with 4 points less evidence recall. All three differences are outside the noise: cost −$0.017 [−$0.019, −$0.015], latency −4.2s [−4.9, −3.3], recall −4.0 pts [−7.5, −0.8]. The default effort is left unchanged for now; the trade-off is recorded here. With every configuration at 98% top-1 on 48 incidents, the dataset no longer separates them on accuracy. That's the case for a harder generator version before the model comparison (Phase 5).
 
 **Spend.** Phase 4 cost $14.81 in API usage: $10.01 for five dev-set runs and $6.80 for three held-out runs (the baseline is free).
 

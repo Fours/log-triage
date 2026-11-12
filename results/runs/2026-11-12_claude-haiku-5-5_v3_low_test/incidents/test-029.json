@@ -1,0 +1,147 @@
+{
+  "score": {
+    "incidentId": "test-029",
+    "difficulty": "easy",
+    "scenario": "external_outage/cloud-object-storage",
+    "truth": "external_outage",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.7,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 3,
+      "correct": 3,
+      "precision": 1,
+      "recall": 0.75,
+      "f1": 0.8571428571428571
+    },
+    "herringsCited": 0,
+    "costUsd": 0.002253605,
+    "durationMs": 9633,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 2166,
+      "cacheRead": 15948,
+      "cacheWrite": 8081
+    }
+  },
+  "result": {
+    "incidentId": "test-029",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.7,
+          "evidenceLines": [
+            94,
+            105,
+            108
+          ],
+          "reasoning": "The earliest anomaly is enrichment-svc's S3 PutObject to s3://ingest-artifacts-prod failing with 500 InternalError at 16:53:42 (#94), about 11 minutes after the window opens. Subsequent PutObject calls fail with 500 (#105) and 503 ServiceUnavailable 'reduce your request rate' (#108), so the failures come from the AWS S3 side in us-east-1. Before #94, enrichment-svc and ingest-api were healthy (#87, #97), and events-db, geo-cache and event-processor show no errors. enrichment-svc then returns 500 'storage write failed' to ingest-api (#100, #132), which returns 500 to the gateway. The gateway's 500s (#92, #114, #126, #135) are downstream symptoms and are not cited as causes. Ruled out: DB and cache (no errors, healthy stats in #93, #98), GC (small pauses, #91, #118). Ambiguity: the cloud returns fast 5xx rather than hangs, which fits external_outage better than dependency_timeout."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.25,
+          "evidenceLines": [
+            104,
+            94,
+            108
+          ],
+          "reasoning": "The aws-sdk retry quota was exhausted (73 failed attempts in 60s, #104), so every failed PutObject was retried aggressively. That amplified a limited S3 error episode into sustained 500s upstream and multi-second gateway latency (19-28s, #92, #114). If S3 recovers and the retry pressure is cut, the failures should stop."
+        }
+      ],
+      "recommendedAction": "Check AWS S3 status and us-east-1 health for the ingest-artifacts-prod bucket. Throttle or back off the enrichment-svc S3 retries to stop the retry storm, and consider failing over to a secondary region or queueing writes. Add a circuit breaker so ingest-api fails fast when enrichment storage is down. Once S3 recovers, confirm the gateway 500 rate returns to baseline."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "11 match(es):\n#48 2026-11-28T16:48:00Z WARN ingest-gateway disk usage 76% on /var/log (threshold 75%)\n#92 2026-11-28T16:53:31Z ERROR ingest-gateway [t-6372] POST /v1/events 500 28542ms: upstream ingest-api returned 500 Internal Server Error\n#94 2026-11-28T16:53:42Z ERROR enrichment-svc [t-6374] PutObject s3://ingest-artifacts-prod/e-5821.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id FBD4293)\n#100 2026-11-28T16:54:52Z ERROR ingest-api [t-6381] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#104 2026-11-28T16:55:24Z WARN enrichment-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (73 failed attempts in 60s)\n#105 2026-11-28T16:55:36Z ERROR enrichment-svc [t-6385] PutObject s3://ingest-artifacts-prod/e-5824.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id FEDEE72)\n#108 2026-11-28T16:56:16Z ERROR enrichment-svc [t-6387] PutObject s3://ingest-artifacts-prod/e-5825.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 9445950)\n#114 2026-11-28T16:57:26Z ERROR ingest-gateway [t-6390] POST /v1/events 500 19610ms: upstream ingest-api returned 500 Internal Server Error\n#126 2026-11-28T16:59:23Z ERROR ingest-gateway [t-6394] POST /v1/events 500 25845ms: upstream ingest-api returned 500 Internal Server Error\n#132 2026-11-28T17:00:04Z ERROR ingest-api [t-6400] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#135 2026-11-28T17:00:42Z ERROR ingest-gateway [t-6401] POST /v1/events 500 19735ms: upstream ingest-api returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "enrichment-svc",
+          "limit": 30
+        },
+        "output": "22 match(es):\n#10 2026-11-28T16:43:06Z INFO enrichment-svc [t-6334] POST /enrich e-5786 ok 54ms\n#22 2026-11-28T16:44:49Z INFO enrichment-svc [t-6341] POST /enrich e-5795 ok 90ms\n#24 2026-11-28T16:44:51Z DEBUG enrichment-svc GC pause 25ms (young), heap 34%\n#35 2026-11-28T16:46:27Z INFO enrichment-svc [t-6343] POST /enrich e-5800 ok 43ms\n#39 2026-11-28T16:47:08Z INFO enrichment-svc [t-6346] POST /enrich e-5801 ok 61ms\n#41 2026-11-28T16:47:12Z DEBUG enrichment-svc GC pause 17ms (young), heap 29%\n#51 2026-11-28T16:48:18Z INFO enrichment-svc [t-6352] POST /enrich e-5805 ok 23ms\n#55 2026-11-28T16:48:42Z INFO enrichment-svc [t-6355] POST /enrich e-5807 ok 29ms\n#60 2026-11-28T16:49:22Z DEBUG enrichment-svc GC pause 18ms (young), heap 36%\n#62 2026-11-28T16:49:33Z INFO enrichment-svc [t-6359] POST /enrich e-5810 ok 70ms\n#77 2026-11-28T16:51:46Z INFO enrichment-svc [t-6366] POST /enrich e-5815 ok 64ms\n#80 2026-11-28T16:52:05Z DEBUG enrichment-svc GC pause 17ms (young), heap 44%\n#87 2026-11-28T16:53:03Z INFO enrichment-svc [t-6370] POST /enrich e-5820 ok 79ms\n#94 2026-11-28T16:53:42Z ERROR enrichment-svc [t-6374] PutObject s3://ingest-artifacts-prod/e-5821.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id FBD4293)\n#103 2026-11-28T16:55:20Z DEBUG enrichment-svc GC pause 16ms (young), heap 44%\n#104 2026-11-28T16:55:24Z WARN enrichment-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (73 failed attempts in 60s)\n#105 2026-11-28T16:55:36Z ERROR enrichment-svc [t-6385] PutObject s3://ingest-artifacts-prod/e-5824.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id FEDEE72)\n#108 2026-11-28T16:56:16Z ERROR enrichment-svc [t-6387] PutObject s3://ingest-artifacts-prod/e-5825.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 9445950)\n#118 2026-11-28T16:58:13Z DEBUG enrichment-svc GC pause 12ms (young), heap 37%\n#120 2026-11-28T16:58:17Z INFO enrichment-svc [t-6391] POST /enrich e-5828 ok 40ms\n#128 2026-11-28T16:59:45Z INFO enrichment-svc [t-6396] POST /enrich e-5829 ok 77ms\n#134 2026-11-28T17:00:07Z DEBUG enrichment-svc GC pause 13ms (young), heap 31%"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 94,
+          "before": 8,
+          "after": 4
+        },
+        "output": "#86 2026-11-28T16:53:03Z INFO ingest-api [t-6370] event e-5820 accepted, calling enrichment-svc POST /enrich\n#87 2026-11-28T16:53:03Z INFO enrichment-svc [t-6370] POST /enrich e-5820 ok 79ms\n#88 2026-11-28T16:53:03Z INFO ingest-gateway [t-6370] POST /v1/events 200 93ms\n#89 2026-11-28T16:53:08Z DEBUG ingest-gateway upstream health: ingest-api ok, enrichment-svc ok\n#90 2026-11-28T16:53:23Z INFO event-processor processed batch of 73 messages from events.raw (lag 82ms)\n#91 2026-11-28T16:53:24Z DEBUG ingest-api GC pause 19ms (young), heap 41%\n#92 2026-11-28T16:53:31Z ERROR ingest-gateway [t-6372] POST /v1/events 500 28542ms: upstream ingest-api returned 500 Internal Server Error\n#93 2026-11-28T16:53:38Z INFO geo-cache stats: hits=19267 misses=364 evicted=0 connected_clients=33\n#94 2026-11-28T16:53:42Z ERROR enrichment-svc [t-6374] PutObject s3://ingest-artifacts-prod/e-5821.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id FBD4293)\n#95 2026-11-28T16:53:58Z INFO event-processor processed batch of 115 messages from events.raw (lag 69ms)\n#96 2026-11-28T16:54:15Z INFO ingest-api [t-6377] event e-5823 accepted, calling enrichment-svc POST /enrich\n#97 2026-11-28T16:54:15Z INFO ingest-gateway [t-6377] POST /v1/events 200 84ms\n#98 2026-11-28T16:54:28Z INFO events-db InnoDB: page cleaner flushed 843 pages, buffer pool hit rate 99.1%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "s3",
+          "limit": 30
+        },
+        "output": "4 match(es):\n#94 2026-11-28T16:53:42Z ERROR enrichment-svc [t-6374] PutObject s3://ingest-artifacts-prod/e-5821.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id FBD4293)\n#104 2026-11-28T16:55:24Z WARN enrichment-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (73 failed attempts in 60s)\n#105 2026-11-28T16:55:36Z ERROR enrichment-svc [t-6385] PutObject s3://ingest-artifacts-prod/e-5824.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id FEDEE72)\n#108 2026-11-28T16:56:16Z ERROR enrichment-svc [t-6387] PutObject s3://ingest-artifacts-prod/e-5825.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 9445950)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"external_outage\",\"confidence\":0.7,\"evidenceLines\":[94,105,108],\"reasoning\":\"The earliest anomaly is enrichment-svc's S3 PutObject to s3://ingest-artifacts-prod failing with 500 InternalError at 16:53:42 (#94), about 11 minutes after the window opens. Subsequent PutObject calls fail with 500 (#105) and 503 ServiceUnavailable 'reduce your request rate' (#108), so the failures come from the AWS S3 side in us-east-1. Before #94, enrichment-svc and ingest-api were healthy (#87, #97), and events-db, geo-cache and event-processor show no errors. enrichment-svc then returns 500 'storage write failed' to ingest-api (#100, #132), which returns 500 to the gateway. The gateway's 500s (#92, #114, #126, #135) are downstream symptoms and are not cited as causes. Ruled out: DB and cache (no errors, healthy stats in #93, #98), GC (small pauses, #91, #118). Ambiguity: the cloud returns fast 5xx rather than hangs, which fits external_outage better than dependency_timeout.\",\"},{\"rootCause\":\"cascading_failure\",\"confidence\":0.25,\"evidenceLines\":[104,94,108],\"reasoning\":\"The aws-sdk retry quota was exhausted (73 failed attempts in 60s, #104), so every failed PutObject was retried aggressively. That amplified a limited S3 error episode into sustained 500s upstream and multi-second gateway latency (19-28s, #92, #114). If S3 recovers and the retry pressure is cut, the failures should stop. This is the amplification explanation for the same lines.\",\"}]\",\"recommendationAction\":\"Check AWS S3 status and us-east-1 health for the ingest-artifacts-prod bucket. Throttle or back off the enrichment-svc S3 retries to stop the retry storm, and consider failing over to a secondary region or queueing writes. Add a circuit breaker so ingest-api fails fast when enrichment storage is down. Once S3 recovers, confirm the gateway 500 rate returns to baseline.\"}]"
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string; recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.7,
+              "evidenceLines": [
+                94,
+                105,
+                108
+              ],
+              "reasoning": "The earliest anomaly is enrichment-svc's S3 PutObject to s3://ingest-artifacts-prod failing with 500 InternalError at 16:53:42 (#94), about 11 minutes after the window opens. Subsequent PutObject calls fail with 500 (#105) and 503 ServiceUnavailable 'reduce your request rate' (#108), so the failures come from the AWS S3 side in us-east-1. Before #94, enrichment-svc and ingest-api were healthy (#87, #97), and events-db, geo-cache and event-processor show no errors. enrichment-svc then returns 500 'storage write failed' to ingest-api (#100, #132), which returns 500 to the gateway. The gateway's 500s (#92, #114, #126, #135) are downstream symptoms and are not cited as causes. Ruled out: DB and cache (no errors, healthy stats in #93, #98), GC (small pauses, #91, #118). Ambiguity: the cloud returns fast 5xx rather than hangs, which fits external_outage better than dependency_timeout."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.25,
+              "evidenceLines": [
+                104,
+                94,
+                108
+              ],
+              "reasoning": "The aws-sdk retry quota was exhausted (73 failed attempts in 60s, #104), so every failed PutObject was retried aggressively. That amplified a limited S3 error episode into sustained 500s upstream and multi-second gateway latency (19-28s, #92, #114). If S3 recovers and the retry pressure is cut, the failures should stop."
+            }
+          ],
+          "recommendedAction": "Check AWS S3 status and us-east-1 health for the ingest-artifacts-prod bucket. Throttle or back off the enrichment-svc S3 retries to stop the retry storm, and consider failing over to a secondary region or queueing writes. Add a circuit breaker so ingest-api fails fast when enrichment storage is down. Once S3 recovers, confirm the gateway 500 rate returns to baseline."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 2166,
+      "cacheReadTokens": 15948,
+      "cacheWriteTokens": 8081
+    },
+    "durationMs": 9633,
+    "stopReason": "tool_use"
+  }
+}

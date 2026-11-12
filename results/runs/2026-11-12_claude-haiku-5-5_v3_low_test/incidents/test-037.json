@@ -1,0 +1,266 @@
+{
+  "score": {
+    "incidentId": "test-037",
+    "difficulty": "medium",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 10,
+      "correct": 7,
+      "precision": 0.7,
+      "recall": 0.7777777777777778,
+      "f1": 0.7368421052631577
+    },
+    "herringsCited": 0,
+    "costUsd": 0.004365575,
+    "durationMs": 17898,
+    "iterations": 8,
+    "toolCalls": 8,
+    "tokens": {
+      "input": 18,
+      "output": 3891,
+      "cacheRead": 64415,
+      "cacheWrite": 14193
+    }
+  },
+  "result": {
+    "incidentId": "test-037",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.85,
+          "evidenceLines": [
+            61,
+            94,
+            138,
+            142,
+            143,
+            168,
+            195,
+            145,
+            172,
+            199
+          ],
+          "reasoning": "notification-svc v1.25.0 heap climbs steadily from about 22:31 (78% -> 84% -> 90% after full GC, GC overhead rising to 50%, old gen not reclaimed), which points to a leak in messageCache. Heap hits OOM at messageCache.put (#142, #168, #195) and the container is OOMKilled each time (#143, #169, #196). Each restart re-warms the cache (#145, #172, #199), so the heap refills within about 2-3 minutes and the cycle repeats. While the pod is down or restarting, api-gateway gets 'connection reset (no healthy upstream)' and returns 502s (#153, #166, #180, #193, #200, #210, #224). Those 502s are downstream symptoms and are not cited as root cause. Template-svc, redis, and notif-db show no errors, which rules out those as origins. The notif-db slow audit_log query (#73) and the DLQ schema warning (#30) are unrelated background noise."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.4,
+          "evidenceLines": [
+            145,
+            172,
+            199
+          ],
+          "reasoning": "The unbounded messageCache growth may have been introduced by the v1.25.0 release, since the cache warm-up runs on every start. The logs contain no deploy event or changelog to confirm this, so it is the alternative framing of the same fault and less certain than the resource exhaustion reading."
+        }
+      ],
+      "recommendedAction": "Roll back notification-svc to the pre-1.25.0 build if the leak came in with that release, or hotfix messageCache to bound its size or add eviction/TTL. In the short term, raise the memory limit or scale out replicas so the upstream pool stays healthy while the fix ships. Then confirm heap stays flat across a restart cycle."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "18 match(es):\n#30 2026-10-31T22:29:35Z WARN notif-worker msg-391439 from notifications.outbound failed schema validation (missing field \"version\"), moved to notifications.outbound.dlq\n#61 2026-10-31T22:31:59Z WARN notification-svc heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#73 2026-10-31T22:32:58Z WARN notif-db slow query 2212ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#94 2026-10-31T22:34:35Z WARN notification-svc heap usage 84% after full GC (old gen not reclaimed), GC overhead 35%\n#138 2026-10-31T22:38:35Z WARN notification-svc heap usage 90% after full GC (old gen not reclaimed), GC overhead 50%\n#142 2026-10-31T22:38:52Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#143 2026-10-31T22:38:53Z ERROR notification-svc container notification-svc-0 killed: OOMKilled (memory limit 2Gi), restart count 1\n#153 2026-10-31T22:40:06Z ERROR api-gateway [t-3795] POST /v1/notify 502 6995ms: upstream notification-svc connection reset (no healthy upstream)\n#166 2026-10-31T22:41:30Z ERROR api-gateway [t-3804] POST /v1/notify 502 8236ms: upstream notification-svc connection reset (no healthy upstream)\n#168 2026-10-31T22:41:34Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#169 2026-10-31T22:41:35Z ERROR notification-svc container notification-svc-0 killed: OOMKilled (memory limit 2Gi), restart count 2\n#180 2026-10-31T22:42:57Z ERROR api-gateway [t-3809] POST /v1/notify 502 25219ms: upstream notification-svc connection reset (no healthy upstream)\n#193 2026-10-31T22:44:46Z ERROR api-gateway [t-3822] POST /v1/notify 502 25183ms: upstream notification-svc connection reset (no healthy upstream)\n#195 2026-10-31T22:44:56Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#196 2026-10-31T22:44:57Z ERROR notification-svc container notification-svc-1 killed: OOMKilled (memory limit 2Gi), restart count 3\n#200 2026-10-31T22:45:33Z ERROR api-gateway [t-3826] POST /v1/notify 502 28019ms: upstream notification-svc connection reset (no healthy upstream)\n#210 2026-10-31T22:47:12Z ERROR api-gateway [t-3830] POST /v1/notify 502 12914ms: upstream notification-svc connection reset (no healthy upstream)\n#224 2026-10-31T22:49:09Z ERROR api-gateway [t-3840] POST /v1/notify 502 11914ms: upstream notification-svc connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "api-gateway",
+          "level": "ERROR"
+        },
+        "output": "7 match(es):\n#153 2026-10-31T22:40:06Z ERROR api-gateway [t-3795] POST /v1/notify 502 6995ms: upstream notification-svc connection reset (no healthy upstream)\n#166 2026-10-31T22:41:30Z ERROR api-gateway [t-3804] POST /v1/notify 502 8236ms: upstream notification-svc connection reset (no healthy upstream)\n#180 2026-10-31T22:42:57Z ERROR api-gateway [t-3809] POST /v1/notify 502 25219ms: upstream notification-svc connection reset (no healthy upstream)\n#193 2026-10-31T22:44:46Z ERROR api-gateway [t-3822] POST /v1/notify 502 25183ms: upstream notification-svc connection reset (no healthy upstream)\n#200 2026-10-31T22:45:33Z ERROR api-gateway [t-3826] POST /v1/notify 502 28019ms: upstream notification-svc connection reset (no healthy upstream)\n#210 2026-10-31T22:47:12Z ERROR api-gateway [t-3830] POST /v1/notify 502 12914ms: upstream notification-svc connection reset (no healthy upstream)\n#224 2026-10-31T22:49:09Z ERROR api-gateway [t-3840] POST /v1/notify 502 11914ms: upstream notification-svc connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "messageCache",
+          "limit": 50
+        },
+        "output": "3 match(es):\n#142 2026-10-31T22:38:52Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#168 2026-10-31T22:41:34Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#195 2026-10-31T22:44:56Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 61,
+          "before": 25,
+          "after": 5
+        },
+        "output": "#36 2026-10-31T22:29:52Z INFO notif-db InnoDB: page cleaner flushed 104 pages, buffer pool hit rate 98.6%\n#37 2026-10-31T22:29:52Z INFO notification-svc [t-3725] message m-1486 accepted, calling template-svc POST /render\n#38 2026-10-31T22:29:52Z INFO api-gateway [t-3725] POST /v1/notify 200 130ms\n#39 2026-10-31T22:30:08Z INFO notification-svc [t-3727] message m-1489 accepted, calling template-svc POST /render\n#40 2026-10-31T22:30:09Z INFO api-gateway [t-3727] POST /v1/notify 200 113ms\n#41 2026-10-31T22:30:09Z DEBUG notification-svc GC pause 22ms (young), heap 30%\n#42 2026-10-31T22:30:27Z DEBUG api-gateway upstream health: notification-svc ok, template-svc ok\n#43 2026-10-31T22:30:27Z INFO notification-svc [t-3730] message m-1492 accepted, calling template-svc POST /render\n#44 2026-10-31T22:30:27Z INFO template-svc [t-3730] POST /render m-1492 ok 65ms\n#45 2026-10-31T22:30:28Z INFO api-gateway [t-3730] POST /v1/notify 200 107ms\n#46 2026-10-31T22:30:33Z DEBUG template-svc GC pause 14ms (young), heap 37%\n#47 2026-10-31T22:30:37Z INFO notif-worker processed batch of 29 messages from notifications.outbound (lag 319ms)\n#48 2026-10-31T22:30:57Z INFO notification-svc [t-3733] message m-1494 accepted, calling template-svc POST /render\n#49 2026-10-31T22:30:57Z INFO api-gateway [t-3733] POST /v1/notify 200 173ms\n#50 2026-10-31T22:31:13Z INFO notif-worker processed batch of 50 messages from notifications.outbound (lag 85ms)\n#51 2026-10-31T22:31:23Z INFO notification-svc [t-3737] message m-1496 accepted, calling template-svc POST /render\n#52 2026-10-31T22:31:23Z INFO template-svc [t-3737] POST /render m-1496 ok 69ms\n#53 2026-10-31T22:31:23Z INFO api-gateway [t-3737] POST /v1/notify 200 119ms\n#54 2026-10-31T22:31:27Z INFO redis stats: hits=8997 misses=692 evicted=0 connected_clients=48\n#55 2026-10-31T22:31:35Z INFO notification-svc [t-3738] message m-1499 accepted, calling template-svc POST /render\n#56 2026-10-31T22:31:35Z INFO template-svc [t-3738] POST /render m-1499 ok 87ms\n#57 2026-10-31T22:31:35Z INFO api-gateway [t-3738] POST /v1/notify 200 107ms\n#58 2026-10-31T22:31:52Z INFO notification-svc [t-3739] message m-1500 accepted, calling template-svc POST /render\n#59 2026-10-31T22:31:52Z INFO api-gateway [t-3739] POST /v1/notify 200 97ms\n#60 2026-10-31T22:31:54Z INFO notif-db InnoDB: page cleaner flushed 100 pages, buffer pool hit rate 98.9%\n#61 2026-10-31T22:31:59Z WARN notification-svc heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#62 2026-10-31T22:32:02Z INFO notification-svc [t-3742] message m-1501 accepted, calling template-svc POST /render\n#63 2026-10-31T22:32:03Z INFO api-gateway [t-3742] POST /v1/notify 200 92ms\n#64 2026-10-31T22:32:05Z INFO notif-worker processed batch of 53 messages from notifications.outbound (lag 154ms)\n#65 2026-10-31T22:32:19Z INFO notification-svc [t-3746] message m-1503 accepted, calling template-svc POST /render\n#66 2026-10-31T22:32:19Z INFO template-svc [t-3746] POST /render m-1503 ok 47ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "cache",
+          "limit": 50
+        },
+        "output": "6 match(es):\n#142 2026-10-31T22:38:52Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#145 2026-10-31T22:39:16Z INFO notification-svc started notification-svc v1.25.0, pid 1, warming message cache\n#168 2026-10-31T22:41:34Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#172 2026-10-31T22:42:04Z INFO notification-svc started notification-svc v1.25.0, pid 1, warming message cache\n#195 2026-10-31T22:44:56Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#199 2026-10-31T22:45:29Z INFO notification-svc started notification-svc v1.25.0, pid 1, warming message cache"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "limit": 80
+        },
+        "output": "70 match(es):\n#1 2026-10-31T22:27:02Z INFO notification-svc [t-3700] message m-1470 accepted, calling template-svc POST /render\n#3 2026-10-31T22:27:16Z INFO notification-svc [t-3701] message m-1471 accepted, calling template-svc POST /render\n#5 2026-10-31T22:27:28Z INFO notification-svc [t-3705] message m-1472 accepted, calling template-svc POST /render\n#11 2026-10-31T22:27:53Z INFO notification-svc [t-3706] message m-1474 accepted, calling template-svc POST /render\n#14 2026-10-31T22:28:12Z INFO notification-svc [t-3709] message m-1476 accepted, calling template-svc POST /render\n#17 2026-10-31T22:28:24Z INFO notification-svc [t-3711] message m-1477 accepted, calling template-svc POST /render\n#21 2026-10-31T22:28:44Z INFO notification-svc [t-3715] message m-1479 accepted, calling template-svc POST /render\n#23 2026-10-31T22:29:02Z INFO notification-svc [t-3717] message m-1480 accepted, calling template-svc POST /render\n#27 2026-10-31T22:29:28Z INFO notification-svc [t-3721] message m-1481 accepted, calling template-svc POST /render\n#31 2026-10-31T22:29:38Z INFO notification-svc [t-3722] message m-1483 accepted, calling template-svc POST /render\n#37 2026-10-31T22:29:52Z INFO notification-svc [t-3725] message m-1486 accepted, calling template-svc POST /render\n#39 2026-10-31T22:30:08Z INFO notification-svc [t-3727] message m-1489 accepted, calling template-svc POST /render\n#41 2026-10-31T22:30:09Z DEBUG notification-svc GC pause 22ms (young), heap 30%\n#43 2026-10-31T22:30:27Z INFO notification-svc [t-3730] message m-1492 accepted, calling template-svc POST /render\n#48 2026-10-31T22:30:57Z INFO notification-svc [t-3733] message m-1494 accepted, calling template-svc POST /render\n#51 2026-10-31T22:31:23Z INFO notification-svc [t-3737] message m-1496 accepted, calling template-svc POST /render\n#55 2026-10-31T22:31:35Z INFO notification-svc [t-3738] message m-1499 accepted, calling template-svc POST /render\n#58 2026-10-31T22:31:52Z INFO notification-svc [t-3739] message m-1500 accepted, calling template-svc POST /render\n#61 2026-10-31T22:31:59Z WARN notification-svc heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#62 2026-10-31T22:32:02Z INFO notification-svc [t-3742] message m-1501 accepted, calling template-svc POST /render\n#65 2026-10-31T22:32:19Z INFO notification-svc [t-3746] message m-1503 accepted, calling template-svc POST /render\n#68 2026-10-31T22:32:36Z INFO notification-svc [t-3748] message m-1504 accepted, calling template-svc POST /render\n#75 2026-10-31T22:33:03Z INFO notification-svc [t-3750] message m-1507 accepted, calling template-svc POST /render\n#79 2026-10-31T22:33:09Z DEBUG notification-svc GC pause 11ms (young), heap 44%\n#80 2026-10-31T22:33:13Z INFO notification-svc [t-3753] message m-1509 accepted, calling template-svc POST /render\n#82 2026-10-31T22:33:43Z INFO notification-svc [t-3757] message m-1511 accepted, calling template-svc POST /render\n#86 2026-10-31T22:34:03Z INFO notification-svc [t-3758] message m-1512 accepted, calling template-svc POST /render\n#91 2026-10-31T22:34:30Z INFO notification-svc [t-3759] message m-1514 accepted, calling template-svc POST /render\n#94 2026-10-31T22:34:35Z WARN notification-svc heap usage 84% after full GC (old gen not reclaimed), GC overhead 35%\n#95 2026-10-31T22:34:55Z INFO notification-svc [t-3761] message m-1516 accepted, calling template-svc POST /render\n#100 2026-10-31T22:35:24Z INFO notification-svc [t-3765] message m-1518 accepted, calling template-svc POST /render\n#104 2026-10-31T22:35:40Z DEBUG notification-svc GC pause 14ms (young), heap 38%\n#105 2026-10-31T22:35:42Z INFO notification-svc [t-3767] message m-1520 accepted, calling template-svc POST /render\n#109 2026-10-31T22:36:08Z INFO notification-svc [t-3768] message m-1521 accepted, calling template-svc POST /render\n#113 2026-10-31T22:36:25Z INFO notification-svc [t-3769] message m-1522 accepted, calling template-svc POST /render\n#118 2026-10-31T22:36:45Z INFO notification-svc [t-3773] message m-1523 accepted, calling template-svc POST /render\n#121 2026-10-31T22:37:01Z INFO notification-svc [t-3775] message m-1524 accepted, calling template-svc POST /render\n#124 2026-10-31T22:37:15Z INFO notification-svc [t-3778] message m-1527 accepted, calling template-svc POST /render\n#127 2026-10-31T22:37:41Z INFO notification-svc [t-3781] message m-1530 accepted, calling template-svc POST /render\n#129 2026-10-31T22:37:46Z DEBUG notification-svc GC pause 16ms (young), heap 30%\n#130 2026-10-31T22:38:01Z INFO notification-svc [t-3785] message m-1531 accepted, calling template-svc POST /render\n#135 2026-10-31T22:38:24Z INFO notification-svc [t-3787] message m-1533 accepted, calling template-svc POST /render\n#138 2026-10-31T22:38:35Z WARN notification-svc heap usage 90% after full GC (old gen not reclaimed), GC overhead 50%\n#139 2026-10-31T22:38:40Z INFO notification-svc [t-3791] message m-1534 accepted, calling template-svc POST /render\n#142 2026-10-31T22:38:52Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#143 2026-10-31T22:38:53Z ERROR notification-svc container notification-svc-0 killed: OOMKilled (memory limit 2Gi), restart count 1\n#145 2026-10-31T22:39:16Z INFO notification-svc started notification-svc v1.25.0, pid 1, warming message cache\n#148 2026-10-31T22:39:36Z DEBUG notification-svc GC pause 19ms (young), heap 44%\n#150 2026-10-31T22:39:56Z INFO notification-svc [t-3792] message m-1535 accepted, calling template-svc POST /render\n#154 2026-10-31T22:40:07Z INFO notification-svc [t-3797] message m-1538 accepted, calling template-svc POST /render\n#160 2026-10-31T22:41:00Z INFO notification-svc [t-3801] message m-1540 accepted, calling template-svc POST /render\n#162 2026-10-31T22:41:16Z INFO notification-svc [t-3802] message m-1541 accepted, calling template-svc POST /render\n#168 2026-10-31T22:41:34Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#169 2026-10-31T22:41:35Z ERROR notification-svc container notification-svc-0 killed: OOMKilled (memory limit 2Gi), restart count 2\n#172 2026-10-31T22:42:04Z INFO notification-svc started notification-svc v1.25.0, pid 1, warming message cache\n#174 2026-10-31T22:42:18Z INFO notification-svc [t-3805] message m-1542 accepted, calling template-svc POST /render\n#178 2026-10-31T22:42:45Z DEBUG notification-svc GC pause 14ms (young), heap 37%\n#181 2026-10-31T22:43:09Z INFO notification-svc [t-3813] message m-1545 accepted, calling template-svc POST /render\n#184 2026-10-31T22:43:35Z INFO notification-svc [t-3816] message m-1547 accepted, calling template-svc POST /render\n#189 2026-10-31T22:44:42Z INFO notification-svc [t-3819] message m-1549 accepted, calling template-svc POST /render\n#192 2026-10-31T22:44:43Z DEBUG notification-svc GC pause 5ms (young), heap 45%\n#195 2026-10-31T22:44:56Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#196 2026-10-31T22:44:57Z ERROR notification-svc container notification-svc-1 killed: OOMKilled (memory limit 2Gi), restart count 3\n#199 2026-10-31T22:45:29Z INFO notification-svc started notification-svc v1.25.0, pid 1, warming message cache\n#205 2026-10-31T22:46:48Z INFO notification-svc [t-3828] message m-1550 accepted, calling template-svc POST /render\n#208 2026-10-31T22:47:08Z DEBUG notification-svc GC pause 14ms (young), heap 48%\n#213 2026-10-31T22:47:56Z INFO notification-svc [t-3833] message m-1553 accepted, calling template-svc POST /render\n#217 2026-10-31T22:48:15Z INFO notification-svc [t-3837] message m-1555 accepted, calling template-svc POST /render\n#220 2026-10-31T22:48:37Z INFO notification-svc [t-3838] message m-1558 accepted, calling template-svc POST /render\n#227 2026-10-31T22:49:39Z DEBUG notification-svc GC pause 20ms (young), heap 46%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "config",
+          "limit": 20
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-3795"
+        },
+        "output": "1 line(s) for t-3795:\n#153 2026-10-31T22:40:06Z ERROR api-gateway [t-3795] POST /v1/notify 502 6995ms: upstream notification-svc connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.85,
+              "evidenceLines": [
+                61,
+                94,
+                138,
+                142,
+                143,
+                168,
+                195,
+                145,
+                172,
+                199
+              ],
+              "reasoning": "notification-svc v1.25.0 heap climbs steadily from ~22:31 (78% -> 84% -> 90% after full GC, GC overhead rising to 50%, old gen not reclaimed), i.e. a leak in messageCache. Heap hits OOM at messageCache.put (#142, #168, #195) and the container is OOMKilled each time (#143, #169, #196). Each restart re-warms the cache (#145, #172, #199), so the heap refills within ~2-3 minutes and the cycle repeats. While the pod is down or restarting, api-gateway gets 'connection reset (no healthy upstream)' and returns 502s (#153, #166, #180, #193, #200, #210, #224). Those 502s are downstream symptoms and are not cited as root cause. Template-svc, redis, and notif-db show no errors, which rules out those as origins. The notif-db slow audit_log query (#73) and the DLQ schema warning (#30) are unrelated background noise.",
+              "recommendedAction": "Roll back notification-svc to the pre-1.25.0 build if the leak was introduced in that release, or hotfix messageCache to bound its size or add eviction/TTL. Short term, raise the memory limit or scale out replicas so the upstream pool stays healthy while the fix ships. Then confirm heap stays flat across a restart cycle."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.4,
+              "evidenceLines": [
+                145,
+                172,
+                199
+              ],
+              "reasoning": "The unbounded messageCache growth may have been introduced by the v1.25.0 release (the cache warm-up runs on every start). The logs don't include a deploy event or a changelog to confirm the release introduced it, so this is the alternative framing of the same fault and is less certain than the resource exhaustion reading."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.85,
+              "evidenceLines": [
+                61,
+                94,
+                138,
+                142,
+                143,
+                168,
+                195,
+                145,
+                172,
+                199
+              ],
+              "reasoning": "notification-svc v1.25.0 heap climbs steadily from ~22:31 (78% -> 84% -> 90% after full GC, GC overhead rising to 50%, old gen not reclaimed), i.e. a leak in messageCache. Heap hits OOM at messageCache.put (#142, #168, #195) and the container is OOMKilled each time (#143, #169, #196). Each restart re-warms the cache (#145, #172, #199), so the heap refills within about 2-3 minutes and the cycle repeats. While the pod is down or restarting, api-gateway gets 'connection reset (no healthy upstream)' and returns 502s (#153, #166, #180, #193, #200, #210, #224). Those 502s are downstream symptoms and are not cited as root cause. Template-svc, redis, and notif-db show no errors, which rules out those as origins. The notif-db slow audit_log query (#73) and the DLQ schema warning (#30) are unrelated background noise.",
+              "recommendedAction": "Roll back notification-svc to the pre-1.25.0 build if the leak was introduced in that release, or hotfix messageCache to bound its size or add eviction/TTL. Short term, raise the memory limit or scale out replicas so the upstream pool stays healthy while the fix ships. Then confirm heap stays flat across a restart cycle."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.4,
+              "evidenceLines": [
+                145,
+                172,
+                199
+              ],
+              "reasoning": "The unbounded messageCache growth may have been introduced by the v1.25.0 release (the cache warm-up runs on every start). The logs don't include a deploy event or a changelog to confirm the release introduced it, so this is the alternative framing of the same fault and is less certain than the resource exhaustion reading."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\": \"resource_exhaustion\", \"confidence\": 0.85, \"evidenceLines\": [61, 94, 138, 142, 143, 168, 195, 145, 172, 199], \"reasoning\": \"notification-svc v1.25.0 heap climbs steadily from ~22:31 (78% -> 84% -> 90% after full GC, GC overhead rising to 50%, old gen not reclaimed), i.e. a leak in messageCache. Heap hits OOM at messageCache.put (#142, #168, #195) and the container is OOMKilled each time (#143, #169, #196). Each restart re-warms the cache (#145, #172, #199), so the heap refills within about 2-3 minutes and the cycle repeats. While the pod is down or restarting, api-gateway gets 'connection reset (no healthy upstream)' and returns 502s (#153, #166, #180, #193, #200, #210, #224). Those 502s are downstream symptoms and are not cited as root cause. Template-svc, redis, and notif-db show no errors, which rules out those as origins. The notif-db slow audit_log query (#73) and the DLQ schema warning (#30) are unrelated background noise.\"}, {\"rootCause\": \"bad_deploy\", \"confidence\": 0.4, \"evidenceLines\": [145, 172, 199], \"reasoning\": \"The unbounded messageCache growth may have been introduced by the v1.25.0 release (the cache warm-up runs on every start). The logs don't include a deploy event or changelog to confirm the release introduced it, so this is the alternative framing of the same fault and is less certain than the resource exhaustion reading.\"}], \"recommendedAction\": \"Roll back notification-svc to the pre-1.25.0 build if the leak came in with that release, or hotfix messageCache to bound its size or add eviction/TTL. In the short term, raise the memory limit or scale out replicas so the upstream pool stays healthy while the fix ships. Then confirm heap stays flat across a restart cycle.\"}"
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string; recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.85,
+              "evidenceLines": [
+                61,
+                94,
+                138,
+                142,
+                143,
+                168,
+                195,
+                145,
+                172,
+                199
+              ],
+              "reasoning": "notification-svc v1.25.0 heap climbs steadily from about 22:31 (78% -> 84% -> 90% after full GC, GC overhead rising to 50%, old gen not reclaimed), which points to a leak in messageCache. Heap hits OOM at messageCache.put (#142, #168, #195) and the container is OOMKilled each time (#143, #169, #196). Each restart re-warms the cache (#145, #172, #199), so the heap refills within about 2-3 minutes and the cycle repeats. While the pod is down or restarting, api-gateway gets 'connection reset (no healthy upstream)' and returns 502s (#153, #166, #180, #193, #200, #210, #224). Those 502s are downstream symptoms and are not cited as root cause. Template-svc, redis, and notif-db show no errors, which rules out those as origins. The notif-db slow audit_log query (#73) and the DLQ schema warning (#30) are unrelated background noise."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.4,
+              "evidenceLines": [
+                145,
+                172,
+                199
+              ],
+              "reasoning": "The unbounded messageCache growth may have been introduced by the v1.25.0 release, since the cache warm-up runs on every start. The logs contain no deploy event or changelog to confirm this, so it is the alternative framing of the same fault and less certain than the resource exhaustion reading."
+            }
+          ],
+          "recommendedAction": "Roll back notification-svc to the pre-1.25.0 build if the leak came in with that release, or hotfix messageCache to bound its size or add eviction/TTL. In the short term, raise the memory limit or scale out replicas so the upstream pool stays healthy while the fix ships. Then confirm heap stays flat across a restart cycle."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 8,
+    "toolCalls": 8,
+    "usage": {
+      "inputTokens": 18,
+      "outputTokens": 3891,
+      "cacheReadTokens": 64415,
+      "cacheWriteTokens": 14193
+    },
+    "durationMs": 17898,
+    "stopReason": "tool_use"
+  }
+}

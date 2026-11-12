@@ -1,0 +1,201 @@
+{
+  "score": {
+    "incidentId": "test-019",
+    "difficulty": "hard",
+    "scenario": "config_error/wrong-endpoint",
+    "truth": "config_error",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "config_error",
+    "confidence": 0.6,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 5,
+      "precision": 1,
+      "recall": 0.8333333333333334,
+      "f1": 0.9090909090909091
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0034928249999999997,
+    "durationMs": 14383,
+    "iterations": 6,
+    "toolCalls": 11,
+    "tokens": {
+      "input": 14,
+      "output": 2742,
+      "cacheRead": 40030,
+      "cacheWrite": 13761
+    }
+  },
+  "result": {
+    "incidentId": "test-019",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "config_error",
+          "confidence": 0.6,
+          "evidenceLines": [
+            243,
+            236,
+            248,
+            256,
+            271
+          ],
+          "reasoning": "Gateway 503s (#251, #255, #260 etc.) are downstream symptoms: notification-svc returns 503 because its render call to template-svc fails. The origin appears at 13:21:03 when notification-svc v3.13.0 (build 1816aca) began rolling out with config revision 645 (#236). At 13:21:28 config reloaded with TEMPLATE_SVC_URL=http://template-svc.internal:8081 changed (#243). From about 13:21:59 onward every TemplateClient.render from notification-svc fails with connect ECONNREFUSED 10.17.189.215:8081 (#248, #256, #258, #271). Template-svc itself logs no errors and keeps running (GC lines through 13:32), and it served successful /render calls up to 13:21:10 (#238), so the refusals are specific to notification-svc's new endpoint resolution. Caveat: the logged URL matches template-svc's port, so the exact wrong value (host or IP) is not visible in the logs; the change coincides with the config reload and rollout. Not a template-svc resource problem (no OOM or error lines, GC normal); not a notif-db issue (only a slow audit_log seq scan at #227, unrelated and not on the failing path)."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.3,
+          "evidenceLines": [
+            236,
+            243,
+            248
+          ],
+          "reasoning": "Alternative reading: the v3.13.0 rollout itself (build 1816aca) introduced a broken template-client connection behavior, and the config reload is just concurrent with it. Timing fits: refusals start within a minute of the rollout and config reload. Rolling back notification-svc to the prior version would confirm or rule this out."
+        }
+      ],
+      "recommendedAction": "Roll back notification-svc to the pre-v3.13.0 build and/or revert config revision 645 so TEMPLATE_SVC_URL is restored to the previously working endpoint. Then verify notification-svc can reach template-svc (connect succeeds to template-svc.internal:8081) and that gateway POST /v1/notify success recovers. Compare the old and new TEMPLATE_SVC_URL values from config revision 644 vs 645, since the logs don't show the previous value. Follow up on the slow audit_log seq scan on notif-db (#227) separately as a non-blocking issue."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "18 match(es):\n#64 2026-11-27T13:10:17Z WARN template-svc [t-3368] email provider call failed: connection reset by peer POST https://api.mailer.example/v3/send, retry 1/3\n#227 2026-11-27T13:20:31Z WARN notif-db slow query 2055ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#248 2026-11-27T13:21:59Z ERROR notification-svc [t-3492] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#251 2026-11-27T13:22:42Z ERROR api-gateway [t-3495] POST /v1/notify 503 16526ms: upstream notification-svc returned 503 Service Unavailable\n#255 2026-11-27T13:23:32Z ERROR api-gateway [t-3498] POST /v1/notify 503 5993ms: upstream notification-svc returned 503 Service Unavailable\n#256 2026-11-27T13:23:33Z ERROR notification-svc [t-3499] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#258 2026-11-27T13:23:45Z ERROR notification-svc [t-3502] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#260 2026-11-27T13:24:08Z ERROR api-gateway [t-3504] POST /v1/notify 503 12381ms: upstream notification-svc returned 503 Service Unavailable\n#265 2026-11-27T13:25:06Z ERROR api-gateway [t-3506] POST /v1/notify 503 21666ms: upstream notification-svc returned 503 Service Unavailable\n#271 2026-11-27T13:25:34Z ERROR notification-svc [t-3513] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#274 2026-11-27T13:26:16Z ERROR api-gateway [t-3516] POST /v1/notify 503 4921ms: upstream notification-svc returned 503 Service Unavailable\n#281 2026-11-27T13:27:29Z ERROR api-gateway [t-3520] POST /v1/notify 503 20816ms: upstream notification-svc returned 503 Service Unavailable\n#288 2026-11-27T13:28:48Z ERROR api-gateway [t-3523] POST /v1/notify 503 27016ms: upstream notification-svc returned 503 Service Unavailable\n#291 2026-11-27T13:29:40Z ERROR api-gateway [t-3526] POST /v1/notify 503 5061ms: upstream notification-svc returned 503 Service Unavailable\n#300 2026-11-27T13:31:32Z ERROR api-gateway [t-3527] POST /v1/notify 503 23374ms: upstream notification-svc returned 503 Service Unavailable\n#303 2026-11-27T13:32:33Z ERROR api-gateway [t-3531] POST /v1/notify 503 23932ms: upstream notification-svc returned 503 Service Unavailable\n#309 2026-11-27T13:33:45Z ERROR api-gateway [t-3533] POST /v1/notify 503 18325ms: upstream notification-svc returned 503 Service Unavailable\n#312 2026-11-27T13:34:10Z ERROR api-gateway [t-3537] POST /v1/notify 503 14445ms: upstream notification-svc returned 503 Service Unavailable"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-db",
+          "limit": 20
+        },
+        "output": "15 match(es):\n#5 2026-11-27T13:06:27Z INFO notif-db InnoDB: page cleaner flushed 400 pages, buffer pool hit rate 99.9%\n#38 2026-11-27T13:08:38Z INFO notif-db InnoDB: page cleaner flushed 145 pages, buffer pool hit rate 98.8%\n#69 2026-11-27T13:10:37Z INFO notif-db InnoDB: page cleaner flushed 258 pages, buffer pool hit rate 99.8%\n#93 2026-11-27T13:12:21Z INFO notif-db InnoDB: page cleaner flushed 153 pages, buffer pool hit rate 99.6%\n#132 2026-11-27T13:14:56Z INFO notif-db InnoDB: page cleaner flushed 675 pages, buffer pool hit rate 99.1%\n#169 2026-11-27T13:16:57Z INFO notif-db InnoDB: page cleaner flushed 205 pages, buffer pool hit rate 98.5%\n#204 2026-11-27T13:19:12Z INFO notif-db InnoDB: page cleaner flushed 421 pages, buffer pool hit rate 99.1%\n#227 2026-11-27T13:20:31Z WARN notif-db slow query 2055ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#240 2026-11-27T13:21:14Z INFO notif-db InnoDB: page cleaner flushed 262 pages, buffer pool hit rate 98.7%\n#257 2026-11-27T13:23:36Z INFO notif-db InnoDB: page cleaner flushed 814 pages, buffer pool hit rate 98.6%\n#266 2026-11-27T13:25:19Z INFO notif-db InnoDB: page cleaner flushed 375 pages, buffer pool hit rate 99.7%\n#276 2026-11-27T13:26:56Z INFO notif-db InnoDB: page cleaner flushed 785 pages, buffer pool hit rate 98.9%\n#290 2026-11-27T13:29:05Z INFO notif-db InnoDB: page cleaner flushed 133 pages, buffer pool hit rate 98.7%\n#297 2026-11-27T13:30:53Z INFO notif-db InnoDB: page cleaner flushed 484 pages, buffer pool hit rate 99.6%\n#307 2026-11-27T13:33:14Z INFO notif-db InnoDB: page cleaner flushed 843 pages, buffer pool hit rate 99.3%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "limit": 60
+        },
+        "output": "52 match(es):\n#12 2026-11-27T13:06:53Z INFO template-svc [t-3330] POST /render m-3000 ok 80ms\n#15 2026-11-27T13:07:04Z INFO template-svc [t-3332] POST /render m-3002 ok 65ms\n#21 2026-11-27T13:07:22Z INFO template-svc [t-3335] POST /render m-3005 ok 47ms\n#29 2026-11-27T13:08:01Z INFO template-svc [t-3344] POST /render m-3012 ok 39ms\n#34 2026-11-27T13:08:37Z DEBUG template-svc GC pause 10ms (young), heap 32%\n#36 2026-11-27T13:08:37Z INFO template-svc [t-3350] POST /render m-3017 ok 38ms\n#41 2026-11-27T13:08:51Z INFO template-svc [t-3351] POST /render m-3020 ok 88ms\n#44 2026-11-27T13:08:59Z INFO template-svc [t-3352] POST /render m-3022 ok 80ms\n#47 2026-11-27T13:09:06Z INFO template-svc [t-3353] POST /render m-3025 ok 64ms\n#57 2026-11-27T13:09:52Z INFO template-svc [t-3364] POST /render m-3030 ok 83ms\n#62 2026-11-27T13:10:04Z INFO template-svc [t-3367] POST /render m-3032 ok 22ms\n#64 2026-11-27T13:10:17Z WARN template-svc [t-3368] email provider call failed: connection reset by peer POST https://api.mailer.example/v3/send, retry 1/3\n#65 2026-11-27T13:10:18Z INFO template-svc [t-3368] email provider call ok on retry 2/3 (138ms)\n#78 2026-11-27T13:11:14Z INFO template-svc [t-3380] POST /render m-3043 ok 56ms\n#81 2026-11-27T13:11:21Z INFO template-svc [t-3383] POST /render m-3046 ok 34ms\n#83 2026-11-27T13:11:36Z DEBUG template-svc GC pause 11ms (young), heap 40%\n#85 2026-11-27T13:11:40Z INFO template-svc [t-3386] POST /render m-3049 ok 52ms\n#95 2026-11-27T13:12:32Z INFO template-svc [t-3393] POST /render m-3054 ok 21ms\n#99 2026-11-27T13:12:41Z INFO template-svc [t-3395] POST /render m-3056 ok 35ms\n#102 2026-11-27T13:12:59Z INFO template-svc [t-3397] POST /render m-3057 ok 45ms\n#110 2026-11-27T13:13:32Z DEBUG template-svc GC pause 21ms (young), heap 32%\n#115 2026-11-27T13:13:51Z INFO template-svc [t-3405] POST /render m-3065 ok 75ms\n#118 2026-11-27T13:13:57Z INFO template-svc [t-3408] POST /render m-3068 ok 83ms\n#129 2026-11-27T13:14:50Z INFO template-svc [t-3414] POST /render m-3080 ok 84ms\n#135 2026-11-27T13:15:04Z INFO template-svc [t-3416] POST /render m-3082 ok 63ms\n#138 2026-11-27T13:15:15Z INFO template-svc [t-3417] POST /render m-3084 ok 59ms\n#142 2026-11-27T13:15:22Z INFO template-svc [t-3420] POST /render m-3086 ok 46ms\n#147 2026-11-27T13:15:40Z INFO template-svc [t-3426] POST /render m-3090 ok 79ms\n#150 2026-11-27T13:15:49Z INFO template-svc [t-3428] POST /render m-3093 ok 61ms\n#154 2026-11-27T13:16:06Z INFO template-svc [t-3432] POST /render m-3095 ok 80ms\n#159 2026-11-27T13:16:20Z INFO template-svc [t-3433] POST /render m-3096 ok 76ms\n#162 2026-11-27T13:16:34Z INFO template-svc [t-3435] POST /render m-3099 ok 22ms\n#168 2026-11-27T13:16:52Z DEBUG template-svc GC pause 21ms (young), heap 39%\n#171 2026-11-27T13:17:00Z INFO template-svc [t-3441] POST /render m-3103 ok 63ms\n#176 2026-11-27T13:17:21Z INFO template-svc [t-3448] POST /render m-3108 ok 72ms\n#182 2026-11-27T13:17:43Z INFO template-svc [t-3454] POST /render m-3113 ok 34ms\n#191 2026-11-27T13:18:14Z INFO template-svc [t-3462] POST /render m-3119 ok 48ms\n#198 2026-11-27T13:18:52Z INFO template-svc [t-3470] POST /render m-3124 ok 85ms\n#202 2026-11-27T13:19:04Z INFO template-svc [t-3471] POST /render m-3126 ok 35ms\n#214 2026-11-27T13:19:47Z INFO template-svc [t-3474] POST /render m-3131 ok 45ms\n#217 2026-11-27T13:20:05Z INFO template-svc [t-3475] POST /render m-3133 ok 59ms\n#219 2026-11-27T13:20:11Z DEBUG template-svc GC pause 12ms (young), heap 45%\n#224 2026-11-27T13:20:29Z INFO template-svc [t-3478] POST /render m-3135 ok 47ms\n#230 2026-11-27T13:20:37Z INFO template-svc [t-3479] POST /render m-3138 ok 57ms\n#238 2026-11-27T13:21:10Z INFO template-svc [t-3484] POST /render m-3143 ok 77ms\n#252 2026-11-27T13:22:49Z DEBUG template-svc GC pause 6ms (young), heap 45%\n#267 2026-11-27T13:25:19Z DEBUG template-svc GC pause 15ms (young), heap 33%\n#269 2026-11-27T13:25:28Z INFO template-svc [t-3509] POST /render m-3149 ok 45ms\n#279 2026-11-27T13:27:21Z DEBUG template-svc GC pause 18ms (young), heap 29%\n#285 2026-11-27T13:28:30Z INFO template-svc [t-3521] POST /render m-3151 ok 65ms\n#295 2026-11-27T13:30:30Z DEBUG template-svc GC pause 8ms (young), heap 34%\n#305 2026-11-27T13:32:58Z DEBUG template-svc GC pause 5ms (young), heap 31%"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 248,
+          "before": 10,
+          "after": 3
+        },
+        "output": "#238 2026-11-27T13:21:10Z INFO template-svc [t-3484] POST /render m-3143 ok 77ms\n#239 2026-11-27T13:21:10Z INFO api-gateway [t-3484] POST /v1/notify 200 168ms\n#240 2026-11-27T13:21:14Z INFO notif-db InnoDB: page cleaner flushed 262 pages, buffer pool hit rate 98.7%\n#241 2026-11-27T13:21:22Z INFO notification-svc [t-3487] message m-3146 accepted, calling template-svc POST /render\n#242 2026-11-27T13:21:22Z INFO api-gateway [t-3487] POST /v1/notify 200 145ms\n#243 2026-11-27T13:21:28Z INFO notification-svc config reloaded from config-service (revision 645): 1 key changed: TEMPLATE_SVC_URL=http://template-svc.internal:8081\n#244 2026-11-27T13:21:34Z INFO notification-svc [t-3491] message m-3147 accepted, calling template-svc POST /render\n#245 2026-11-27T13:21:35Z INFO api-gateway [t-3491] POST /v1/notify 200 98ms\n#246 2026-11-27T13:21:48Z INFO notif-worker processed batch of 65 messages from notifications.outbound (lag 168ms)\n#247 2026-11-27T13:21:48Z INFO redis stats: hits=17486 misses=243 evicted=0 connected_clients=53\n#248 2026-11-27T13:21:59Z ERROR notification-svc [t-3492] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#249 2026-11-27T13:22:12Z DEBUG notification-svc GC pause 6ms (young), heap 48%\n#250 2026-11-27T13:22:32Z INFO notif-worker processed batch of 76 messages from notifications.outbound (lag 86ms)\n#251 2026-11-27T13:22:42Z ERROR api-gateway [t-3495] POST /v1/notify 503 16526ms: upstream notification-svc returned 503 Service Unavailable"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "TEMPLATE_SVC_URL"
+        },
+        "output": "1 match(es):\n#243 2026-11-27T13:21:28Z INFO notification-svc config reloaded from config-service (revision 645): 1 key changed: TEMPLATE_SVC_URL=http://template-svc.internal:8081"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "config",
+          "limit": 30
+        },
+        "output": "2 match(es):\n#236 2026-11-27T13:21:03Z INFO notification-svc deploy: rolling out notification-svc v3.13.0 (build 1816aca) with config revision 645\n#243 2026-11-27T13:21:28Z INFO notification-svc config reloaded from config-service (revision 645): 1 key changed: TEMPLATE_SVC_URL=http://template-svc.internal:8081"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-3492"
+        },
+        "output": "1 line(s) for t-3492:\n#248 2026-11-27T13:21:59Z ERROR notification-svc [t-3492] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "v3.13.0"
+        },
+        "output": "1 match(es):\n#236 2026-11-27T13:21:03Z INFO notification-svc deploy: rolling out notification-svc v3.13.0 (build 1816aca) with config revision 645"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "limit": 40
+        },
+        "output": "91 match(es), showing first 40:\n#1 2026-11-27T13:06:06Z INFO notification-svc [t-3318] message m-2991 accepted, calling template-svc POST /render\n#3 2026-11-27T13:06:21Z INFO notification-svc [t-3321] message m-2994 accepted, calling template-svc POST /render\n#6 2026-11-27T13:06:29Z INFO notification-svc [t-3324] message m-2995 accepted, calling template-svc POST /render\n#9 2026-11-27T13:06:41Z INFO notification-svc [t-3328] message m-2998 accepted, calling template-svc POST /render\n#11 2026-11-27T13:06:53Z INFO notification-svc [t-3330] message m-3000 accepted, calling template-svc POST /render\n#14 2026-11-27T13:07:04Z INFO notification-svc [t-3332] message m-3002 accepted, calling template-svc POST /render\n#17 2026-11-27T13:07:12Z DEBUG notification-svc GC pause 25ms (young), heap 38%\n#20 2026-11-27T13:07:22Z INFO notification-svc [t-3335] message m-3005 accepted, calling template-svc POST /render\n#23 2026-11-27T13:07:32Z INFO notification-svc [t-3338] message m-3007 accepted, calling template-svc POST /render\n#25 2026-11-27T13:07:51Z INFO notification-svc [t-3340] message m-3010 accepted, calling template-svc POST /render\n#28 2026-11-27T13:08:01Z INFO notification-svc [t-3344] message m-3012 accepted, calling template-svc POST /render\n#31 2026-11-27T13:08:19Z INFO notification-svc [t-3346] message m-3014 accepted, calling template-svc POST /render\n#35 2026-11-27T13:08:37Z INFO notification-svc [t-3350] message m-3017 accepted, calling template-svc POST /render\n#40 2026-11-27T13:08:51Z INFO notification-svc [t-3351] message m-3020 accepted, calling template-svc POST /render\n#43 2026-11-27T13:08:59Z INFO notification-svc [t-3352] message m-3022 accepted, calling template-svc POST /render\n#46 2026-11-27T13:09:06Z INFO notification-svc [t-3353] message m-3025 accepted, calling template-svc POST /render\n#49 2026-11-27T13:09:15Z INFO notification-svc [t-3357] message m-3026 accepted, calling template-svc POST /render\n#52 2026-11-27T13:09:23Z DEBUG notification-svc GC pause 8ms (young), heap 41%\n#54 2026-11-27T13:09:35Z INFO notification-svc [t-3360] message m-3027 accepted, calling template-svc POST /render\n#56 2026-11-27T13:09:51Z INFO notification-svc [t-3364] message m-3030 accepted, calling template-svc POST /render\n#61 2026-11-27T13:10:04Z INFO notification-svc [t-3367] message m-3032 accepted, calling template-svc POST /render\n#66 2026-11-27T13:10:19Z INFO notification-svc [t-3372] message m-3034 accepted, calling template-svc POST /render\n#70 2026-11-27T13:10:38Z INFO notification-svc [t-3376] message m-3037 accepted, calling template-svc POST /render\n#72 2026-11-27T13:10:56Z INFO notification-svc [t-3378] message m-3040 accepted, calling template-svc POST /render\n#74 2026-11-27T13:11:04Z DEBUG notification-svc GC pause 21ms (young), heap 35%\n#77 2026-11-27T13:11:14Z INFO notification-svc [t-3380] message m-3043 accepted, calling template-svc POST /render\n#80 2026-11-27T13:11:21Z INFO notification-svc [t-3383] message m-3046 accepted, calling template-svc POST /render\n#84 2026-11-27T13:11:40Z INFO notification-svc [t-3386] message m-3049 accepted, calling template-svc POST /render\n#87 2026-11-27T13:11:58Z INFO notification-svc [t-3388] message m-3050 accepted, calling template-svc POST /render\n#90 2026-11-27T13:12:14Z INFO notification-svc [t-3389] message m-3052 accepted, calling template-svc POST /render\n#94 2026-11-27T13:12:32Z INFO notification-svc [t-3393] message m-3054 accepted, calling template-svc POST /render\n#98 2026-11-27T13:12:41Z INFO notification-svc [t-3395] message m-3056 accepted, calling template-svc POST /render\n#101 2026-11-27T13:12:59Z INFO notification-svc [t-3397] message m-3057 accepted, calling template-svc POST /render\n#104 2026-11-27T13:13:06Z INFO notification-svc [t-3398] message m-3058 accepted, calling template-svc POST /render\n#106 2026-11-27T13:13:16Z INFO notification-svc [t-3399] message m-3060 accepted, calling template-svc POST /render\n#111 2026-11-27T13:13:32Z INFO notification-svc [t-3403] message m-3062 accepted, calling template-svc POST /render\n#114 2026-11-27T13:13:50Z INFO notification-svc [t-3405] message m-3065 accepted, calling template-svc POST /render\n#117 2026-11-27T13:13:57Z INFO notification-svc [t-3408] message m-3068 accepted, calling template-svc POST /render\n#120 2026-11-27T13:14:08Z INFO notification-svc [t-3410] message m-3071 accepted, calling template-svc POST /render\n#123 2026-11-27T13:14:14Z DEBUG notification-svc GC pause 23ms (young), heap 31%"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 236,
+          "before": 4,
+          "after": 6
+        },
+        "output": "#232 2026-11-27T13:20:51Z INFO notification-svc [t-3481] message m-3140 accepted, calling template-svc POST /render\n#233 2026-11-27T13:20:51Z INFO api-gateway [t-3481] POST /v1/notify 200 131ms\n#234 2026-11-27T13:20:52Z INFO notif-worker started notif-worker v4.1.8, pid 1, ready\n#235 2026-11-27T13:21:01Z INFO notif-worker processed batch of 86 messages from notifications.outbound (lag 381ms)\n#236 2026-11-27T13:21:03Z INFO notification-svc deploy: rolling out notification-svc v3.13.0 (build 1816aca) with config revision 645\n#237 2026-11-27T13:21:10Z INFO notification-svc [t-3484] message m-3143 accepted, calling template-svc POST /render\n#238 2026-11-27T13:21:10Z INFO template-svc [t-3484] POST /render m-3143 ok 77ms\n#239 2026-11-27T13:21:10Z INFO api-gateway [t-3484] POST /v1/notify 200 168ms\n#240 2026-11-27T13:21:14Z INFO notif-db InnoDB: page cleaner flushed 262 pages, buffer pool hit rate 98.7%\n#241 2026-11-27T13:21:22Z INFO notification-svc [t-3487] message m-3146 accepted, calling template-svc POST /render\n#242 2026-11-27T13:21:22Z INFO api-gateway [t-3487] POST /v1/notify 200 145ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "ECONNREFUSED",
+          "limit": 50
+        },
+        "output": "4 match(es):\n#248 2026-11-27T13:21:59Z ERROR notification-svc [t-3492] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#256 2026-11-27T13:23:33Z ERROR notification-svc [t-3499] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#258 2026-11-27T13:23:45Z ERROR notification-svc [t-3502] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)\n#271 2026-11-27T13:25:34Z ERROR notification-svc [t-3513] TemplateClient.render failed: connect ECONNREFUSED 10.17.189.215:8081 (template-svc.internal)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "config_error",
+              "confidence": 0.6,
+              "evidenceLines": [
+                243,
+                236,
+                248,
+                256,
+                271
+              ],
+              "reasoning": "Gateway 503s (#251, #255, #260 etc.) are downstream symptoms: notification-svc returns 503 because its render call to template-svc fails. The origin appears at 13:21:03 when notification-svc v3.13.0 (build 1816aca) began rolling out with config revision 645 (#236). At 13:21:28 config reloaded with TEMPLATE_SVC_URL=http://template-svc.internal:8081 changed (#243). From about 13:21:59 onward every TemplateClient.render from notification-svc fails with connect ECONNREFUSED 10.17.189.215:8081 (#248, #256, #258, #271). Template-svc itself logs no errors and keeps running (GC lines through 13:32), and it served successful /render calls up to 13:21:10 (#238), so the refusals are specific to notification-svc's new endpoint resolution. Caveat: the logged URL matches template-svc's port, so the exact wrong value (host or IP) is not visible in the logs; the change coincides with the config reload and rollout. Not a template-svc resource problem (no OOM or error lines, GC normal); not a notif-db issue (only a slow audit_log seq scan at #227, unrelated and not on the failing path).",
+              "rootCause2": null
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.3,
+              "evidenceLines": [
+                236,
+                243,
+                248
+              ],
+              "reasoning": "Alternative reading: the v3.13.0 rollout itself (build 1816aca) introduced a broken template-client connection behavior, and the config reload is just concurrent with it. Timing fits: refusals start within a minute of the rollout and config reload. Rolling back notification-svc to the prior version would confirm or rule this out.",
+              "rootCause2": null
+            }
+          ],
+          "recommendedAction": "Roll back notification-svc to the pre-v3.13.0 build and/or revert config revision 645 so TEMPLATE_SVC_URL is restored to the previously working endpoint. Then verify notification-svc can reach template-svc (connect succeeds to template-svc.internal:8081) and that gateway POST /v1/notify success recovers. Compare the old and new TEMPLATE_SVC_URL values from config revision 644 vs 645, since the logs don't show the previous value. Follow up on the slow audit_log seq scan on notif-db (#227) separately as a non-blocking issue."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 11,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 2742,
+      "cacheReadTokens": 40030,
+      "cacheWriteTokens": 13761
+    },
+    "durationMs": 14383,
+    "stopReason": "tool_use"
+  }
+}

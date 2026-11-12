@@ -8,6 +8,8 @@ Model **claude-opus-5-5** · prompt **v3** · 48 incidents from `incidents/test`
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | **98%** | 100% | 100% | 89% / 89% | 0.35 (14/48) | 0.07 | 0.02 | $0.06 | 12.5s / 15.2s |
 
+95% bootstrap intervals (resampling incidents): top-1 [94–100], lenient [100–100], evidence precision [84–94], recall [85–93], cost / incident [$0.05–$0.06]. To compare two runs on the same incidents, use `npm run compare`, which is much tighter.
+
 Outcomes: 48 submitted, 0 budget exhausted, 0 no verdict, 0 refused, 0 API error. Total cost $2.65. Mean 4.0 turns, 4.2 tool calls, 21,348 tokens per incident.
 
 *top-1 (lenient)* also accepts a labeled defensible alternative on ambiguous incidents. Evidence precision/recall compare the top hypothesis's cited lines with the labeled evidence. *Herring cites* is mean red-herring lines cited (incidents citing any). ECE/Brier measure how well top-1 confidence tracks correctness (lower is better). An incident without a verdict counts as wrong.
