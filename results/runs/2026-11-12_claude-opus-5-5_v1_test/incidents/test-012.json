@@ -1,0 +1,147 @@
+{
+  "score": {
+    "incidentId": "test-012",
+    "difficulty": "easy",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 10,
+      "correct": 6,
+      "precision": 0.6,
+      "recall": 1,
+      "f1": 0.7499999999999999
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0485904,
+    "durationMs": 11749,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 902,
+      "cacheRead": 10652,
+      "cacheWrite": 5676
+    }
+  },
+  "result": {
+    "incidentId": "test-012",
+    "model": "claude-opus-5-5",
+    "prompt": "v1",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.85,
+          "evidenceLines": [
+            74,
+            108,
+            135,
+            136,
+            151,
+            152,
+            141,
+            164,
+            172,
+            198
+          ],
+          "reasoning": "search-api's old gen keeps filling and full GC can't reclaim it (78% at #74, then 87% at #108). It then hits OutOfMemoryError in productCache.put (#135, #151) and gets OOMKilled at the 2Gi limit, restarting twice (#136, #152). During each restart web-bff gets connection resets and 'no healthy upstream', which shows up as bursts of 502s (#141, #164, #172, #198). The 'warming product cache' line after restart suggests the cache has no size limit and fills up again. catalog-svc, catalog-db and redis logged no errors. The index-worker DLQ message (#81) is a separate, harmless event."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.08,
+          "evidenceLines": [
+            139
+          ],
+          "reasoning": "v4.15.1 could have introduced the unbounded cache, but no deploy event appears in this log window."
+        }
+      ],
+      "recommendedAction": "Stop the restart loop first: raise search-api's memory limit or heap size, or add replicas, so requests keep a healthy upstream. Then cap productCache with a maximum size and LRU/TTL eviction, take a heap dump to confirm the leak, and check whether v4.15.1 changed how the cache works. Roll back if it did."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "11 match(es):\n#74 2026-10-23T15:15:18Z WARN search-api heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#81 2026-10-23T15:15:40Z WARN index-worker msg-897762 from catalog.updates failed schema validation (missing field \"version\"), moved to catalog.updates.dlq\n#108 2026-10-23T15:19:13Z WARN search-api heap usage 87% after full GC (old gen not reclaimed), GC overhead 35%\n#135 2026-10-23T15:22:12Z FATAL search-api java.lang.OutOfMemoryError: Java heap space (at productCache.put)\n#136 2026-10-23T15:22:13Z ERROR search-api container search-api-0 killed: OOMKilled (memory limit 2Gi), restart count 1\n#141 2026-10-23T15:23:04Z ERROR web-bff [t-3973] GET /search 502 12574ms: upstream search-api connection reset (no healthy upstream)\n#151 2026-10-23T15:24:48Z FATAL search-api java.lang.OutOfMemoryError: Java heap space (at productCache.put)\n#152 2026-10-23T15:24:49Z ERROR search-api container search-api-0 killed: OOMKilled (memory limit 2Gi), restart count 2\n#164 2026-10-23T15:27:33Z ERROR web-bff [t-3984] GET /search 502 11265ms: upstream search-api connection reset (no healthy upstream)\n#172 2026-10-23T15:29:25Z ERROR web-bff [t-3990] GET /search 502 14239ms: upstream search-api connection reset (no healthy upstream)\n#198 2026-10-23T15:33:29Z ERROR web-bff [t-4005] GET /search 502 13797ms: upstream search-api connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "search-api",
+          "limit": 40
+        },
+        "output": "54 match(es), showing first 40:\n#2 2026-10-23T15:06:07Z INFO search-api [t-3902] product p-6915 accepted, calling catalog-svc GET /products/batch\n#7 2026-10-23T15:06:55Z INFO search-api [t-3903] product p-6918 accepted, calling catalog-svc GET /products/batch\n#9 2026-10-23T15:07:23Z DEBUG search-api GC pause 25ms (young), heap 34%\n#10 2026-10-23T15:07:34Z INFO search-api [t-3907] product p-6921 accepted, calling catalog-svc GET /products/batch\n#15 2026-10-23T15:08:18Z INFO search-api [t-3910] product p-6923 accepted, calling catalog-svc GET /products/batch\n#21 2026-10-23T15:09:10Z INFO search-api [t-3912] product p-6926 accepted, calling catalog-svc GET /products/batch\n#24 2026-10-23T15:09:30Z INFO search-api [t-3915] product p-6929 accepted, calling catalog-svc GET /products/batch\n#29 2026-10-23T15:09:53Z INFO search-api [t-3917] product p-6930 accepted, calling catalog-svc GET /products/batch\n#32 2026-10-23T15:09:56Z DEBUG search-api GC pause 15ms (young), heap 43%\n#34 2026-10-23T15:10:31Z INFO search-api [t-3918] product p-6931 accepted, calling catalog-svc GET /products/batch\n#39 2026-10-23T15:11:05Z INFO search-api [t-3919] product p-6933 accepted, calling catalog-svc GET /products/batch\n#44 2026-10-23T15:11:29Z INFO search-api [t-3921] product p-6935 accepted, calling catalog-svc GET /products/batch\n#47 2026-10-23T15:12:19Z INFO search-api [t-3922] product p-6936 accepted, calling catalog-svc GET /products/batch\n#51 2026-10-23T15:12:25Z DEBUG search-api GC pause 21ms (young), heap 45%\n#53 2026-10-23T15:12:52Z INFO search-api [t-3926] product p-6938 accepted, calling catalog-svc GET /products/batch\n#58 2026-10-23T15:13:10Z INFO search-api [t-3930] product p-6939 accepted, calling catalog-svc GET /products/batch\n#63 2026-10-23T15:13:44Z INFO search-api [t-3932] product p-6941 accepted, calling catalog-svc GET /products/batch\n#67 2026-10-23T15:14:22Z DEBUG search-api GC pause 12ms (young), heap 31%\n#68 2026-10-23T15:14:23Z INFO search-api [t-3936] product p-6943 accepted, calling catalog-svc GET /products/batch\n#71 2026-10-23T15:15:03Z INFO search-api [t-3939] product p-6945 accepted, calling catalog-svc GET /products/batch\n#74 2026-10-23T15:15:18Z WARN search-api heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#77 2026-10-23T15:15:26Z INFO search-api [t-3940] product p-6948 accepted, calling catalog-svc GET /products/batch\n#82 2026-10-23T15:16:09Z INFO search-api [t-3944] product p-6951 accepted, calling catalog-svc GET /products/batch\n#86 2026-10-23T15:16:32Z INFO search-api [t-3946] product p-6953 accepted, calling catalog-svc GET /products/batch\n#91 2026-10-23T15:17:08Z DEBUG search-api GC pause 25ms (young), heap 46%\n#93 2026-10-23T15:17:23Z INFO search-api [t-3948] product p-6956 accepted, calling catalog-svc GET /products/batch\n#96 2026-10-23T15:17:43Z INFO search-api [t-3951] product p-6958 accepted, calling catalog-svc GET /products/batch\n#100 2026-10-23T15:18:20Z INFO search-api [t-3954] product p-6959 accepted, calling catalog-svc GET /products/batch\n#106 2026-10-23T15:19:10Z INFO search-api [t-3958] product p-6960 accepted, calling catalog-svc GET /products/batch\n#108 2026-10-23T15:19:13Z WARN search-api heap usage 87% after full GC (old gen not reclaimed), GC overhead 35%\n#111 2026-10-23T15:19:28Z DEBUG search-api GC pause 6ms (young), heap 30%\n#113 2026-10-23T15:19:40Z INFO search-api [t-3960] product p-6961 accepted, calling catalog-svc GET /products/batch\n#116 2026-10-23T15:20:06Z INFO search-api [t-3961] product p-6963 accepted, calling catalog-svc GET /products/batch\n#121 2026-10-23T15:20:36Z INFO search-api [t-3965] product p-6965 accepted, calling catalog-svc GET /products/batch\n#124 2026-10-23T15:21:15Z INFO search-api [t-3968] product p-6966 accepted, calling catalog-svc GET /products/batch\n#129 2026-10-23T15:21:46Z INFO search-api [t-3969] product p-6968 accepted, calling catalog-svc GET /products/batch\n#132 2026-10-23T15:21:49Z DEBUG search-api GC pause 21ms (young), heap 36%\n#135 2026-10-23T15:22:12Z FATAL search-api java.lang.OutOfMemoryError: Java heap space (at productCache.put)\n#136 2026-10-23T15:22:13Z ERROR search-api container search-api-0 killed: OOMKilled (memory limit 2Gi), restart count 1\n#139 2026-10-23T15:22:46Z INFO search-api started search-api v4.15.1, pid 1, warming product cache"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "cache",
+          "limit": 40
+        },
+        "output": "4 match(es):\n#135 2026-10-23T15:22:12Z FATAL search-api java.lang.OutOfMemoryError: Java heap space (at productCache.put)\n#139 2026-10-23T15:22:46Z INFO search-api started search-api v4.15.1, pid 1, warming product cache\n#151 2026-10-23T15:24:48Z FATAL search-api java.lang.OutOfMemoryError: Java heap space (at productCache.put)\n#156 2026-10-23T15:25:10Z INFO search-api started search-api v4.15.1, pid 1, warming product cache"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.85,
+              "evidenceLines": [
+                74,
+                108,
+                135,
+                136,
+                151,
+                152,
+                141,
+                164,
+                172,
+                198
+              ],
+              "reasoning": "search-api's old gen keeps filling and full GC can't reclaim it (78% at #74, then 87% at #108). It then hits OutOfMemoryError in productCache.put (#135, #151) and gets OOMKilled at the 2Gi limit, restarting twice (#136, #152). During each restart web-bff gets connection resets and 'no healthy upstream', which shows up as bursts of 502s (#141, #164, #172, #198). The 'warming product cache' line after restart suggests the cache has no size limit and fills up again. catalog-svc, catalog-db and redis logged no errors. The index-worker DLQ message (#81) is a separate, harmless event."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.08,
+              "evidenceLines": [
+                139
+              ],
+              "reasoning": "v4.15.1 could have introduced the unbounded cache, but no deploy event appears in this log window."
+            }
+          ],
+          "recommendedAction": "Stop the restart loop first: raise search-api's memory limit or heap size, or add replicas, so requests keep a healthy upstream. Then cap productCache with a maximum size and LRU/TTL eviction, take a heap dump to confirm the leak, and check whether v4.15.1 changed how the cache works. Roll back if it did."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 902,
+      "cacheReadTokens": 10652,
+      "cacheWriteTokens": 5676
+    },
+    "durationMs": 11749,
+    "stopReason": "tool_use"
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "score": {
+    "incidentId": "test-008",
+    "difficulty": "easy",
+    "scenario": "dependency_timeout/db-lock-wait",
+    "truth": "dependency_timeout",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.92,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 7,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0551452,
+    "durationMs": 13146,
+    "iterations": 5,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 12,
+      "output": 887,
+      "cacheRead": 17661,
+      "cacheWrite": 6765
+    }
+  },
+  "result": {
+    "incidentId": "test-008",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.92,
+          "evidenceLines": [
+            104,
+            111,
+            112,
+            115,
+            117,
+            126,
+            127
+          ],
+          "reasoning": "A long-running template-svc-reconciler transaction (99588, active 97s at 14:48:57) is holding a row lock on notifications. template-svc's UPDATEs on notifications are stuck behind it. They hit lock wait timeouts and the 10s statement timeout, so /render calls hang and notification-svc's TemplateClient times out after 15s. Because those calls hang, the 50-connection HTTP pool to template-svc fills up and checkouts time out (#134, #139), and that produces the 504s at the gateway. The logs show nothing wrong before this point. There are no deploys, and the DB, redis and worker look healthy."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.05,
+          "evidenceLines": [
+            134,
+            139
+          ],
+          "reasoning": "The notification-svc pool to template-svc is saturated. But it only filled up after the lock-induced hangs started, so it is a symptom."
+        }
+      ],
+      "recommendedAction": "Find and kill the stuck template-svc-reconciler transaction 99588 in notif-db to release the row lock on notifications. Then fix the reconciler so it uses short transactions and a lock/statement timeout. Once the lock is released, the template-svc connection pool should drain."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "13 match(es):\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#111 2026-10-15T14:49:49Z ERROR template-svc [t-1292] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-5849)\n#112 2026-10-15T14:49:54Z ERROR notification-svc [t-1292] TemplateClient.render timed out after 15000ms calling template-svc POST /render (m-5849)\n#115 2026-10-15T14:50:06Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#117 2026-10-15T14:50:28Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#126 2026-10-15T14:51:57Z ERROR template-svc [t-1295] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-5855)\n#127 2026-10-15T14:52:02Z ERROR notification-svc [t-1295] TemplateClient.render timed out after 15000ms calling template-svc POST /render (m-5855)\n#131 2026-10-15T14:52:39Z ERROR api-gateway [t-1297] POST /v1/notify 504 24369ms: upstream notification-svc timed out\n#134 2026-10-15T14:52:49Z WARN notification-svc HTTP connection pool to template-svc at capacity (50/50 in use), 38 requests queued\n#139 2026-10-15T14:54:20Z ERROR notification-svc pool checkout timeout: no connection to template-svc available after 5000ms\n#140 2026-10-15T14:54:22Z ERROR api-gateway [t-1298] POST /v1/notify 504 28176ms: upstream notification-svc timed out\n#153 2026-10-15T14:56:56Z ERROR api-gateway [t-1303] POST /v1/notify 504 22820ms: upstream notification-svc timed out\n#169 2026-10-15T14:59:28Z ERROR api-gateway [t-1312] POST /v1/notify 504 12609ms: upstream notification-svc timed out"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "reconciler"
+        },
+        "output": "1 match(es):\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 104,
+          "before": 20,
+          "after": 3
+        },
+        "output": "#84 2026-10-15T14:46:28Z INFO notification-svc [t-1275] message m-5840 accepted, calling template-svc POST /render\n#85 2026-10-15T14:46:28Z INFO template-svc [t-1275] POST /render m-5840 ok 44ms\n#86 2026-10-15T14:46:28Z INFO api-gateway [t-1275] POST /v1/notify 200 145ms\n#87 2026-10-15T14:46:44Z INFO notif-worker processed batch of 82 messages from notifications.outbound (lag 270ms)\n#88 2026-10-15T14:46:52Z DEBUG api-gateway upstream health: notification-svc ok, template-svc ok\n#89 2026-10-15T14:47:02Z DEBUG template-svc GC pause 8ms (young), heap 44%\n#90 2026-10-15T14:47:03Z INFO notif-db InnoDB: page cleaner flushed 834 pages, buffer pool hit rate 98.9%\n#91 2026-10-15T14:47:10Z INFO notification-svc [t-1278] message m-5841 accepted, calling template-svc POST /render\n#92 2026-10-15T14:47:10Z INFO template-svc [t-1278] POST /render m-5841 ok 78ms\n#93 2026-10-15T14:47:10Z INFO api-gateway [t-1278] POST /v1/notify 200 139ms\n#94 2026-10-15T14:47:34Z INFO notif-worker processed batch of 54 messages from notifications.outbound (lag 380ms)\n#95 2026-10-15T14:47:38Z INFO redis stats: hits=11435 misses=733 evicted=0 connected_clients=36\n#96 2026-10-15T14:47:46Z DEBUG notification-svc GC pause 17ms (young), heap 34%\n#97 2026-10-15T14:47:48Z INFO notification-svc [t-1282] message m-5842 accepted, calling template-svc POST /render\n#98 2026-10-15T14:47:48Z INFO api-gateway [t-1282] POST /v1/notify 200 103ms\n#99 2026-10-15T14:48:10Z INFO notification-svc [t-1284] message m-5844 accepted, calling template-svc POST /render\n#100 2026-10-15T14:48:10Z INFO api-gateway [t-1284] POST /v1/notify 200 191ms\n#101 2026-10-15T14:48:25Z INFO notif-worker processed batch of 88 messages from notifications.outbound (lag 42ms)\n#102 2026-10-15T14:48:45Z INFO notification-svc [t-1287] message m-5847 accepted, calling template-svc POST /render\n#103 2026-10-15T14:48:46Z INFO api-gateway [t-1287] POST /v1/notify 200 132ms\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#105 2026-10-15T14:48:59Z INFO notif-db InnoDB: page cleaner flushed 160 pages, buffer pool hit rate 99%\n#106 2026-10-15T14:49:03Z INFO redis stats: hits=17000 misses=893 evicted=0 connected_clients=33\n#107 2026-10-15T14:49:14Z INFO notification-svc [t-1289] message m-5848 accepted, calling template-svc POST /render"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-db"
+        },
+        "output": "15 match(es):\n#8 2026-10-15T14:36:16Z INFO notif-db InnoDB: page cleaner flushed 203 pages, buffer pool hit rate 98.6%\n#25 2026-10-15T14:38:13Z INFO notif-db InnoDB: page cleaner flushed 832 pages, buffer pool hit rate 98.9%\n#44 2026-10-15T14:40:22Z INFO notif-db InnoDB: page cleaner flushed 191 pages, buffer pool hit rate 99.8%\n#59 2026-10-15T14:42:33Z INFO notif-db InnoDB: page cleaner flushed 870 pages, buffer pool hit rate 99.1%\n#72 2026-10-15T14:44:43Z INFO notif-db InnoDB: page cleaner flushed 113 pages, buffer pool hit rate 98.5%\n#90 2026-10-15T14:47:03Z INFO notif-db InnoDB: page cleaner flushed 834 pages, buffer pool hit rate 98.9%\n#104 2026-10-15T14:48:57Z WARN notif-db TRANSACTION 99588, ACTIVE 97 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#105 2026-10-15T14:48:59Z INFO notif-db InnoDB: page cleaner flushed 160 pages, buffer pool hit rate 99%\n#115 2026-10-15T14:50:06Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#117 2026-10-15T14:50:28Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#119 2026-10-15T14:50:40Z INFO notif-db InnoDB: page cleaner flushed 241 pages, buffer pool hit rate 99.4%\n#130 2026-10-15T14:52:25Z INFO notif-db InnoDB: page cleaner flushed 478 pages, buffer pool hit rate 98.8%\n#142 2026-10-15T14:54:43Z INFO notif-db InnoDB: page cleaner flushed 684 pages, buffer pool hit rate 98.8%\n#154 2026-10-15T14:57:02Z INFO notif-db InnoDB: page cleaner flushed 601 pages, buffer pool hit rate 99.7%\n#165 2026-10-15T14:59:13Z INFO notif-db InnoDB: page cleaner flushed 716 pages, buffer pool hit rate 99.1%"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.92,
+              "evidenceLines": [
+                104,
+                111,
+                112,
+                115,
+                117,
+                126,
+                127
+              ],
+              "reasoning": "A long-running template-svc-reconciler transaction (99588, active 97s at 14:48:57) is holding a row lock on notifications. template-svc's UPDATEs on notifications are stuck behind it. They hit lock wait timeouts and the 10s statement timeout, so /render calls hang and notification-svc's TemplateClient times out after 15s. Because those calls hang, the 50-connection HTTP pool to template-svc fills up and checkouts time out (#134, #139), and that produces the 504s at the gateway. The logs show nothing wrong before this point. There are no deploys, and the DB, redis and worker look healthy."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.05,
+              "evidenceLines": [
+                134,
+                139
+              ],
+              "reasoning": "The notification-svc pool to template-svc is saturated. But it only filled up after the lock-induced hangs started, so it is a symptom."
+            }
+          ],
+          "recommendedAction": "Find and kill the stuck template-svc-reconciler transaction 99588 in notif-db to release the row lock on notifications. Then fix the reconciler so it uses short transactions and a lock/statement timeout. Once the lock is released, the template-svc connection pool should drain."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 887,
+      "cacheReadTokens": 17661,
+      "cacheWriteTokens": 6765
+    },
+    "durationMs": 13146,
+    "stopReason": "tool_use"
+  }
+}

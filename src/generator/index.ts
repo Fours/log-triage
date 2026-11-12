@@ -117,7 +117,14 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
  * (8 × 2 × 3 = 48 incidents). Topologies rotate so no service name predicts a
  * category, and the order is shuffled so ids don't either.
  */
-export function planDataset(seed = DEFAULT_SEED): IncidentSpec[] {
+export interface DatasetOptions {
+  /** Incident id prefix: `gen` → gen-001…; a held-out set uses its own so ids never collide. */
+  idPrefix?: string;
+  /** Rotates which topology each scenario lands on, so a held-out set isn't the same scenarios on the same services. */
+  topologyShift?: number;
+}
+
+export function planDataset(seed = DEFAULT_SEED, { idPrefix = "gen", topologyShift = 0 }: DatasetOptions = {}): IncidentSpec[] {
   const difficulties: Difficulty[] = ["easy", "medium", "hard"];
   const specs: Omit<IncidentSpec, "id">[] = [];
   let i = 0;
@@ -127,7 +134,7 @@ export function planDataset(seed = DEFAULT_SEED): IncidentSpec[] {
         specs.push({
           scenario,
           difficulty,
-          topology: TOPOLOGIES[(i * 3 + Math.floor(i / TOPOLOGIES.length)) % TOPOLOGIES.length],
+          topology: TOPOLOGIES[(i * 3 + Math.floor(i / TOPOLOGIES.length) + topologyShift) % TOPOLOGIES.length],
           seed: `${seed}:${scenario.key}:${difficulty}`,
         });
         i++;
@@ -136,9 +143,16 @@ export function planDataset(seed = DEFAULT_SEED): IncidentSpec[] {
   }
   return createRng(`${seed}:order`)
     .shuffle(specs)
-    .map((s, k) => ({ ...s, id: `gen-${String(k + 1).padStart(3, "0")}` }));
+    .map((s, k) => ({ ...s, id: `${idPrefix}-${String(k + 1).padStart(3, "0")}` }));
 }
 
-export function generateDataset(seed = DEFAULT_SEED): GeneratedIncident[] {
-  return planDataset(seed).map(generateIncident);
+export function generateDataset(seed = DEFAULT_SEED, opts: DatasetOptions = {}): GeneratedIncident[] {
+  return planDataset(seed, opts).map(generateIncident);
 }
+
+/**
+ * The held-out test set: a different seed, id prefix and topology rotation.
+ * Prompt work is tuned on the default (dev) set only; this set is run once per
+ * candidate at the end, so its number isn't inflated by tuning.
+ */
+export const TEST_SET = { seed: "log-triage-test-v1", idPrefix: "test", topologyShift: 2 } as const;

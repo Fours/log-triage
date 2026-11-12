@@ -1,0 +1,164 @@
+{
+  "score": {
+    "incidentId": "gen-021",
+    "difficulty": "easy",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.92,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 1,
+    "costUsd": 0.049032,
+    "durationMs": 14190,
+    "iterations": 5,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 12,
+      "output": 1049,
+      "cacheRead": 15645,
+      "cacheWrite": 4975
+    }
+  },
+  "result": {
+    "incidentId": "gen-021",
+    "model": "claude-opus-5-5",
+    "prompt": "v2",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.92,
+          "evidenceLines": [
+            86,
+            109,
+            130,
+            131,
+            158,
+            159
+          ],
+          "reasoning": "The ingest-api heap filled up steadily: old gen was not reclaimed after full GC (78% at 19:49, then 87% at 19:52). It then crashed with OutOfMemoryError in eventCache.put and was OOMKilled at the 2Gi limit (ingest-api-0 at 19:55, ingest-api-1 at 19:58). That points to the event cache growing without a bound. Each crash or restart left no healthy upstream for a while, so the gateway returned 502s in bursts (lines 141, 168, 184, 205, which show the impact, not the cause). No deploy appears in the window; both restarts log the same v3.26.6. The single schema-validation DLQ message in event-processor (#41) is an unrelated one-off."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.04,
+          "evidenceLines": [
+            133,
+            162
+          ],
+          "reasoning": "v3.26.6 could have introduced the cache leak, but no release event appears in the window."
+        },
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.02,
+          "evidenceLines": [
+            41
+          ],
+          "reasoning": "One message failed schema validation and went to the DLQ. It was isolated and handled cleanly, and isn't tied to the 502s."
+        }
+      ],
+      "recommendedAction": "Short term, raise the ingest-api memory limit or restrict the event cache's size and eviction (for example an LRU or TTL cap) so pods stop being OOMKilled. Take a heap dump to find out why eventCache entries are never evicted, and fix the leak. Check whether v3.26.6 changed how the cache behaves."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "11 match(es):\n#41 2026-10-13T19:43:53Z WARN event-processor msg-866402 from events.raw failed schema validation (missing field \"version\"), moved to events.raw.dlq\n#86 2026-10-13T19:49:10Z WARN ingest-api heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#109 2026-10-13T19:52:33Z WARN ingest-api heap usage 87% after full GC (old gen not reclaimed), GC overhead 35%\n#130 2026-10-13T19:55:00Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#131 2026-10-13T19:55:01Z ERROR ingest-api container ingest-api-0 killed: OOMKilled (memory limit 2Gi), restart count 1\n#141 2026-10-13T19:56:26Z ERROR ingest-gateway [t-4414] POST /v1/events 502 17188ms: upstream ingest-api connection reset (no healthy upstream)\n#158 2026-10-13T19:58:39Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#159 2026-10-13T19:58:40Z ERROR ingest-api container ingest-api-1 killed: OOMKilled (memory limit 2Gi), restart count 2\n#168 2026-10-13T20:00:21Z ERROR ingest-gateway [t-4426] POST /v1/events 502 12971ms: upstream ingest-api connection reset (no healthy upstream)\n#184 2026-10-13T20:03:48Z ERROR ingest-gateway [t-4429] POST /v1/events 502 15775ms: upstream ingest-api connection reset (no healthy upstream)\n#205 2026-10-13T20:06:46Z ERROR ingest-gateway [t-4440] POST /v1/events 502 7360ms: upstream ingest-api connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "query": "heap"
+        },
+        "output": "15 match(es):\n#14 2026-10-13T19:40:47Z DEBUG ingest-api GC pause 17ms (young), heap 44%\n#35 2026-10-13T19:43:09Z DEBUG ingest-api GC pause 9ms (young), heap 41%\n#48 2026-10-13T19:44:56Z DEBUG ingest-api GC pause 9ms (young), heap 47%\n#70 2026-10-13T19:47:37Z DEBUG ingest-api GC pause 16ms (young), heap 36%\n#86 2026-10-13T19:49:10Z WARN ingest-api heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#89 2026-10-13T19:49:51Z DEBUG ingest-api GC pause 13ms (young), heap 34%\n#109 2026-10-13T19:52:33Z WARN ingest-api heap usage 87% after full GC (old gen not reclaimed), GC overhead 35%\n#115 2026-10-13T19:53:03Z DEBUG ingest-api GC pause 17ms (young), heap 38%\n#130 2026-10-13T19:55:00Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#135 2026-10-13T19:55:58Z DEBUG ingest-api GC pause 11ms (young), heap 47%\n#151 2026-10-13T19:57:42Z DEBUG ingest-api GC pause 13ms (young), heap 34%\n#158 2026-10-13T19:58:39Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#169 2026-10-13T20:00:21Z DEBUG ingest-api GC pause 13ms (young), heap 37%\n#181 2026-10-13T20:02:39Z DEBUG ingest-api GC pause 25ms (young), heap 33%\n#197 2026-10-13T20:05:51Z DEBUG ingest-api GC pause 21ms (young), heap 48%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "query": "cache"
+        },
+        "output": "4 match(es):\n#130 2026-10-13T19:55:00Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#133 2026-10-13T19:55:23Z INFO ingest-api started ingest-api v3.26.6, pid 1, warming event cache\n#158 2026-10-13T19:58:39Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#162 2026-10-13T19:59:11Z INFO ingest-api started ingest-api v3.26.6, pid 1, warming event cache"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "v3."
+        },
+        "output": "2 match(es):\n#133 2026-10-13T19:55:23Z INFO ingest-api started ingest-api v3.26.6, pid 1, warming event cache\n#162 2026-10-13T19:59:11Z INFO ingest-api started ingest-api v3.26.6, pid 1, warming event cache"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.92,
+              "evidenceLines": [
+                86,
+                109,
+                130,
+                131,
+                158,
+                159
+              ],
+              "reasoning": "The ingest-api heap filled up steadily: old gen was not reclaimed after full GC (78% at 19:49, then 87% at 19:52). It then crashed with OutOfMemoryError in eventCache.put and was OOMKilled at the 2Gi limit (ingest-api-0 at 19:55, ingest-api-1 at 19:58). That points to the event cache growing without a bound. Each crash or restart left no healthy upstream for a while, so the gateway returned 502s in bursts (lines 141, 168, 184, 205, which show the impact, not the cause). No deploy appears in the window; both restarts log the same v3.26.6. The single schema-validation DLQ message in event-processor (#41) is an unrelated one-off."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.04,
+              "evidenceLines": [
+                133,
+                162
+              ],
+              "reasoning": "v3.26.6 could have introduced the cache leak, but no release event appears in the window."
+            },
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.02,
+              "evidenceLines": [
+                41
+              ],
+              "reasoning": "One message failed schema validation and went to the DLQ. It was isolated and handled cleanly, and isn't tied to the 502s."
+            }
+          ],
+          "recommendedAction": "Short term, raise the ingest-api memory limit or restrict the event cache's size and eviction (for example an LRU or TTL cap) so pods stop being OOMKilled. Take a heap dump to find out why eventCache entries are never evicted, and fix the leak. Check whether v3.26.6 changed how the cache behaves."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1049,
+      "cacheReadTokens": 15645,
+      "cacheWriteTokens": 4975
+    },
+    "durationMs": 14190,
+    "stopReason": "tool_use"
+  }
+}

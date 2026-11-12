@@ -1,0 +1,150 @@
+{
+  "score": {
+    "incidentId": "gen-012",
+    "difficulty": "easy",
+    "scenario": "external_outage/cloud-object-storage",
+    "truth": "external_outage",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.82,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 4,
+      "precision": 0.6666666666666666,
+      "recall": 1,
+      "f1": 0.8
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0651382,
+    "durationMs": 16393,
+    "iterations": 5,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 12,
+      "output": 1189,
+      "cacheRead": 20726,
+      "cacheWrite": 7433
+    }
+  },
+  "result": {
+    "incidentId": "gen-012",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.82,
+          "evidenceLines": [
+            92,
+            96,
+            101,
+            98,
+            89,
+            117
+          ],
+          "reasoning": "Starting at 11:07, template-svc's PutObject calls to S3 (notifications-artifacts-prod, us-east-1) came back fast with 503 ServiceUnavailable (#92, #96, #101). By #98 the aws-sdk had used up its retry quota. Because the storage write failed, template-svc returned 500 to notification-svc (#89, #117), and notification-svc passed the 500 to the gateway for POST /v1/notify (#93, #102, #112, #130). Before 11:07, request volume, redis, notif-db and notif-worker all looked normal (#74-#88), so I saw no internal traffic spike that would explain the throttling. The S3 errors were fast 503s, not hangs. Renders went back to ok from around 11:11:44 (#115), which looks like S3 recovering. The disk warning on the gateway (#30) is unrelated."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.12,
+          "evidenceLines": [
+            98,
+            92
+          ],
+          "reasoning": "A 503 SlowDown from S3 can mean we are sending too many requests to that bucket or prefix. In that case the SDK's own retries (#98, 42 failed attempts in 60s) could make the throttling worse. I didn't see request volume go up before the errors started, so this seems less likely."
+        }
+      ],
+      "recommendedAction": "Check the AWS Health dashboard for S3 in us-east-1 and look at request-rate metrics for the notifications-artifacts-prod bucket. Add backoff with jitter or a circuit breaker on template-svc's S3 writes. Consider making the artifact write async or not required for /render, so an S3 problem doesn't fail the notification request. If S3 is throttling us for request rate, spread writes across more key prefixes."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "11 match(es):\n#30 2026-11-05T10:59:41Z WARN api-gateway disk usage 79% on /var/log (threshold 75%)\n#89 2026-11-05T11:07:04Z ERROR notification-svc [t-2718] TemplateClient.render failed: template-svc returned 500 (storage write failed)\n#92 2026-11-05T11:07:35Z ERROR template-svc [t-2720] PutObject s3://notifications-artifacts-prod/m-5757.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 28A0FB0)\n#93 2026-11-05T11:07:35Z ERROR api-gateway [t-2723] POST /v1/notify 500 15358ms: upstream notification-svc returned 500 Internal Server Error\n#96 2026-11-05T11:08:23Z ERROR template-svc [t-2726] PutObject s3://notifications-artifacts-prod/m-5760.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 4684663)\n#98 2026-11-05T11:08:38Z WARN template-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (42 failed attempts in 60s)\n#101 2026-11-05T11:09:26Z ERROR template-svc [t-2727] PutObject s3://notifications-artifacts-prod/m-5763.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 43D0979)\n#102 2026-11-05T11:09:44Z ERROR api-gateway [t-2730] POST /v1/notify 500 29087ms: upstream notification-svc returned 500 Internal Server Error\n#112 2026-11-05T11:11:27Z ERROR api-gateway [t-2734] POST /v1/notify 500 12247ms: upstream notification-svc returned 500 Internal Server Error\n#117 2026-11-05T11:11:47Z ERROR notification-svc [t-2741] TemplateClient.render failed: template-svc returned 500 (storage write failed)\n#130 2026-11-05T11:13:16Z ERROR api-gateway [t-2747] POST /v1/notify 500 23551ms: upstream notification-svc returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "limit": 30
+        },
+        "output": "24 match(es):\n#6 2026-11-05T10:56:54Z INFO template-svc [t-2676] POST /render m-5722 ok 83ms\n#12 2026-11-05T10:57:20Z INFO template-svc [t-2678] POST /render m-5724 ok 36ms\n#17 2026-11-05T10:58:08Z INFO template-svc [t-2679] POST /render m-5727 ok 43ms\n#21 2026-11-05T10:58:34Z DEBUG template-svc GC pause 13ms (young), heap 38%\n#37 2026-11-05T11:00:50Z INFO template-svc [t-2690] POST /render m-5737 ok 36ms\n#44 2026-11-05T11:01:24Z INFO template-svc [t-2693] POST /render m-5740 ok 23ms\n#46 2026-11-05T11:01:25Z DEBUG template-svc GC pause 11ms (young), heap 40%\n#55 2026-11-05T11:03:11Z DEBUG template-svc GC pause 18ms (young), heap 43%\n#59 2026-11-05T11:03:28Z INFO template-svc [t-2702] POST /render m-5747 ok 73ms\n#64 2026-11-05T11:04:04Z INFO template-svc [t-2705] POST /render m-5748 ok 70ms\n#70 2026-11-05T11:04:50Z INFO template-svc [t-2706] POST /render m-5751 ok 46ms\n#72 2026-11-05T11:05:03Z DEBUG template-svc GC pause 16ms (young), heap 30%\n#74 2026-11-05T11:05:14Z INFO template-svc [t-2707] POST /render m-5752 ok 55ms\n#91 2026-11-05T11:07:23Z DEBUG template-svc GC pause 20ms (young), heap 44%\n#92 2026-11-05T11:07:35Z ERROR template-svc [t-2720] PutObject s3://notifications-artifacts-prod/m-5757.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 28A0FB0)\n#96 2026-11-05T11:08:23Z ERROR template-svc [t-2726] PutObject s3://notifications-artifacts-prod/m-5760.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 4684663)\n#98 2026-11-05T11:08:38Z WARN template-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (42 failed attempts in 60s)\n#101 2026-11-05T11:09:26Z ERROR template-svc [t-2727] PutObject s3://notifications-artifacts-prod/m-5763.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 43D0979)\n#106 2026-11-05T11:09:57Z DEBUG template-svc GC pause 25ms (young), heap 43%\n#115 2026-11-05T11:11:44Z INFO template-svc [t-2737] POST /render m-5766 ok 30ms\n#120 2026-11-05T11:12:12Z INFO template-svc [t-2744] POST /render m-5768 ok 76ms\n#124 2026-11-05T11:12:38Z INFO template-svc [t-2746] POST /render m-5771 ok 69ms\n#128 2026-11-05T11:13:09Z DEBUG template-svc GC pause 6ms (young), heap 44%\n#132 2026-11-05T11:13:17Z INFO template-svc [t-2751] POST /render m-5772 ok 58ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "s3",
+          "limit": 30
+        },
+        "output": "4 match(es):\n#92 2026-11-05T11:07:35Z ERROR template-svc [t-2720] PutObject s3://notifications-artifacts-prod/m-5757.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 28A0FB0)\n#96 2026-11-05T11:08:23Z ERROR template-svc [t-2726] PutObject s3://notifications-artifacts-prod/m-5760.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 4684663)\n#98 2026-11-05T11:08:38Z WARN template-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (42 failed attempts in 60s)\n#101 2026-11-05T11:09:26Z ERROR template-svc [t-2727] PutObject s3://notifications-artifacts-prod/m-5763.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 43D0979)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 89,
+          "before": 15,
+          "after": 3
+        },
+        "output": "#74 2026-11-05T11:05:14Z INFO template-svc [t-2707] POST /render m-5752 ok 55ms\n#75 2026-11-05T11:05:14Z INFO api-gateway [t-2707] POST /v1/notify 200 146ms\n#76 2026-11-05T11:05:24Z INFO notif-worker processed batch of 78 messages from notifications.outbound (lag 270ms)\n#77 2026-11-05T11:05:32Z INFO notif-db InnoDB: page cleaner flushed 733 pages, buffer pool hit rate 99.9%\n#78 2026-11-05T11:05:46Z INFO notification-svc [t-2709] message m-5754 accepted, calling template-svc POST /render\n#79 2026-11-05T11:05:47Z INFO api-gateway [t-2709] POST /v1/notify 200 109ms\n#80 2026-11-05T11:05:52Z INFO redis stats: hits=12260 misses=617 evicted=0 connected_clients=44\n#81 2026-11-05T11:06:04Z DEBUG notification-svc GC pause 22ms (young), heap 42%\n#82 2026-11-05T11:06:15Z INFO notif-worker processed batch of 63 messages from notifications.outbound (lag 254ms)\n#83 2026-11-05T11:06:19Z INFO notification-svc [t-2710] message m-5755 accepted, calling template-svc POST /render\n#84 2026-11-05T11:06:19Z INFO api-gateway [t-2710] POST /v1/notify 200 101ms\n#85 2026-11-05T11:06:57Z INFO redis stats: hits=12498 misses=711 evicted=0 connected_clients=45\n#86 2026-11-05T11:06:58Z INFO notif-worker processed batch of 76 messages from notifications.outbound (lag 306ms)\n#87 2026-11-05T11:07:03Z INFO notification-svc [t-2714] message m-5756 accepted, calling template-svc POST /render\n#88 2026-11-05T11:07:03Z INFO api-gateway [t-2714] POST /v1/notify 200 90ms\n#89 2026-11-05T11:07:04Z ERROR notification-svc [t-2718] TemplateClient.render failed: template-svc returned 500 (storage write failed)\n#90 2026-11-05T11:07:18Z INFO notif-db InnoDB: page cleaner flushed 484 pages, buffer pool hit rate 98.8%\n#91 2026-11-05T11:07:23Z DEBUG template-svc GC pause 20ms (young), heap 44%\n#92 2026-11-05T11:07:35Z ERROR template-svc [t-2720] PutObject s3://notifications-artifacts-prod/m-5757.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 28A0FB0)"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-2720"
+        },
+        "output": "1 line(s) for t-2720:\n#92 2026-11-05T11:07:35Z ERROR template-svc [t-2720] PutObject s3://notifications-artifacts-prod/m-5757.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 28A0FB0)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.82,
+              "evidenceLines": [
+                92,
+                96,
+                101,
+                98,
+                89,
+                117
+              ],
+              "reasoning": "Starting at 11:07, template-svc's PutObject calls to S3 (notifications-artifacts-prod, us-east-1) came back fast with 503 ServiceUnavailable (#92, #96, #101). By #98 the aws-sdk had used up its retry quota. Because the storage write failed, template-svc returned 500 to notification-svc (#89, #117), and notification-svc passed the 500 to the gateway for POST /v1/notify (#93, #102, #112, #130). Before 11:07, request volume, redis, notif-db and notif-worker all looked normal (#74-#88), so I saw no internal traffic spike that would explain the throttling. The S3 errors were fast 503s, not hangs. Renders went back to ok from around 11:11:44 (#115), which looks like S3 recovering. The disk warning on the gateway (#30) is unrelated."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.12,
+              "evidenceLines": [
+                98,
+                92
+              ],
+              "reasoning": "A 503 SlowDown from S3 can mean we are sending too many requests to that bucket or prefix. In that case the SDK's own retries (#98, 42 failed attempts in 60s) could make the throttling worse. I didn't see request volume go up before the errors started, so this seems less likely."
+            }
+          ],
+          "recommendedAction": "Check the AWS Health dashboard for S3 in us-east-1 and look at request-rate metrics for the notifications-artifacts-prod bucket. Add backoff with jitter or a circuit breaker on template-svc's S3 writes. Consider making the artifact write async or not required for /render, so an S3 problem doesn't fail the notification request. If S3 is throttling us for request rate, spread writes across more key prefixes."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1189,
+      "cacheReadTokens": 20726,
+      "cacheWriteTokens": 7433
+    },
+    "durationMs": 16393,
+    "stopReason": "tool_use"
+  }
+}

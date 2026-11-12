@@ -1,0 +1,124 @@
+{
+  "score": {
+    "incidentId": "gen-016",
+    "difficulty": "easy",
+    "scenario": "config_error/rotated-credential",
+    "truth": "config_error",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "config_error",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 4,
+      "precision": 0.8,
+      "recall": 1,
+      "f1": 0.888888888888889
+    },
+    "herringsCited": 0,
+    "costUsd": 0.041345599999999996,
+    "durationMs": 9533,
+    "iterations": 3,
+    "toolCalls": 2,
+    "tokens": {
+      "input": 8,
+      "output": 726,
+      "cacheRead": 6293,
+      "cacheWrite": 5107
+    }
+  },
+  "result": {
+    "incidentId": "gen-016",
+    "model": "claude-opus-5-5",
+    "prompt": "v2",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "config_error",
+          "confidence": 0.9,
+          "evidenceLines": [
+            123,
+            129,
+            137,
+            142,
+            125
+          ],
+          "reasoning": "Card charges succeeded through 16:33:01 (#119). At 16:33:16 payment-svc reloaded CARDPROC_API_KEY version 7 and revoked version 6 (#123). From then on every charge got a 401 'invalid API key' from the card processor (#129, #137, #142). order-service saw these as 502s from payment-svc (#125, #172), and the gateway passed them on as 502s on POST /checkout, which is what paged. The new credential is bad (wrong, or not yet active at the processor) and the old one is already revoked. The postgres slow query (#38) is an unrelated audit_log scan from before the onset."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.07,
+          "evidenceLines": [
+            129,
+            137
+          ],
+          "reasoning": "Possible but less likely: the card processor itself may be failing auth checks. However, the 401s start right after the local key rotation, which points to our config."
+        }
+      ],
+      "recommendedAction": "Restore a valid card processor API key. Either un-revoke or roll back to secret version 6, or check that version 7 is correct and active at the card processor, then reload payment-svc secrets. Add a test charge to the secret rotation process before the old key gets revoked."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "10 match(es):\n#38 2026-11-04T16:23:35Z WARN postgres slow query 1599ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#125 2026-11-04T16:33:38Z ERROR order-service [t-5963] PaymentClient.charge failed: payment-svc returned 502 (upstream card processor error)\n#126 2026-11-04T16:33:46Z ERROR api-gateway [t-5964] POST /checkout 502 20676ms: upstream order-service returned 502 Bad Gateway\n#129 2026-11-04T16:34:22Z ERROR payment-svc [t-5966] card processor rejected request: 401 Unauthorized (invalid API key) POST https://api.cardproc.example/v1/charges\n#137 2026-11-04T16:35:57Z ERROR payment-svc [t-5968] card processor rejected request: 401 Unauthorized (invalid API key) POST https://api.cardproc.example/v1/charges\n#142 2026-11-04T16:37:11Z ERROR payment-svc [t-5972] card processor rejected request: 401 Unauthorized (invalid API key) POST https://api.cardproc.example/v1/charges\n#143 2026-11-04T16:37:15Z ERROR api-gateway [t-5973] POST /checkout 502 25111ms: upstream order-service returned 502 Bad Gateway\n#153 2026-11-04T16:40:02Z ERROR api-gateway [t-5974] POST /checkout 502 13435ms: upstream order-service returned 502 Bad Gateway\n#168 2026-11-04T16:44:19Z ERROR api-gateway [t-5978] POST /checkout 502 6632ms: upstream order-service returned 502 Bad Gateway\n#172 2026-11-04T16:44:53Z ERROR order-service [t-5982] PaymentClient.charge failed: payment-svc returned 502 (upstream card processor error)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "limit": 40
+        },
+        "output": "29 match(es):\n#9 2026-11-04T16:19:33Z INFO payment-svc [t-5902] POST /charge o-8571 ok 63ms\n#23 2026-11-04T16:21:17Z DEBUG payment-svc GC pause 15ms (young), heap 44%\n#34 2026-11-04T16:23:10Z INFO payment-svc [t-5915] POST /charge o-8581 ok 70ms\n#44 2026-11-04T16:24:33Z DEBUG payment-svc GC pause 12ms (young), heap 29%\n#46 2026-11-04T16:24:37Z INFO payment-svc [t-5920] POST /charge o-8586 ok 48ms\n#50 2026-11-04T16:24:56Z INFO payment-svc [t-5924] POST /charge o-8589 ok 22ms\n#54 2026-11-04T16:25:14Z INFO payment-svc [t-5927] POST /charge o-8590 ok 47ms\n#59 2026-11-04T16:26:02Z INFO payment-svc [t-5930] POST /charge o-8592 ok 84ms\n#69 2026-11-04T16:27:18Z INFO payment-svc [t-5934] POST /charge o-8596 ok 76ms\n#72 2026-11-04T16:27:38Z DEBUG payment-svc GC pause 23ms (young), heap 31%\n#76 2026-11-04T16:28:06Z INFO payment-svc [t-5935] POST /charge o-8599 ok 31ms\n#80 2026-11-04T16:28:34Z INFO payment-svc [t-5936] POST /charge o-8600 ok 74ms\n#84 2026-11-04T16:29:01Z INFO payment-svc [t-5939] POST /charge o-8602 ok 84ms\n#90 2026-11-04T16:29:42Z INFO payment-svc [t-5942] POST /charge o-8604 ok 87ms\n#97 2026-11-04T16:30:24Z DEBUG payment-svc GC pause 14ms (young), heap 42%\n#99 2026-11-04T16:30:38Z INFO payment-svc [t-5949] POST /charge o-8609 ok 26ms\n#105 2026-11-04T16:31:18Z INFO payment-svc [t-5953] POST /charge o-8613 ok 29ms\n#109 2026-11-04T16:31:46Z INFO payment-svc [t-5954] POST /charge o-8616 ok 32ms\n#117 2026-11-04T16:32:38Z DEBUG payment-svc GC pause 4ms (young), heap 30%\n#119 2026-11-04T16:33:01Z INFO payment-svc [t-5960] POST /charge o-8620 ok 53ms\n#123 2026-11-04T16:33:16Z INFO payment-svc secrets: reloaded CARDPROC_API_KEY from secrets store (version 7, previous 6 revoked)\n#128 2026-11-04T16:34:18Z DEBUG payment-svc GC pause 13ms (young), heap 30%\n#129 2026-11-04T16:34:22Z ERROR payment-svc [t-5966] card processor rejected request: 401 Unauthorized (invalid API key) POST https://api.cardproc.example/v1/charges\n#137 2026-11-04T16:35:57Z ERROR payment-svc [t-5968] card processor rejected request: 401 Unauthorized (invalid API key) POST https://api.cardproc.example/v1/charges\n#140 2026-11-04T16:36:34Z DEBUG payment-svc GC pause 23ms (young), heap 28%\n#142 2026-11-04T16:37:11Z ERROR payment-svc [t-5972] card processor rejected request: 401 Unauthorized (invalid API key) POST https://api.cardproc.example/v1/charges\n#152 2026-11-04T16:39:33Z DEBUG payment-svc GC pause 7ms (young), heap 34%\n#158 2026-11-04T16:41:18Z DEBUG payment-svc GC pause 7ms (young), heap 44%\n#167 2026-11-04T16:44:06Z DEBUG payment-svc GC pause 16ms (young), heap 39%"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "config_error",
+              "confidence": 0.9,
+              "evidenceLines": [
+                123,
+                129,
+                137,
+                142,
+                125
+              ],
+              "reasoning": "Card charges succeeded through 16:33:01 (#119). At 16:33:16 payment-svc reloaded CARDPROC_API_KEY version 7 and revoked version 6 (#123). From then on every charge got a 401 'invalid API key' from the card processor (#129, #137, #142). order-service saw these as 502s from payment-svc (#125, #172), and the gateway passed them on as 502s on POST /checkout, which is what paged. The new credential is bad (wrong, or not yet active at the processor) and the old one is already revoked. The postgres slow query (#38) is an unrelated audit_log scan from before the onset."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.07,
+              "evidenceLines": [
+                129,
+                137
+              ],
+              "reasoning": "Possible but less likely: the card processor itself may be failing auth checks. However, the 401s start right after the local key rotation, which points to our config."
+            }
+          ],
+          "recommendedAction": "Restore a valid card processor API key. Either un-revoke or roll back to secret version 6, or check that version 7 is correct and active at the card processor, then reload payment-svc secrets. Add a test charge to the secret rotation process before the old key gets revoked."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 2,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 726,
+      "cacheReadTokens": 6293,
+      "cacheWriteTokens": 5107
+    },
+    "durationMs": 9533,
+    "stopReason": "tool_use"
+  }
+}

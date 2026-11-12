@@ -1,0 +1,142 @@
+{
+  "score": {
+    "incidentId": "gen-029",
+    "difficulty": "hard",
+    "scenario": "config_error/rotated-credential",
+    "truth": "config_error",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "config_error",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 5,
+      "precision": 0.8333333333333334,
+      "recall": 1,
+      "f1": 0.9090909090909091
+    },
+    "herringsCited": 1,
+    "costUsd": 0.0618078,
+    "durationMs": 15673,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 1073,
+      "cacheRead": 15514,
+      "cacheWrite": 7441
+    }
+  },
+  "result": {
+    "incidentId": "gen-029",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "config_error",
+          "confidence": 0.88,
+          "evidenceLines": [
+            202,
+            217,
+            226,
+            232,
+            242,
+            218
+          ],
+          "reasoning": "At 22:25:11 auth-svc reloaded IDP_API_KEY from the secrets store (version 24) and version 23 was revoked (#202). Logins were succeeding right up to that point (#205, #211). From 22:25:51 on, every call auth-svc makes to the identity provider is rejected with 401 invalid API key (#217, #226, #232, #242). auth-svc passes this back as a 502, account-svc logs AuthClient.issueToken failures (#218), and edge-proxy returns 502s on POST /login. The key rotation is the cause: the new key is not valid at the IdP, or it was never registered there, and the old one is already revoked. Things I ruled out: the single connection reset at 22:19 (#114) recovered on retry; the slow audit_log query (#216) and the 429 throttle (#195) have nothing to do with the login path; the IdP is up, since it answers quickly with 401s and is not timing out or returning 5xx."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.08,
+          "evidenceLines": [
+            114,
+            217
+          ],
+          "reasoning": "The IdP could be having a problem of its own with key validation. Against that: the 401s start right after our own key rotation, and the only other IdP error was one transient reset earlier."
+        }
+      ],
+      "recommendedAction": "Roll auth-svc back to IDP_API_KEY version 23 by un-revoking it, or register or fix version 24 with the identity provider, then reload the secrets in auth-svc. Check that POST /tokens works again. After that, put the rotation process behind a check that confirms the new key works before the old one is revoked."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "25 match(es):\n#114 2026-11-25T22:19:34Z WARN auth-svc [t-2859] identity provider call failed: connection reset by peer POST https://idp.example/oauth2/token, retry 1/3\n#195 2026-11-25T22:24:45Z WARN edge-proxy rate limiter: client key k-2979 throttled (429), 127 req/s over quota\n#213 2026-11-25T22:25:51Z ERROR edge-proxy [t-2931] POST /login 502 27815ms: upstream account-svc returned 502 Bad Gateway\n#216 2026-11-25T22:26:19Z WARN accounts-db slow query 1939ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#217 2026-11-25T22:26:25Z ERROR auth-svc [t-2933] identity provider rejected request: 401 Unauthorized (invalid API key) POST https://idp.example/oauth2/token\n#218 2026-11-25T22:26:42Z ERROR account-svc [t-2934] AuthClient.issueToken failed: auth-svc returned 502 (upstream identity provider error)\n#221 2026-11-25T22:27:02Z ERROR edge-proxy [t-2936] POST /login 502 20084ms: upstream account-svc returned 502 Bad Gateway\n#226 2026-11-25T22:27:28Z ERROR auth-svc [t-2940] identity provider rejected request: 401 Unauthorized (invalid API key) POST https://idp.example/oauth2/token\n#230 2026-11-25T22:28:05Z ERROR edge-proxy [t-2944] POST /login 502 5489ms: upstream account-svc returned 502 Bad Gateway\n#232 2026-11-25T22:28:12Z ERROR auth-svc [t-2945] identity provider rejected request: 401 Unauthorized (invalid API key) POST https://idp.example/oauth2/token\n#239 2026-11-25T22:29:21Z ERROR account-svc [t-2950] AuthClient.issueToken failed: auth-svc returned 502 (upstream identity provider error)\n#242 2026-11-25T22:29:33Z ERROR auth-svc [t-2954] identity provider rejected request: 401 Unauthorized (invalid API key) POST https://idp.example/oauth2/token\n#243 2026-11-25T22:29:35Z ERROR edge-proxy [t-2956] POST /login 502 19848ms: upstream account-svc returned 502 Bad Gateway\n#244 2026-11-25T22:29:50Z ERROR edge-proxy [t-2960] POST /login 502 25547ms: upstream account-svc returned 502 Bad Gateway\n#248 2026-11-25T22:30:34Z ERROR account-svc [t-2961] AuthClient.issueToken failed: auth-svc returned 502 (upstream identity provider error)\n#251 2026-11-25T22:31:21Z ERROR edge-proxy [t-2965] POST /login 502 22470ms: upstream account-svc returned 502 Bad Gateway\n#255 2026-11-25T22:32:20Z ERROR edge-proxy [t-2969] POST /login 502 22561ms: upstream account-svc returned 502 Bad Gateway\n#259 2026-11-25T22:33:13Z ERROR edge-proxy [t-2973] POST /login 502 30100ms: upstream account-svc returned 502 Bad Gateway\n#260 2026-11-25T22:33:25Z ERROR account-svc [t-2977] AuthClient.issueToken failed: auth-svc returned 502 (upstream identity provider error)\n#267 2026-11-25T22:34:45Z ERROR edge-proxy [t-2980] POST /login 502 22301ms: upstream account-svc returned 502 Bad Gateway\n#268 2026-11-25T22:34:47Z ERROR account-svc [t-2981] AuthClient.issueToken failed: auth-svc returned 502 (upstream identity provider error)\n#271 2026-11-25T22:35:31Z ERROR edge-proxy [t-2985] POST /login 502 20379ms: upstream account-svc returned 502 Bad Gateway\n#275 2026-11-25T22:36:13Z ERROR edge-proxy [t-2988] POST /login 502 11960ms: upstream account-svc returned 502 Bad Gateway\n#279 2026-11-25T22:36:50Z ERROR account-svc [t-2991] AuthClient.issueToken failed: auth-svc returned 502 (upstream identity provider error)\n#280 2026-11-25T22:37:14Z ERROR edge-proxy [t-2995] POST /login 502 12050ms: upstream account-svc returned 502 Bad Gateway"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "key",
+          "limit": 40
+        },
+        "output": "6 match(es):\n#195 2026-11-25T22:24:45Z WARN edge-proxy rate limiter: client key k-2979 throttled (429), 127 req/s over quota\n#202 2026-11-25T22:25:11Z DEBUG auth-svc secrets: reloaded IDP_API_KEY from secrets store (version 24, previous 23 revoked)\n#217 2026-11-25T22:26:25Z ERROR auth-svc [t-2933] identity provider rejected request: 401 Unauthorized (invalid API key) POST https://idp.example/oauth2/token\n#226 2026-11-25T22:27:28Z ERROR auth-svc [t-2940] identity provider rejected request: 401 Unauthorized (invalid API key) POST https://idp.example/oauth2/token\n#232 2026-11-25T22:28:12Z ERROR auth-svc [t-2945] identity provider rejected request: 401 Unauthorized (invalid API key) POST https://idp.example/oauth2/token\n#242 2026-11-25T22:29:33Z ERROR auth-svc [t-2954] identity provider rejected request: 401 Unauthorized (invalid API key) POST https://idp.example/oauth2/token"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 213,
+          "before": 25,
+          "after": 4
+        },
+        "output": "#188 2026-11-25T22:24:12Z INFO edge-proxy [t-2911] POST /login 200 162ms\n#189 2026-11-25T22:24:16Z INFO session-cache stats: hits=18454 misses=473 evicted=0 connected_clients=34\n#190 2026-11-25T22:24:26Z INFO account-svc [t-2913] user u-1622 accepted, calling auth-svc POST /tokens\n#191 2026-11-25T22:24:26Z INFO edge-proxy [t-2913] POST /login 200 139ms\n#192 2026-11-25T22:24:30Z INFO audit-consumer processed batch of 50 messages from audit.events (lag 132ms)\n#193 2026-11-25T22:24:36Z INFO account-svc [t-2917] user u-1623 accepted, calling auth-svc POST /tokens\n#194 2026-11-25T22:24:37Z INFO edge-proxy [t-2917] POST /login 200 125ms\n#195 2026-11-25T22:24:45Z WARN edge-proxy rate limiter: client key k-2979 throttled (429), 127 req/s over quota\n#196 2026-11-25T22:24:47Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#197 2026-11-25T22:24:54Z INFO account-svc [t-2920] user u-1625 accepted, calling auth-svc POST /tokens\n#198 2026-11-25T22:24:55Z INFO edge-proxy [t-2920] POST /login 200 90ms\n#199 2026-11-25T22:25:02Z INFO account-svc [t-2921] user u-1627 accepted, calling auth-svc POST /tokens\n#200 2026-11-25T22:25:03Z INFO edge-proxy [t-2921] POST /login 200 136ms\n#201 2026-11-25T22:25:05Z DEBUG account-svc GC pause 9ms (young), heap 40%\n#202 2026-11-25T22:25:11Z DEBUG auth-svc secrets: reloaded IDP_API_KEY from secrets store (version 24, previous 23 revoked)\n#203 2026-11-25T22:25:14Z INFO audit-consumer processed batch of 84 messages from audit.events (lag 143ms)\n#204 2026-11-25T22:25:21Z INFO account-svc [t-2925] user u-1628 accepted, calling auth-svc POST /tokens\n#205 2026-11-25T22:25:21Z INFO auth-svc [t-2925] POST /tokens u-1628 ok 20ms\n#206 2026-11-25T22:25:21Z INFO edge-proxy [t-2925] POST /login 200 107ms\n#207 2026-11-25T22:25:25Z INFO session-cache stats: hits=14943 misses=800 evicted=0 connected_clients=33\n#208 2026-11-25T22:25:33Z INFO account-svc [t-2926] user u-1631 accepted, calling auth-svc POST /tokens\n#209 2026-11-25T22:25:34Z INFO edge-proxy [t-2926] POST /login 200 106ms\n#210 2026-11-25T22:25:40Z INFO account-svc [t-2927] user u-1633 accepted, calling auth-svc POST /tokens\n#211 2026-11-25T22:25:40Z INFO auth-svc [t-2927] POST /tokens u-1633 ok 29ms\n#212 2026-11-25T22:25:40Z INFO edge-proxy [t-2927] POST /login 200 150ms\n#213 2026-11-25T22:25:51Z ERROR edge-proxy [t-2931] POST /login 502 27815ms: upstream account-svc returned 502 Bad Gateway\n#214 2026-11-25T22:26:06Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 10\n#215 2026-11-25T22:26:07Z INFO audit-consumer processed batch of 89 messages from audit.events (lag 203ms)\n#216 2026-11-25T22:26:19Z WARN accounts-db slow query 1939ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#217 2026-11-25T22:26:25Z ERROR auth-svc [t-2933] identity provider rejected request: 401 Unauthorized (invalid API key) POST https://idp.example/oauth2/token"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-2931"
+        },
+        "output": "1 line(s) for t-2931:\n#213 2026-11-25T22:25:51Z ERROR edge-proxy [t-2931] POST /login 502 27815ms: upstream account-svc returned 502 Bad Gateway"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "config_error",
+              "confidence": 0.88,
+              "evidenceLines": [
+                202,
+                217,
+                226,
+                232,
+                242,
+                218
+              ],
+              "reasoning": "At 22:25:11 auth-svc reloaded IDP_API_KEY from the secrets store (version 24) and version 23 was revoked (#202). Logins were succeeding right up to that point (#205, #211). From 22:25:51 on, every call auth-svc makes to the identity provider is rejected with 401 invalid API key (#217, #226, #232, #242). auth-svc passes this back as a 502, account-svc logs AuthClient.issueToken failures (#218), and edge-proxy returns 502s on POST /login. The key rotation is the cause: the new key is not valid at the IdP, or it was never registered there, and the old one is already revoked. Things I ruled out: the single connection reset at 22:19 (#114) recovered on retry; the slow audit_log query (#216) and the 429 throttle (#195) have nothing to do with the login path; the IdP is up, since it answers quickly with 401s and is not timing out or returning 5xx."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.08,
+              "evidenceLines": [
+                114,
+                217
+              ],
+              "reasoning": "The IdP could be having a problem of its own with key validation. Against that: the 401s start right after our own key rotation, and the only other IdP error was one transient reset earlier."
+            }
+          ],
+          "recommendedAction": "Roll auth-svc back to IDP_API_KEY version 23 by un-revoking it, or register or fix version 24 with the identity provider, then reload the secrets in auth-svc. Check that POST /tokens works again. After that, put the rotation process behind a check that confirms the new key works before the old one is revoked."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1073,
+      "cacheReadTokens": 15514,
+      "cacheWriteTokens": 7441
+    },
+    "durationMs": 15673,
+    "stopReason": "tool_use"
+  }
+}

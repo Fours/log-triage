@@ -1,0 +1,142 @@
+{
+  "score": {
+    "incidentId": "test-038",
+    "difficulty": "easy",
+    "scenario": "external_outage/provider-5xx",
+    "truth": "external_outage",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 9,
+      "correct": 5,
+      "precision": 0.5555555555555556,
+      "recall": 1,
+      "f1": 0.7142857142857143
+    },
+    "herringsCited": 0,
+    "costUsd": 0.046521599999999996,
+    "durationMs": 11907,
+    "iterations": 4,
+    "toolCalls": 3,
+    "tokens": {
+      "input": 10,
+      "output": 843,
+      "cacheRead": 10883,
+      "cacheWrite": 5489
+    }
+  },
+  "result": {
+    "incidentId": "test-038",
+    "model": "claude-opus-5-5",
+    "prompt": "v1",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.85,
+          "evidenceLines": [
+            94,
+            98,
+            101,
+            104,
+            144,
+            107,
+            134,
+            105,
+            124
+          ],
+          "reasoning": "Before 08:46:36 every service looks healthy: catalog latency is normal, DB and redis are fine, GC is low and there are no deploys. The first anomaly is catalog-svc getting 502/503 errors from the third-party api.translate.example (#94, #98, #101). catalog-svc's circuit breaker then opens with an 87% failure rate (#104), and a half-open probe later fails again (#144), so the provider is still down. With the breaker open, catalog-svc fails fast with 503 to search-api's CatalogClient.getBatch (#107, #134). search-api passes that on to web-bff, which returns GET /search 503 (#105, #124, #128, #148)."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.1,
+          "evidenceLines": [
+            104,
+            107,
+            105
+          ],
+          "reasoning": "The 503s at the edge are spreading through the system because catalog-svc's breaker treats a translation failure as a failure of the whole batch call. Search fails because of how the failure spreads, not because anything inside our services is broken."
+        }
+      ],
+      "recommendedAction": "Escalate to the api.translate.example provider and check their status page. Meanwhile, make translation degrade gracefully in catalog-svc: when the breaker is open, return untranslated or cached text instead of a 503 on /products/batch. Also add a fallback in search-api so partial catalog data doesn't fail the whole /search request."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "11 match(es):\n#94 2026-11-19T08:46:36Z ERROR catalog-svc [t-2705] translation API returned 502 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id ef5323e)\n#98 2026-11-19T08:47:09Z ERROR catalog-svc [t-2710] translation API returned 503 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id 0fde73d)\n#101 2026-11-19T08:47:42Z ERROR catalog-svc [t-2712] translation API returned 503 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id a32af0c)\n#104 2026-11-19T08:48:14Z WARN catalog-svc circuit breaker OPEN for api.translate.example (failure rate 87% over 20 calls), failing fast for 30s\n#105 2026-11-19T08:48:21Z ERROR web-bff [t-2713] GET /search 503 17956ms: upstream search-api returned 503 Service Unavailable\n#107 2026-11-19T08:48:24Z ERROR search-api [t-2714] CatalogClient.getBatch failed: catalog-svc returned 503 (circuit open)\n#124 2026-11-19T08:51:17Z ERROR web-bff [t-2722] GET /search 503 29361ms: upstream search-api returned 503 Service Unavailable\n#128 2026-11-19T08:52:12Z ERROR web-bff [t-2726] GET /search 503 20486ms: upstream search-api returned 503 Service Unavailable\n#134 2026-11-19T08:53:49Z ERROR search-api [t-2729] CatalogClient.getBatch failed: catalog-svc returned 503 (circuit open)\n#144 2026-11-19T08:55:10Z WARN catalog-svc circuit breaker half-open probe to api.translate.example failed: 502, re-opening\n#148 2026-11-19T08:56:24Z ERROR web-bff [t-2732] GET /search 503 26017ms: upstream search-api returned 503 Service Unavailable"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 94,
+          "before": 40,
+          "after": 3
+        },
+        "output": "#54 2026-11-19T08:41:57Z INFO catalog-svc [t-2687] GET /products/batch p-3991 ok 46ms\n#55 2026-11-19T08:41:57Z INFO web-bff [t-2687] GET /search 200 105ms\n#56 2026-11-19T08:42:10Z INFO index-worker processed batch of 53 messages from catalog.updates (lag 157ms)\n#57 2026-11-19T08:42:17Z INFO redis-cache stats: hits=16730 misses=758 evicted=0 connected_clients=49\n#58 2026-11-19T08:42:38Z INFO search-api [t-2688] product p-3992 accepted, calling catalog-svc GET /products/batch\n#59 2026-11-19T08:42:38Z INFO web-bff [t-2688] GET /search 200 108ms\n#60 2026-11-19T08:42:41Z INFO index-worker processed batch of 117 messages from catalog.updates (lag 268ms)\n#61 2026-11-19T08:43:15Z INFO search-api [t-2689] product p-3993 accepted, calling catalog-svc GET /products/batch\n#62 2026-11-19T08:43:15Z INFO web-bff [t-2689] GET /search 200 77ms\n#63 2026-11-19T08:43:21Z DEBUG catalog-svc GC pause 11ms (young), heap 34%\n#64 2026-11-19T08:43:31Z INFO redis-cache stats: hits=9219 misses=768 evicted=0 connected_clients=54\n#65 2026-11-19T08:43:35Z INFO index-worker processed batch of 68 messages from catalog.updates (lag 252ms)\n#66 2026-11-19T08:43:37Z INFO catalog-db checkpoint complete: wrote 382 buffers (5.7%)\n#67 2026-11-19T08:43:37Z INFO search-api [t-2693] product p-3994 accepted, calling catalog-svc GET /products/batch\n#68 2026-11-19T08:43:38Z INFO catalog-svc [t-2693] GET /products/batch p-3994 ok 30ms\n#69 2026-11-19T08:43:38Z INFO web-bff [t-2693] GET /search 200 89ms\n#70 2026-11-19T08:44:12Z INFO search-api [t-2695] product p-3997 accepted, calling catalog-svc GET /products/batch\n#71 2026-11-19T08:44:12Z INFO catalog-svc [t-2695] GET /products/batch p-3997 ok 34ms\n#72 2026-11-19T08:44:12Z INFO web-bff [t-2695] GET /search 200 77ms\n#73 2026-11-19T08:44:20Z INFO index-worker processed batch of 44 messages from catalog.updates (lag 184ms)\n#74 2026-11-19T08:44:34Z INFO search-api [t-2698] product p-3999 accepted, calling catalog-svc GET /products/batch\n#75 2026-11-19T08:44:34Z INFO web-bff [t-2698] GET /search 200 136ms\n#76 2026-11-19T08:44:34Z DEBUG search-api GC pause 9ms (young), heap 36%\n#77 2026-11-19T08:44:47Z INFO redis-cache stats: hits=18837 misses=209 evicted=0 connected_clients=34\n#78 2026-11-19T08:44:51Z INFO index-worker processed batch of 91 messages from catalog.updates (lag 258ms)\n#79 2026-11-19T08:45:00Z INFO search-api [t-2700] product p-4001 accepted, calling catalog-svc GET /products/batch\n#80 2026-11-19T08:45:00Z INFO catalog-svc [t-2700] GET /products/batch p-4001 ok 74ms\n#81 2026-11-19T08:45:00Z INFO web-bff [t-2700] GET /search 200 88ms\n#82 2026-11-19T08:45:12Z DEBUG web-bff upstream health: search-api ok, catalog-svc ok\n#83 2026-11-19T08:45:35Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 3\n#84 2026-11-19T08:45:40Z INFO index-worker processed batch of 98 messages from catalog.updates (lag 286ms)\n#85 2026-11-19T08:45:46Z INFO search-api [t-2701] product p-4002 accepted, calling catalog-svc GET /products/batch\n#86 2026-11-19T08:45:46Z INFO catalog-svc [t-2701] GET /products/batch p-4002 ok 57ms\n#87 2026-11-19T08:45:46Z INFO web-bff [t-2701] GET /search 200 98ms\n#88 2026-11-19T08:45:47Z INFO redis-cache stats: hits=13440 misses=283 evicted=0 connected_clients=51\n#89 2026-11-19T08:46:14Z INFO search-api [t-2704] product p-4005 accepted, calling catalog-svc GET /products/batch\n#90 2026-11-19T08:46:14Z INFO web-bff [t-2704] GET /search 200 101ms\n#91 2026-11-19T08:46:17Z DEBUG catalog-svc GC pause 10ms (young), heap 45%\n#92 2026-11-19T08:46:19Z DEBUG search-api GC pause 21ms (young), heap 41%\n#93 2026-11-19T08:46:21Z INFO index-worker processed batch of 71 messages from catalog.updates (lag 225ms)\n#94 2026-11-19T08:46:36Z ERROR catalog-svc [t-2705] translation API returned 502 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id ef5323e)\n#95 2026-11-19T08:46:59Z INFO search-api [t-2707] product p-4006 accepted, calling catalog-svc GET /products/batch\n#96 2026-11-19T08:47:00Z INFO web-bff [t-2707] GET /search 200 92ms\n#97 2026-11-19T08:47:07Z INFO redis-cache stats: hits=9632 misses=597 evicted=0 connected_clients=46"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.85,
+              "evidenceLines": [
+                94,
+                98,
+                101,
+                104,
+                144,
+                107,
+                134,
+                105,
+                124
+              ],
+              "reasoning": "Before 08:46:36 every service looks healthy: catalog latency is normal, DB and redis are fine, GC is low and there are no deploys. The first anomaly is catalog-svc getting 502/503 errors from the third-party api.translate.example (#94, #98, #101). catalog-svc's circuit breaker then opens with an 87% failure rate (#104), and a half-open probe later fails again (#144), so the provider is still down. With the breaker open, catalog-svc fails fast with 503 to search-api's CatalogClient.getBatch (#107, #134). search-api passes that on to web-bff, which returns GET /search 503 (#105, #124, #128, #148)."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.1,
+              "evidenceLines": [
+                104,
+                107,
+                105
+              ],
+              "reasoning": "The 503s at the edge are spreading through the system because catalog-svc's breaker treats a translation failure as a failure of the whole batch call. Search fails because of how the failure spreads, not because anything inside our services is broken."
+            }
+          ],
+          "recommendedAction": "Escalate to the api.translate.example provider and check their status page. Meanwhile, make translation degrade gracefully in catalog-svc: when the breaker is open, return untranslated or cached text instead of a 503 on /products/batch. Also add a fallback in search-api so partial catalog data doesn't fail the whole /search request."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 3,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 843,
+      "cacheReadTokens": 10883,
+      "cacheWriteTokens": 5489
+    },
+    "durationMs": 11907,
+    "stopReason": "tool_use"
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "score": {
+    "incidentId": "gen-032",
+    "difficulty": "medium",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 8,
+      "precision": 1,
+      "recall": 0.8888888888888888,
+      "f1": 0.9411764705882353
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0284536,
+    "durationMs": 10423,
+    "iterations": 3,
+    "toolCalls": 2,
+    "tokens": {
+      "input": 8,
+      "output": 793,
+      "cacheRead": 11208,
+      "cacheWrite": 2064
+    }
+  },
+  "result": {
+    "incidentId": "gen-032",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.88,
+          "evidenceLines": [
+            126,
+            129,
+            130,
+            137,
+            139,
+            146,
+            153,
+            165
+          ],
+          "reasoning": "At 08:57:10 the liveness probe failed on catalog-svc-1 and it restarted, which briefly left catalog-svc at 3/4 capacity. It was back at 4/4 by 08:57:40. On their own, that blip should have been harmless. But search-api retries 503s from CatalogClient.getBatch right away, up to 4 attempts, with backoff turned off. That pushed catalog-svc's inbound rate to 3.2x, then 4.1x, then 5.0x baseline, so it kept shedding load with 503s. That fed more retries, and web-bff kept returning 503 on /search. The loop keeps itself going, which is why the errors aren't recovering even though capacity came back."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.07,
+          "evidenceLines": [
+            126
+          ],
+          "reasoning": "Something on catalog-svc-1 may have run out and caused the liveness failure, but it recovered within 30 seconds."
+        }
+      ],
+      "recommendedAction": "Turn on exponential backoff with jitter, a retry budget and a circuit breaker in search-api's CatalogClient. To stop the current storm, temporarily rate-limit search-api's calls to catalog-svc or cut its retries to 1, then scale catalog-svc out until the backlog clears. Separately, look into why catalog-svc-1 failed its liveness probe."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "22 match(es):\n#57 2026-11-27T08:51:20Z WARN web-bff TLS certificate for *.internal.example expires in 26 days\n#65 2026-11-27T08:52:01Z WARN index-worker GC pause 1077ms (G1 Old Gen), heap 58% after collection\n#126 2026-11-27T08:57:10Z WARN catalog-svc instance catalog-svc-1 restarting (liveness probe failed), capacity 3/4\n#130 2026-11-27T08:57:48Z WARN search-api [t-7890] CatalogClient.getBatch got 503, retrying immediately (attempt 2/4, backoff disabled)\n#136 2026-11-27T08:58:22Z ERROR web-bff [t-7894] GET /search 503 28629ms: upstream search-api returned 503 (retries exhausted)\n#137 2026-11-27T08:58:24Z WARN catalog-svc inbound request rate 3.2x baseline (inflight 472), shedding load with 503\n#139 2026-11-27T08:58:42Z WARN search-api [t-7897] CatalogClient.getBatch got 503, retrying immediately (attempt 3/4, backoff disabled)\n#141 2026-11-27T08:58:48Z ERROR web-bff [t-7901] GET /search 503 17707ms: upstream search-api returned 503 (retries exhausted)\n#142 2026-11-27T08:58:50Z ERROR catalog-svc [t-7904] load shed: rejected GET /products/batch with 503 (queue full)\n#146 2026-11-27T08:59:04Z WARN search-api [t-7908] CatalogClient.getBatch got 503, retrying immediately (attempt 4/4, backoff disabled)\n#148 2026-11-27T08:59:38Z ERROR catalog-svc [t-7909] load shed: rejected GET /products/batch with 503 (queue full)\n#152 2026-11-27T09:00:14Z WARN search-api [t-7910] CatalogClient.getBatch got 503, retrying immediately (attempt 2/4, backoff disabled)\n#153 2026-11-27T09:00:16Z WARN catalog-svc inbound request rate 4.1x baseline (inflight 718), shedding load with 503\n#155 2026-11-27T09:00:31Z ERROR web-bff [t-7914] GET /search 503 27553ms: upstream search-api returned 503 (retries exhausted)\n#161 2026-11-27T09:01:10Z ERROR catalog-svc [t-7919] load shed: rejected GET /products/batch with 503 (queue full)\n#165 2026-11-27T09:01:32Z WARN catalog-svc inbound request rate 5.0x baseline (inflight 669), shedding load with 503\n#166 2026-11-27T09:01:33Z ERROR web-bff [t-7922] GET /search 503 9199ms: upstream search-api returned 503 (retries exhausted)\n#168 2026-11-27T09:02:16Z ERROR web-bff [t-7923] GET /search 503 8155ms: upstream search-api returned 503 (retries exhausted)\n#169 2026-11-27T09:02:21Z ERROR catalog-svc [t-7925] load shed: rejected GET /products/batch with 503 (queue full)\n#173 2026-11-27T09:03:15Z ERROR web-bff [t-7928] GET /search 503 24803ms: upstream search-api returned 503 (retries exhausted)\n#177 2026-11-27T09:04:14Z ERROR catalog-svc [t-7931] load shed: rejected GET /products/batch with 503 (queue full)\n#184 2026-11-27T09:04:32Z ERROR web-bff [t-7933] GET /search 503 23070ms: upstream search-api returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 126,
+          "before": 6,
+          "after": 4
+        },
+        "output": "#120 2026-11-27T08:56:40Z INFO catalog-svc [t-7883] GET /products/batch p-7644 ok 48ms\n#121 2026-11-27T08:56:40Z INFO web-bff [t-7883] GET /search 200 129ms\n#122 2026-11-27T08:57:01Z INFO index-worker processed batch of 116 messages from catalog.updates (lag 81ms)\n#123 2026-11-27T08:57:02Z INFO search-api [t-7887] product p-7647 accepted, calling catalog-svc GET /products/batch\n#124 2026-11-27T08:57:02Z INFO web-bff [t-7887] GET /search 200 67ms\n#125 2026-11-27T08:57:09Z INFO redis-cache stats: hits=14233 misses=449 evicted=0 connected_clients=47\n#126 2026-11-27T08:57:10Z WARN catalog-svc instance catalog-svc-1 restarting (liveness probe failed), capacity 3/4\n#127 2026-11-27T08:57:35Z INFO catalog-db checkpoint complete: wrote 1182 buffers (2.6%)\n#128 2026-11-27T08:57:39Z DEBUG search-api GC pause 15ms (young), heap 48%\n#129 2026-11-27T08:57:40Z INFO catalog-svc instance catalog-svc-1 ready, capacity 4/4\n#130 2026-11-27T08:57:48Z WARN search-api [t-7890] CatalogClient.getBatch got 503, retrying immediately (attempt 2/4, backoff disabled)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.88,
+              "evidenceLines": [
+                126,
+                129,
+                130,
+                137,
+                139,
+                146,
+                153,
+                165
+              ],
+              "reasoning": "At 08:57:10 the liveness probe failed on catalog-svc-1 and it restarted, which briefly left catalog-svc at 3/4 capacity. It was back at 4/4 by 08:57:40. On their own, that blip should have been harmless. But search-api retries 503s from CatalogClient.getBatch right away, up to 4 attempts, with backoff turned off. That pushed catalog-svc's inbound rate to 3.2x, then 4.1x, then 5.0x baseline, so it kept shedding load with 503s. That fed more retries, and web-bff kept returning 503 on /search. The loop keeps itself going, which is why the errors aren't recovering even though capacity came back."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.07,
+              "evidenceLines": [
+                126
+              ],
+              "reasoning": "Something on catalog-svc-1 may have run out and caused the liveness failure, but it recovered within 30 seconds."
+            }
+          ],
+          "recommendedAction": "Turn on exponential backoff with jitter, a retry budget and a circuit breaker in search-api's CatalogClient. To stop the current storm, temporarily rate-limit search-api's calls to catalog-svc or cut its retries to 1, then scale catalog-svc out until the backlog clears. Separately, look into why catalog-svc-1 failed its liveness probe."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 2,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 793,
+      "cacheReadTokens": 11208,
+      "cacheWriteTokens": 2064
+    },
+    "durationMs": 10423,
+    "stopReason": "tool_use"
+  }
+}

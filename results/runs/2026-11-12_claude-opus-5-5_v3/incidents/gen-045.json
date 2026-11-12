@@ -1,0 +1,166 @@
+{
+  "score": {
+    "incidentId": "gen-045",
+    "difficulty": "medium",
+    "scenario": "dependency_timeout/external-hang",
+    "truth": "dependency_timeout",
+    "acceptable": [
+      "external_outage"
+    ],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 8,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0697144,
+    "durationMs": 15653,
+    "iterations": 6,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 14,
+      "output": 1165,
+      "cacheRead": 27967,
+      "cacheWrite": 8153
+    }
+  },
+  "result": {
+    "incidentId": "gen-045",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.88,
+          "evidenceLines": [
+            152,
+            156,
+            165,
+            166,
+            172,
+            173,
+            175,
+            176
+          ],
+          "reasoning": "The first anomaly shows up at 02:49:06, when enrichment-svc's calls to the third-party geo-IP provider (api.geoip.example) slow down to 5.3s and then 11.2s (#152, #156). From 02:50:34 they hang until the 30s timeout (#165, #172, #175). ingest-api's EnrichClient calls then time out after 30s as well (#166, #173, #176). Those hung calls fill ingest-api's 50-connection HTTP pool to enrichment-svc (#178, #188), checkouts start timing out (#192), and ingest-gateway returns 503s on POST /v1/events (#177 onward). Those are symptoms. I ruled out other causes: geo-cache stats stay normal, events-db is healthy, there are no deploy lines, and the one early 400 (#44) is just a client validation error."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.1,
+          "evidenceLines": [
+            165,
+            172,
+            175
+          ],
+          "reasoning": "The geo-IP provider is a third party and may be having an outage. But it shows up as hanging calls and timeouts, not fast 5xx errors or a status-page notice, so dependency_timeout is the better fit."
+        }
+      ],
+      "recommendedAction": "Lower enrichment-svc's timeout for geo-IP calls (for example to about 2s) and add a circuit breaker so it falls back to geo-cache or skips geo enrichment when the provider is slow. Make ingest-api's enrich call non-blocking or cap its timeout so its connection pool can't fill up. Contact the geo-IP provider about their latency."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 80
+        },
+        "output": "19 match(es):\n#44 2026-11-04T02:39:07Z WARN ingest-gateway [t-7124] POST /v1/events 400 8ms: request validation failed: field \"email\" is not a valid address\n#152 2026-11-04T02:49:06Z WARN enrichment-svc [t-7196] geo-IP provider call slow: 5313ms (soft threshold 2000ms) POST https://api.geoip.example/v1/lookup\n#156 2026-11-04T02:49:33Z WARN enrichment-svc [t-7203] geo-IP provider call slow: 11200ms (soft threshold 2000ms) POST https://api.geoip.example/v1/lookup\n#165 2026-11-04T02:50:34Z ERROR enrichment-svc [t-7211] geo-IP provider call FAILED: upstream timeout after 30000ms POST https://api.geoip.example/v1/lookup\n#166 2026-11-04T02:50:35Z ERROR ingest-api [t-7211] EnrichClient.enrich timed out after 30000ms calling enrichment-svc POST /enrich (e-7927)\n#172 2026-11-04T02:51:50Z ERROR enrichment-svc [t-7213] geo-IP provider call FAILED: upstream timeout after 30000ms POST https://api.geoip.example/v1/lookup\n#173 2026-11-04T02:51:51Z ERROR ingest-api [t-7213] EnrichClient.enrich timed out after 30000ms calling enrichment-svc POST /enrich (e-7930)\n#175 2026-11-04T02:52:35Z ERROR enrichment-svc [t-7216] geo-IP provider call FAILED: upstream timeout after 30000ms POST https://api.geoip.example/v1/lookup\n#176 2026-11-04T02:52:35Z ERROR ingest-api [t-7216] EnrichClient.enrich timed out after 30000ms calling enrichment-svc POST /enrich (e-7931)\n#177 2026-11-04T02:52:46Z ERROR ingest-gateway [t-7220] POST /v1/events 503 20586ms: upstream ingest-api returned 503 Service Unavailable\n#178 2026-11-04T02:52:53Z WARN ingest-api HTTP connection pool to enrichment-svc at capacity (50/50 in use), 37 requests queued\n#188 2026-11-04T02:54:22Z WARN ingest-api HTTP connection pool to enrichment-svc at capacity (50/50 in use), 48 requests queued\n#192 2026-11-04T02:55:05Z ERROR ingest-api pool checkout timeout: no connection to enrichment-svc available after 5000ms\n#194 2026-11-04T02:55:35Z ERROR ingest-gateway [t-7224] POST /v1/events 503 16972ms: upstream ingest-api returned 503 Service Unavailable\n#200 2026-11-04T02:56:36Z ERROR ingest-gateway [t-7226] POST /v1/events 503 6640ms: upstream ingest-api returned 503 Service Unavailable\n#209 2026-11-04T02:57:31Z ERROR ingest-gateway [t-7233] POST /v1/events 503 7544ms: upstream ingest-api returned 503 Service Unavailable\n#223 2026-11-04T02:59:58Z ERROR ingest-gateway [t-7242] POST /v1/events 503 8220ms: upstream ingest-api returned 503 Service Unavailable\n#233 2026-11-04T03:02:01Z ERROR ingest-gateway [t-7246] POST /v1/events 503 15902ms: upstream ingest-api returned 503 Service Unavailable\n#238 2026-11-04T03:02:46Z ERROR ingest-gateway [t-7252] POST /v1/events 503 7091ms: upstream ingest-api returned 503 Service Unavailable"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "geo-cache",
+          "limit": 30
+        },
+        "output": "21 match(es):\n#9 2026-11-04T02:35:48Z INFO geo-cache stats: hits=12502 misses=749 evicted=0 connected_clients=48\n#19 2026-11-04T02:36:56Z INFO geo-cache stats: hits=9477 misses=554 evicted=0 connected_clients=47\n#36 2026-11-04T02:38:25Z INFO geo-cache stats: hits=19118 misses=259 evicted=0 connected_clients=39\n#49 2026-11-04T02:39:25Z INFO geo-cache stats: hits=19529 misses=613 evicted=0 connected_clients=47\n#60 2026-11-04T02:40:36Z INFO geo-cache stats: hits=16542 misses=446 evicted=0 connected_clients=42\n#78 2026-11-04T02:42:03Z INFO geo-cache stats: hits=16863 misses=859 evicted=0 connected_clients=55\n#94 2026-11-04T02:43:29Z INFO geo-cache stats: hits=16233 misses=244 evicted=0 connected_clients=45\n#109 2026-11-04T02:44:53Z INFO geo-cache stats: hits=19180 misses=607 evicted=0 connected_clients=34\n#122 2026-11-04T02:46:01Z INFO geo-cache stats: hits=8003 misses=566 evicted=0 connected_clients=49\n#139 2026-11-04T02:47:39Z INFO geo-cache stats: hits=11648 misses=390 evicted=0 connected_clients=39\n#151 2026-11-04T02:49:03Z INFO geo-cache stats: hits=12131 misses=213 evicted=0 connected_clients=58\n#162 2026-11-04T02:50:30Z INFO geo-cache stats: hits=13028 misses=829 evicted=0 connected_clients=39\n#171 2026-11-04T02:51:48Z INFO geo-cache stats: hits=14380 misses=340 evicted=0 connected_clients=43\n#182 2026-11-04T02:53:21Z INFO geo-cache stats: hits=19945 misses=539 evicted=0 connected_clients=57\n#191 2026-11-04T02:54:53Z INFO geo-cache stats: hits=9851 misses=871 evicted=0 connected_clients=33\n#197 2026-11-04T02:56:20Z INFO geo-cache stats: hits=17292 misses=222 evicted=0 connected_clients=37\n#210 2026-11-04T02:57:33Z INFO geo-cache stats: hits=14017 misses=894 evicted=0 connected_clients=39\n#220 2026-11-04T02:59:13Z INFO geo-cache stats: hits=11127 misses=755 evicted=0 connected_clients=33\n#228 2026-11-04T03:00:34Z INFO geo-cache stats: hits=14685 misses=891 evicted=0 connected_clients=60\n#232 2026-11-04T03:02:00Z INFO geo-cache stats: hits=12569 misses=516 evicted=0 connected_clients=34\n#243 2026-11-04T03:03:22Z INFO geo-cache stats: hits=13860 misses=608 evicted=0 connected_clients=43"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "geo",
+          "service": "enrichment-svc",
+          "limit": 40
+        },
+        "output": "5 match(es):\n#152 2026-11-04T02:49:06Z WARN enrichment-svc [t-7196] geo-IP provider call slow: 5313ms (soft threshold 2000ms) POST https://api.geoip.example/v1/lookup\n#156 2026-11-04T02:49:33Z WARN enrichment-svc [t-7203] geo-IP provider call slow: 11200ms (soft threshold 2000ms) POST https://api.geoip.example/v1/lookup\n#165 2026-11-04T02:50:34Z ERROR enrichment-svc [t-7211] geo-IP provider call FAILED: upstream timeout after 30000ms POST https://api.geoip.example/v1/lookup\n#172 2026-11-04T02:51:50Z ERROR enrichment-svc [t-7213] geo-IP provider call FAILED: upstream timeout after 30000ms POST https://api.geoip.example/v1/lookup\n#175 2026-11-04T02:52:35Z ERROR enrichment-svc [t-7216] geo-IP provider call FAILED: upstream timeout after 30000ms POST https://api.geoip.example/v1/lookup"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 152,
+          "before": 8,
+          "after": 3
+        },
+        "output": "#144 2026-11-04T02:48:15Z INFO ingest-api [t-7191] event e-7914 accepted, calling enrichment-svc POST /enrich\n#145 2026-11-04T02:48:15Z INFO ingest-gateway [t-7191] POST /v1/events 200 67ms\n#146 2026-11-04T02:48:27Z DEBUG enrichment-svc GC pause 5ms (young), heap 44%\n#147 2026-11-04T02:48:34Z INFO ingest-api [t-7194] event e-7915 accepted, calling enrichment-svc POST /enrich\n#148 2026-11-04T02:48:34Z INFO ingest-gateway [t-7194] POST /v1/events 200 78ms\n#149 2026-11-04T02:48:42Z DEBUG ingest-api GC pause 8ms (young), heap 33%\n#150 2026-11-04T02:48:45Z INFO event-processor processed batch of 110 messages from events.raw (lag 41ms)\n#151 2026-11-04T02:49:03Z INFO geo-cache stats: hits=12131 misses=213 evicted=0 connected_clients=58\n#152 2026-11-04T02:49:06Z WARN enrichment-svc [t-7196] geo-IP provider call slow: 5313ms (soft threshold 2000ms) POST https://api.geoip.example/v1/lookup\n#153 2026-11-04T02:49:15Z INFO ingest-api [t-7199] event e-7918 accepted, calling enrichment-svc POST /enrich\n#154 2026-11-04T02:49:15Z INFO enrichment-svc [t-7199] POST /enrich e-7918 ok 33ms\n#155 2026-11-04T02:49:16Z INFO ingest-gateway [t-7199] POST /v1/events 200 50ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "events-db"
+        },
+        "output": "13 match(es):\n#25 2026-11-04T02:37:37Z INFO events-db InnoDB: page cleaner flushed 771 pages, buffer pool hit rate 99.1%\n#48 2026-11-04T02:39:20Z INFO events-db InnoDB: page cleaner flushed 131 pages, buffer pool hit rate 99.1%\n#71 2026-11-04T02:41:26Z INFO events-db InnoDB: page cleaner flushed 553 pages, buffer pool hit rate 99.8%\n#90 2026-11-04T02:43:20Z INFO events-db InnoDB: page cleaner flushed 797 pages, buffer pool hit rate 98.5%\n#115 2026-11-04T02:45:29Z INFO events-db InnoDB: page cleaner flushed 287 pages, buffer pool hit rate 99.8%\n#142 2026-11-04T02:48:05Z INFO events-db InnoDB: page cleaner flushed 235 pages, buffer pool hit rate 99.7%\n#167 2026-11-04T02:50:40Z INFO events-db InnoDB: page cleaner flushed 875 pages, buffer pool hit rate 99.5%\n#179 2026-11-04T02:52:56Z INFO events-db InnoDB: page cleaner flushed 524 pages, buffer pool hit rate 99%\n#190 2026-11-04T02:54:52Z INFO events-db InnoDB: page cleaner flushed 746 pages, buffer pool hit rate 99.2%\n#199 2026-11-04T02:56:35Z INFO events-db InnoDB: page cleaner flushed 579 pages, buffer pool hit rate 98.7%\n#213 2026-11-04T02:58:33Z INFO events-db InnoDB: page cleaner flushed 724 pages, buffer pool hit rate 99.4%\n#227 2026-11-04T03:00:22Z INFO events-db InnoDB: page cleaner flushed 186 pages, buffer pool hit rate 99.6%\n#239 2026-11-04T03:02:47Z INFO events-db InnoDB: page cleaner flushed 686 pages, buffer pool hit rate 98.5%"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.88,
+              "evidenceLines": [
+                152,
+                156,
+                165,
+                166,
+                172,
+                173,
+                175,
+                176
+              ],
+              "reasoning": "The first anomaly shows up at 02:49:06, when enrichment-svc's calls to the third-party geo-IP provider (api.geoip.example) slow down to 5.3s and then 11.2s (#152, #156). From 02:50:34 they hang until the 30s timeout (#165, #172, #175). ingest-api's EnrichClient calls then time out after 30s as well (#166, #173, #176). Those hung calls fill ingest-api's 50-connection HTTP pool to enrichment-svc (#178, #188), checkouts start timing out (#192), and ingest-gateway returns 503s on POST /v1/events (#177 onward). Those are symptoms. I ruled out other causes: geo-cache stats stay normal, events-db is healthy, there are no deploy lines, and the one early 400 (#44) is just a client validation error."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.1,
+              "evidenceLines": [
+                165,
+                172,
+                175
+              ],
+              "reasoning": "The geo-IP provider is a third party and may be having an outage. But it shows up as hanging calls and timeouts, not fast 5xx errors or a status-page notice, so dependency_timeout is the better fit."
+            }
+          ],
+          "recommendedAction": "Lower enrichment-svc's timeout for geo-IP calls (for example to about 2s) and add a circuit breaker so it falls back to geo-cache or skips geo enrichment when the provider is slow. Make ingest-api's enrich call non-blocking or cap its timeout so its connection pool can't fill up. Contact the geo-IP provider about their latency."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 1165,
+      "cacheReadTokens": 27967,
+      "cacheWriteTokens": 8153
+    },
+    "durationMs": 15653,
+    "stopReason": "tool_use"
+  }
+}

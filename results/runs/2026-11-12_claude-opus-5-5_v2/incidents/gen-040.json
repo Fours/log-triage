@@ -1,0 +1,145 @@
+{
+  "score": {
+    "incidentId": "gen-040",
+    "difficulty": "medium",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.92,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 9,
+      "correct": 9,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0507382,
+    "durationMs": 11987,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 855,
+      "cacheRead": 12691,
+      "cacheWrite": 6212
+    }
+  },
+  "result": {
+    "incidentId": "gen-040",
+    "model": "claude-opus-5-5",
+    "prompt": "v2",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.92,
+          "evidenceLines": [
+            39,
+            84,
+            101,
+            135,
+            136,
+            154,
+            155,
+            176,
+            178
+          ],
+          "reasoning": "order-service's heap keeps climbing after each full GC: 78% at 22:57, 84% at 23:01, 90% at 23:02, and GC overhead goes from 20% to 50%. The old generation is not being freed, which points to a leak in orderCache. Then OutOfMemoryError is thrown at orderCache.put and order-service-2 is OOMKilled at 23:05, 23:08 and 23:11, with the restart count going up each time. While a pod is down or restarting, the gateway sees connection resets and 'no healthy upstream' and returns 502s on POST /checkout (#140, #149, #158 and later). The OOM cycles explain why the 502s come in bursts. payment-svc, postgres and redis log no errors. No deploy or config change appears in the logs, and the TLS expiry warning is a red herring."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.05,
+          "evidenceLines": [
+            135
+          ],
+          "reasoning": "A recent release could have added the unbounded cache, but no deploy line appears in the window."
+        }
+      ],
+      "recommendedAction": "Restart order-service pods or add replicas to get through the immediate problem, and raise the memory limit for now. Put a size limit and eviction (TTL) on orderCache, then take a heap dump to confirm the leak. Check whether a recent change caused the cache to grow without limit."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "17 match(es):\n#34 2026-11-24T22:57:21Z WARN api-gateway TLS certificate for *.internal.example expires in 12 days\n#39 2026-11-24T22:57:46Z WARN order-service heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#84 2026-11-24T23:01:04Z WARN order-service heap usage 84% after full GC (old gen not reclaimed), GC overhead 35%\n#101 2026-11-24T23:02:49Z WARN order-service heap usage 90% after full GC (old gen not reclaimed), GC overhead 50%\n#135 2026-11-24T23:05:12Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#136 2026-11-24T23:05:13Z ERROR order-service container order-service-2 killed: OOMKilled (memory limit 2Gi), restart count 1\n#140 2026-11-24T23:05:51Z ERROR api-gateway [t-5076] POST /checkout 502 29510ms: upstream order-service connection reset (no healthy upstream)\n#149 2026-11-24T23:07:15Z ERROR api-gateway [t-5083] POST /checkout 502 24662ms: upstream order-service connection reset (no healthy upstream)\n#154 2026-11-24T23:08:28Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#155 2026-11-24T23:08:29Z ERROR order-service container order-service-2 killed: OOMKilled (memory limit 2Gi), restart count 2\n#158 2026-11-24T23:09:00Z ERROR api-gateway [t-5086] POST /checkout 502 20195ms: upstream order-service connection reset (no healthy upstream)\n#172 2026-11-24T23:11:09Z ERROR api-gateway [t-5095] POST /checkout 502 17002ms: upstream order-service connection reset (no healthy upstream)\n#176 2026-11-24T23:11:19Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#178 2026-11-24T23:11:20Z ERROR order-service container order-service-2 killed: OOMKilled (memory limit 2Gi), restart count 3\n#193 2026-11-24T23:12:59Z ERROR api-gateway [t-5108] POST /checkout 502 26328ms: upstream order-service connection reset (no healthy upstream)\n#204 2026-11-24T23:14:39Z ERROR api-gateway [t-5113] POST /checkout 502 26556ms: upstream order-service connection reset (no healthy upstream)\n#216 2026-11-24T23:16:53Z ERROR api-gateway [t-5118] POST /checkout 502 26954ms: upstream order-service connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "order-service",
+          "limit": 40,
+          "query": "e"
+        },
+        "output": "66 match(es), showing first 40:\n#1 2026-11-24T22:54:00Z INFO order-service [t-5005] order o-2764 accepted, calling payment-svc POST /charge\n#5 2026-11-24T22:54:19Z DEBUG order-service GC pause 18ms (young), heap 37%\n#6 2026-11-24T22:54:25Z INFO order-service [t-5009] order o-2765 accepted, calling payment-svc POST /charge\n#9 2026-11-24T22:54:42Z INFO order-service [t-5010] order o-2766 accepted, calling payment-svc POST /charge\n#13 2026-11-24T22:55:09Z INFO order-service [t-5014] order o-2769 accepted, calling payment-svc POST /charge\n#17 2026-11-24T22:55:39Z INFO order-service [t-5015] order o-2771 accepted, calling payment-svc POST /charge\n#19 2026-11-24T22:56:02Z INFO order-service [t-5016] order o-2772 accepted, calling payment-svc POST /charge\n#22 2026-11-24T22:56:23Z INFO order-service [t-5018] order o-2773 accepted, calling payment-svc POST /charge\n#25 2026-11-24T22:56:53Z INFO order-service [t-5019] order o-2774 accepted, calling payment-svc POST /charge\n#29 2026-11-24T22:57:11Z DEBUG order-service GC pause 20ms (young), heap 36%\n#32 2026-11-24T22:57:16Z INFO order-service [t-5020] order o-2777 accepted, calling payment-svc POST /charge\n#36 2026-11-24T22:57:30Z INFO order-service [t-5022] order o-2780 accepted, calling payment-svc POST /charge\n#39 2026-11-24T22:57:46Z WARN order-service heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#40 2026-11-24T22:57:58Z INFO order-service [t-5026] order o-2782 accepted, calling payment-svc POST /charge\n#46 2026-11-24T22:58:09Z INFO order-service [t-5028] order o-2784 accepted, calling payment-svc POST /charge\n#49 2026-11-24T22:58:24Z INFO order-service [t-5029] order o-2787 accepted, calling payment-svc POST /charge\n#53 2026-11-24T22:58:48Z INFO order-service [t-5031] order o-2790 accepted, calling payment-svc POST /charge\n#57 2026-11-24T22:59:10Z INFO order-service [t-5032] order o-2793 accepted, calling payment-svc POST /charge\n#60 2026-11-24T22:59:22Z INFO order-service [t-5036] order o-2794 accepted, calling payment-svc POST /charge\n#64 2026-11-24T22:59:33Z INFO order-service [t-5038] order o-2795 accepted, calling payment-svc POST /charge\n#68 2026-11-24T23:00:01Z INFO order-service [t-5039] order o-2797 accepted, calling payment-svc POST /charge\n#72 2026-11-24T23:00:17Z DEBUG order-service GC pause 20ms (young), heap 46%\n#74 2026-11-24T23:00:28Z INFO order-service [t-5042] order o-2799 accepted, calling payment-svc POST /charge\n#77 2026-11-24T23:00:52Z INFO order-service [t-5045] order o-2802 accepted, calling payment-svc POST /charge\n#84 2026-11-24T23:01:04Z WARN order-service heap usage 84% after full GC (old gen not reclaimed), GC overhead 35%\n#85 2026-11-24T23:01:18Z INFO order-service [t-5049] order o-2804 accepted, calling payment-svc POST /charge\n#89 2026-11-24T23:01:42Z INFO order-service [t-5053] order o-2807 accepted, calling payment-svc POST /charge\n#92 2026-11-24T23:01:55Z INFO order-service [t-5054] order o-2809 accepted, calling payment-svc POST /charge\n#95 2026-11-24T23:02:16Z INFO order-service [t-5055] order o-2810 accepted, calling payment-svc POST /charge\n#98 2026-11-24T23:02:35Z INFO order-service [t-5058] order o-2813 accepted, calling payment-svc POST /charge\n#101 2026-11-24T23:02:49Z WARN order-service heap usage 90% after full GC (old gen not reclaimed), GC overhead 50%\n#104 2026-11-24T23:03:01Z INFO order-service [t-5059] order o-2816 accepted, calling payment-svc POST /charge\n#107 2026-11-24T23:03:20Z DEBUG order-service GC pause 24ms (young), heap 35%\n#108 2026-11-24T23:03:26Z INFO order-service [t-5061] order o-2817 accepted, calling payment-svc POST /charge\n#112 2026-11-24T23:03:39Z INFO order-service [t-5065] order o-2818 accepted, calling payment-svc POST /charge\n#116 2026-11-24T23:03:53Z INFO order-service [t-5066] order o-2819 accepted, calling payment-svc POST /charge\n#120 2026-11-24T23:04:08Z INFO order-service [t-5067] order o-2822 accepted, calling payment-svc POST /charge\n#123 2026-11-24T23:04:24Z INFO order-service [t-5068] order o-2825 accepted, calling payment-svc POST /charge\n#127 2026-11-24T23:04:42Z INFO order-service [t-5071] order o-2828 accepted, calling payment-svc POST /charge\n#130 2026-11-24T23:05:03Z INFO order-service [t-5073] order o-2829 accepted, calling payment-svc POST /charge"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "config"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.92,
+              "evidenceLines": [
+                39,
+                84,
+                101,
+                135,
+                136,
+                154,
+                155,
+                176,
+                178
+              ],
+              "reasoning": "order-service's heap keeps climbing after each full GC: 78% at 22:57, 84% at 23:01, 90% at 23:02, and GC overhead goes from 20% to 50%. The old generation is not being freed, which points to a leak in orderCache. Then OutOfMemoryError is thrown at orderCache.put and order-service-2 is OOMKilled at 23:05, 23:08 and 23:11, with the restart count going up each time. While a pod is down or restarting, the gateway sees connection resets and 'no healthy upstream' and returns 502s on POST /checkout (#140, #149, #158 and later). The OOM cycles explain why the 502s come in bursts. payment-svc, postgres and redis log no errors. No deploy or config change appears in the logs, and the TLS expiry warning is a red herring."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.05,
+              "evidenceLines": [
+                135
+              ],
+              "reasoning": "A recent release could have added the unbounded cache, but no deploy line appears in the window."
+            }
+          ],
+          "recommendedAction": "Restart order-service pods or add replicas to get through the immediate problem, and raise the memory limit for now. Put a size limit and eviction (TTL) on orderCache, then take a heap dump to confirm the leak. Check whether a recent change caused the cache to grow without limit."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 855,
+      "cacheReadTokens": 12691,
+      "cacheWriteTokens": 6212
+    },
+    "durationMs": 11987,
+    "stopReason": "tool_use"
+  }
+}

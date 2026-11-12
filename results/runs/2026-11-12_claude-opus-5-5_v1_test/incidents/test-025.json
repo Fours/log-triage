@@ -1,0 +1,145 @@
+{
+  "score": {
+    "incidentId": "test-025",
+    "difficulty": "medium",
+    "scenario": "data_integrity/partial-migration",
+    "truth": "data_integrity",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.6,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 4,
+      "precision": 0.6666666666666666,
+      "recall": 0.5714285714285714,
+      "f1": 0.6153846153846153
+    },
+    "herringsCited": 1,
+    "costUsd": 0.0410822,
+    "durationMs": 10598,
+    "iterations": 3,
+    "toolCalls": 2,
+    "tokens": {
+      "input": 8,
+      "output": 868,
+      "cacheRead": 5776,
+      "cacheWrite": 4507
+    }
+  },
+  "result": {
+    "incidentId": "test-025",
+    "model": "claude-opus-5-5",
+    "prompt": "v1",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.6,
+          "evidenceLines": [
+            135,
+            136,
+            138,
+            149,
+            157,
+            150
+          ],
+          "reasoning": "Migration 0079 renamed events.currency_code -> currency_code_old (step 1 committed, non-transactional DDL), then step 2 failed on lock timeout and was not rolled back. That left the schema half-migrated with no currency_code column, so every ingest-api write/query fails with 'Unknown column currency_code' (#149+), and ingest-gateway returns 500s. Requests were fine until right after #138."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.3,
+          "evidenceLines": [
+            135,
+            138
+          ],
+          "reasoning": "You could also call this a bad schema-migration rollout started by ingest-api."
+        },
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.03,
+          "evidenceLines": [
+            40
+          ],
+          "reasoning": "Red herring: a single schema-invalid message went to the DLQ well before onset, and event-processor stayed healthy."
+        }
+      ],
+      "recommendedAction": "Fix the half-applied migration 0079: rename currency_code_old back to currency_code (or finish steps 2-3 manually during a quiet lock window), then check that ingest-api queries succeed. Stop migrate retries until then. Going forward, make migrations idempotent and reversible, and don't do non-transactional rename-then-add DDL on hot tables without a lock-timeout plan."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "17 match(es):\n#40 2026-11-01T01:34:06Z WARN event-processor msg-567294 from events.raw failed schema validation (missing field \"version\"), moved to events.raw.dlq\n#138 2026-11-01T01:42:41Z ERROR ingest-api migrate: 0079_add_currency_code step 2/3 failed: lock timeout on events; step 1 already committed (non-transactional DDL), not rolled back\n#149 2026-11-01T01:43:49Z ERROR events-db Unknown column 'currency_code' in 'field list'\n#150 2026-11-01T01:44:07Z ERROR ingest-gateway [t-5089] POST /v1/events 500 21530ms: upstream ingest-api returned 500 Internal Server Error\n#154 2026-11-01T01:45:01Z ERROR events-db Unknown column 'currency_code' in 'field list'\n#157 2026-11-01T01:45:14Z ERROR ingest-api [t-5090] query on events failed for e-4553: Unknown column 'currency_code'\n#158 2026-11-01T01:45:29Z ERROR events-db Unknown column 'currency_code' in 'field list'\n#162 2026-11-01T01:46:00Z ERROR ingest-gateway [t-5097] POST /v1/events 500 18626ms: upstream ingest-api returned 500 Internal Server Error\n#166 2026-11-01T01:46:44Z ERROR ingest-gateway [t-5100] POST /v1/events 500 15506ms: upstream ingest-api returned 500 Internal Server Error\n#167 2026-11-01T01:46:47Z ERROR events-db Unknown column 'currency_code' in 'field list'\n#172 2026-11-01T01:47:56Z ERROR ingest-api [t-5104] query on events failed for e-4558: Unknown column 'currency_code'\n#174 2026-11-01T01:48:07Z ERROR ingest-gateway [t-5107] POST /v1/events 500 6744ms: upstream ingest-api returned 500 Internal Server Error\n#186 2026-11-01T01:50:10Z ERROR ingest-gateway [t-5116] POST /v1/events 500 15483ms: upstream ingest-api returned 500 Internal Server Error\n#190 2026-11-01T01:50:21Z ERROR ingest-api [t-5118] query on events failed for e-4563: Unknown column 'currency_code'\n#196 2026-11-01T01:52:17Z ERROR ingest-gateway [t-5120] POST /v1/events 500 19866ms: upstream ingest-api returned 500 Internal Server Error\n#200 2026-11-01T01:52:56Z ERROR ingest-api [t-5124] query on events failed for e-4565: Unknown column 'currency_code'\n#205 2026-11-01T01:53:31Z ERROR ingest-gateway [t-5129] POST /v1/events 500 9866ms: upstream ingest-api returned 500 Internal Server Error"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 138,
+          "before": 10,
+          "after": 6
+        },
+        "output": "#128 2026-11-01T01:41:56Z INFO ingest-gateway [t-5080] POST /v1/events 200 74ms\n#129 2026-11-01T01:42:18Z INFO geo-cache stats: hits=9120 misses=721 evicted=0 connected_clients=47\n#130 2026-11-01T01:42:20Z DEBUG ingest-gateway upstream health: ingest-api ok, enrichment-svc ok\n#131 2026-11-01T01:42:21Z INFO event-processor processed batch of 89 messages from events.raw (lag 214ms)\n#132 2026-11-01T01:42:24Z INFO ingest-api [t-5081] event e-4547 accepted, calling enrichment-svc POST /enrich\n#133 2026-11-01T01:42:24Z INFO enrichment-svc [t-5081] POST /enrich e-4547 ok 41ms\n#134 2026-11-01T01:42:24Z INFO ingest-gateway [t-5081] POST /v1/events 200 62ms\n#135 2026-11-01T01:42:24Z INFO ingest-api migrate: applying 0079_add_currency_code (3 steps) to events-db\n#136 2026-11-01T01:42:26Z INFO ingest-api migrate: 0079_add_currency_code step 1/3 ok: renamed column events.currency_code -> currency_code_old\n#137 2026-11-01T01:42:39Z INFO events-db InnoDB: page cleaner flushed 213 pages, buffer pool hit rate 98.8%\n#138 2026-11-01T01:42:41Z ERROR ingest-api migrate: 0079_add_currency_code step 2/3 failed: lock timeout on events; step 1 already committed (non-transactional DDL), not rolled back\n#139 2026-11-01T01:42:48Z INFO ingest-api [t-5085] event e-4549 accepted, calling enrichment-svc POST /enrich\n#140 2026-11-01T01:42:48Z INFO enrichment-svc [t-5085] POST /enrich e-4549 ok 37ms\n#141 2026-11-01T01:42:48Z INFO ingest-gateway [t-5085] POST /v1/events 200 91ms\n#142 2026-11-01T01:43:01Z INFO event-processor processed batch of 98 messages from events.raw (lag 169ms)\n#143 2026-11-01T01:43:18Z INFO ingest-api [t-5088] event e-4552 accepted, calling enrichment-svc POST /enrich\n#144 2026-11-01T01:43:18Z INFO enrichment-svc [t-5088] POST /enrich e-4552 ok 74ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.6,
+              "evidenceLines": [
+                135,
+                136,
+                138,
+                149,
+                157,
+                150
+              ],
+              "reasoning": "Migration 0079 renamed events.currency_code -> currency_code_old (step 1 committed, non-transactional DDL), then step 2 failed on lock timeout and was not rolled back. That left the schema half-migrated with no currency_code column, so every ingest-api write/query fails with 'Unknown column currency_code' (#149+), and ingest-gateway returns 500s. Requests were fine until right after #138."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.3,
+              "evidenceLines": [
+                135,
+                138
+              ],
+              "reasoning": "You could also call this a bad schema-migration rollout started by ingest-api."
+            },
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.03,
+              "evidenceLines": [
+                40
+              ],
+              "reasoning": "Red herring: a single schema-invalid message went to the DLQ well before onset, and event-processor stayed healthy."
+            }
+          ],
+          "recommendedAction": "Fix the half-applied migration 0079: rename currency_code_old back to currency_code (or finish steps 2-3 manually during a quiet lock window), then check that ingest-api queries succeed. Stop migrate retries until then. Going forward, make migrations idempotent and reversible, and don't do non-transactional rename-then-add DDL on hot tables without a lock-timeout plan."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 2,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 868,
+      "cacheReadTokens": 5776,
+      "cacheWriteTokens": 4507
+    },
+    "durationMs": 10598,
+    "stopReason": "tool_use"
+  }
+}

@@ -1,0 +1,163 @@
+{
+  "score": {
+    "incidentId": "test-022",
+    "difficulty": "hard",
+    "scenario": "dependency_timeout/db-lock-wait",
+    "truth": "dependency_timeout",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 0.6,
+      "f1": 0.7499999999999999
+    },
+    "herringsCited": 1,
+    "costUsd": 0.07021060000000001,
+    "durationMs": 14231,
+    "iterations": 5,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 12,
+      "output": 1214,
+      "cacheRead": 20838,
+      "cacheWrite": 8343
+    }
+  },
+  "result": {
+    "incidentId": "test-022",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.9,
+          "evidenceLines": [
+            168,
+            176,
+            187,
+            189,
+            194,
+            200
+          ],
+          "reasoning": "At 14:53:55 events-db reports TRANSACTION 87799, opened by enrichment-svc-reconciler, which had been active for 101s while holding a row lock on events (#168). After that, UPDATE events statements started hitting lock wait timeouts (#176, #189, #192). enrichment-svc's /enrich UPDATEs were canceled by the 10s statement timeout (#187, #194, #200). Those requests hung in the call chain: ingest-api's EnrichClient timed out after 15s (#188, #195, #201), its 50-connection pool to enrichment-svc filled up and requests started queueing (#203, #206, #216, #233), and the gateway returned 504s (#199 onward). These are downstream symptoms. Requests that don't touch locked rows keep succeeding (e.g. #178, #222). Ruled out: no deploy appears in the logs; gateway disk at 80% (#88), event-processor GC pauses (#182), a single DLQ'd schema-invalid message (#183) and a 400 validation error (#157) are unrelated noise."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.05,
+          "evidenceLines": [
+            203,
+            233
+          ],
+          "reasoning": "ingest-api's connection pool to enrichment-svc was saturated, but only because calls behind the lock were hanging. This is a symptom, not the origin."
+        },
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.03,
+          "evidenceLines": [
+            183
+          ],
+          "reasoning": "One message failed schema validation and was moved to the DLQ. It was handled correctly and is not on the POST path."
+        }
+      ],
+      "recommendedAction": "In events-db, find transaction 87799 (owned by enrichment-svc-reconciler) and kill it so the row lock on events is released. Then fix the reconciler so it doesn't hold row locks across long work: commit in small batches, set short lock and transaction timeouts, and lower its lock priority. Add an alert for long-running transactions on events-db. Also consider making ingest-api's enrich timeout shorter than the gateway's timeout and failing fast, so its connection pool can't fill up behind a lock."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "29 match(es):\n#88 2026-11-10T14:48:18Z WARN ingest-gateway disk usage 80% on /var/log (threshold 75%)\n#157 2026-11-10T14:53:02Z WARN ingest-gateway [t-3190] POST /v1/events 400 10ms: request validation failed: field \"email\" is not a valid address\n#176 2026-11-10T14:54:29Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)\n#182 2026-11-10T14:55:09Z WARN event-processor GC pause 861ms (G1 Old Gen), heap 63% after collection\n#183 2026-11-10T14:55:15Z WARN event-processor msg-687011 from events.raw failed schema validation (missing field \"version\"), moved to events.raw.dlq\n#187 2026-11-10T14:55:31Z ERROR enrichment-svc [t-3216] query canceled: statement timeout 10000ms (UPDATE events WHERE id = e-7094)\n#188 2026-11-10T14:55:36Z ERROR ingest-api [t-3216] EnrichClient.enrich timed out after 15000ms calling enrichment-svc POST /enrich (e-7094)\n#189 2026-11-10T14:55:37Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)\n#192 2026-11-10T14:55:58Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)\n#194 2026-11-10T14:56:25Z ERROR enrichment-svc [t-3218] query canceled: statement timeout 10000ms (UPDATE events WHERE id = e-7095)\n#195 2026-11-10T14:56:30Z ERROR ingest-api [t-3218] EnrichClient.enrich timed out after 15000ms calling enrichment-svc POST /enrich (e-7095)\n#199 2026-11-10T14:57:15Z ERROR ingest-gateway [t-3220] POST /v1/events 504 26620ms: upstream ingest-api timed out\n#200 2026-11-10T14:57:17Z ERROR enrichment-svc [t-3223] query canceled: statement timeout 10000ms (UPDATE events WHERE id = e-7096)\n#201 2026-11-10T14:57:22Z ERROR ingest-api [t-3223] EnrichClient.enrich timed out after 15000ms calling enrichment-svc POST /enrich (e-7096)\n#203 2026-11-10T14:57:28Z WARN ingest-api HTTP connection pool to enrichment-svc at capacity (50/50 in use), 34 requests queued\n#204 2026-11-10T14:57:43Z ERROR ingest-gateway [t-3225] POST /v1/events 504 16331ms: upstream ingest-api timed out\n#206 2026-11-10T14:57:53Z WARN ingest-api HTTP connection pool to enrichment-svc at capacity (50/50 in use), 49 requests queued\n#210 2026-11-10T14:58:24Z ERROR ingest-gateway [t-3227] POST /v1/events 504 28110ms: upstream ingest-api timed out\n#214 2026-11-10T14:58:57Z ERROR ingest-gateway [t-3232] POST /v1/events 504 22050ms: upstream ingest-api timed out\n#215 2026-11-10T14:59:03Z ERROR ingest-gateway [t-3234] POST /v1/events 504 21750ms: upstream ingest-api timed out\n#216 2026-11-10T14:59:16Z WARN ingest-api HTTP connection pool to enrichment-svc at capacity (50/50 in use), 71 requests queued\n#224 2026-11-10T14:59:42Z ERROR ingest-gateway [t-3245] POST /v1/events 504 12683ms: upstream ingest-api timed out\n#228 2026-11-10T15:00:05Z ERROR ingest-gateway [t-3246] POST /v1/events 504 19844ms: upstream ingest-api timed out\n#233 2026-11-10T15:00:16Z ERROR ingest-api pool checkout timeout: no connection to enrichment-svc available after 5000ms\n#234 2026-11-10T15:00:38Z ERROR ingest-gateway [t-3253] POST /v1/events 504 19692ms: upstream ingest-api timed out\n#237 2026-11-10T15:01:02Z ERROR ingest-gateway [t-3257] POST /v1/events 504 27317ms: upstream ingest-api timed out\n#239 2026-11-10T15:01:41Z ERROR ingest-gateway [t-3259] POST /v1/events 504 16688ms: upstream ingest-api timed out\n#245 2026-11-10T15:02:08Z ERROR ingest-gateway [t-3265] POST /v1/events 504 13552ms: upstream ingest-api timed out\n#252 2026-11-10T15:02:54Z ERROR ingest-gateway [t-3270] POST /v1/events 504 16154ms: upstream ingest-api timed out"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "events-db"
+        },
+        "output": "13 match(es):\n#30 2026-11-10T14:44:53Z INFO events-db InnoDB: page cleaner flushed 394 pages, buffer pool hit rate 98.8%\n#62 2026-11-10T14:46:52Z INFO events-db InnoDB: page cleaner flushed 155 pages, buffer pool hit rate 98.7%\n#108 2026-11-10T14:49:31Z INFO events-db InnoDB: page cleaner flushed 695 pages, buffer pool hit rate 99.2%\n#138 2026-11-10T14:51:42Z INFO events-db InnoDB: page cleaner flushed 163 pages, buffer pool hit rate 98.7%\n#168 2026-11-10T14:53:55Z INFO events-db TRANSACTION 87799, ACTIVE 101 sec, enrichment-svc-reconciler holding 1 row lock(s) on events, undo log entries 1\n#169 2026-11-10T14:53:55Z INFO events-db InnoDB: page cleaner flushed 706 pages, buffer pool hit rate 98.9%\n#176 2026-11-10T14:54:29Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)\n#189 2026-11-10T14:55:37Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)\n#192 2026-11-10T14:55:58Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)\n#193 2026-11-10T14:56:00Z INFO events-db InnoDB: page cleaner flushed 764 pages, buffer pool hit rate 99.6%\n#208 2026-11-10T14:57:58Z INFO events-db InnoDB: page cleaner flushed 788 pages, buffer pool hit rate 98.7%\n#226 2026-11-10T14:59:52Z INFO events-db InnoDB: page cleaner flushed 608 pages, buffer pool hit rate 99.3%\n#251 2026-11-10T15:02:25Z INFO events-db InnoDB: page cleaner flushed 766 pages, buffer pool hit rate 99.5%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "reconcil"
+        },
+        "output": "1 match(es):\n#168 2026-11-10T14:53:55Z INFO events-db TRANSACTION 87799, ACTIVE 101 sec, enrichment-svc-reconciler holding 1 row lock(s) on events, undo log entries 1"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "enrichment-svc",
+          "limit": 40
+        },
+        "output": "39 match(es):\n#6 2026-11-10T14:43:19Z INFO enrichment-svc [t-3070] POST /enrich e-6987 ok 41ms\n#11 2026-11-10T14:43:36Z DEBUG enrichment-svc GC pause 25ms (young), heap 44%\n#19 2026-11-10T14:44:10Z INFO enrichment-svc [t-3079] POST /enrich e-6996 ok 50ms\n#22 2026-11-10T14:44:18Z INFO enrichment-svc [t-3081] POST /enrich e-6999 ok 87ms\n#28 2026-11-10T14:44:52Z INFO enrichment-svc [t-3087] POST /enrich e-7003 ok 88ms\n#33 2026-11-10T14:44:58Z INFO enrichment-svc [t-3088] POST /enrich e-7004 ok 69ms\n#36 2026-11-10T14:45:12Z INFO enrichment-svc [t-3089] POST /enrich e-7005 ok 26ms\n#39 2026-11-10T14:45:19Z INFO enrichment-svc [t-3093] POST /enrich e-7008 ok 41ms\n#45 2026-11-10T14:45:45Z DEBUG enrichment-svc GC pause 25ms (young), heap 35%\n#47 2026-11-10T14:45:48Z INFO enrichment-svc [t-3101] POST /enrich e-7013 ok 45ms\n#53 2026-11-10T14:46:07Z INFO enrichment-svc [t-3106] POST /enrich e-7017 ok 60ms\n#67 2026-11-10T14:47:07Z INFO enrichment-svc [t-3113] POST /enrich e-7029 ok 36ms\n#73 2026-11-10T14:47:29Z INFO enrichment-svc [t-3121] POST /enrich e-7034 ok 78ms\n#76 2026-11-10T14:47:42Z INFO enrichment-svc [t-3124] POST /enrich e-7035 ok 39ms\n#84 2026-11-10T14:48:13Z DEBUG enrichment-svc GC pause 16ms (young), heap 38%\n#86 2026-11-10T14:48:13Z INFO enrichment-svc [t-3130] POST /enrich e-7040 ok 29ms\n#90 2026-11-10T14:48:26Z INFO enrichment-svc [t-3133] POST /enrich e-7041 ok 85ms\n#97 2026-11-10T14:48:44Z INFO enrichment-svc [t-3137] POST /enrich e-7046 ok 41ms\n#101 2026-11-10T14:48:56Z INFO enrichment-svc [t-3139] POST /enrich e-7049 ok 40ms\n#121 2026-11-10T14:50:23Z DEBUG enrichment-svc GC pause 10ms (young), heap 32%\n#131 2026-11-10T14:51:25Z INFO enrichment-svc [t-3173] POST /enrich e-7066 ok 69ms\n#135 2026-11-10T14:51:36Z INFO enrichment-svc [t-3174] POST /enrich e-7067 ok 25ms\n#142 2026-11-10T14:52:11Z INFO enrichment-svc [t-3179] POST /enrich e-7072 ok 88ms\n#145 2026-11-10T14:52:18Z INFO enrichment-svc [t-3183] POST /enrich e-7074 ok 61ms\n#156 2026-11-10T14:52:59Z DEBUG enrichment-svc GC pause 9ms (young), heap 37%\n#162 2026-11-10T14:53:23Z INFO enrichment-svc [t-3198] POST /enrich e-7085 ok 80ms\n#165 2026-11-10T14:53:41Z INFO enrichment-svc [t-3201] POST /enrich e-7086 ok 52ms\n#178 2026-11-10T14:54:33Z INFO enrichment-svc [t-3208] POST /enrich e-7090 ok 88ms\n#184 2026-11-10T14:55:23Z DEBUG enrichment-svc GC pause 12ms (young), heap 33%\n#187 2026-11-10T14:55:31Z ERROR enrichment-svc [t-3216] query canceled: statement timeout 10000ms (UPDATE events WHERE id = e-7094)\n#194 2026-11-10T14:56:25Z ERROR enrichment-svc [t-3218] query canceled: statement timeout 10000ms (UPDATE events WHERE id = e-7095)\n#200 2026-11-10T14:57:17Z ERROR enrichment-svc [t-3223] query canceled: statement timeout 10000ms (UPDATE events WHERE id = e-7096)\n#202 2026-11-10T14:57:27Z DEBUG enrichment-svc GC pause 25ms (young), heap 29%\n#220 2026-11-10T14:59:28Z DEBUG enrichment-svc GC pause 24ms (young), heap 32%\n#222 2026-11-10T14:59:31Z INFO enrichment-svc [t-3241] POST /enrich e-7103 ok 31ms\n#230 2026-11-10T15:00:05Z INFO enrichment-svc [t-3249] POST /enrich e-7104 ok 26ms\n#241 2026-11-10T15:01:58Z DEBUG enrichment-svc GC pause 13ms (young), heap 40%\n#243 2026-11-10T15:02:06Z INFO enrichment-svc [t-3263] POST /enrich e-7105 ok 78ms\n#249 2026-11-10T15:02:18Z INFO enrichment-svc [t-3268] POST /enrich e-7107 ok 83ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.9,
+              "evidenceLines": [
+                168,
+                176,
+                187,
+                189,
+                194,
+                200
+              ],
+              "reasoning": "At 14:53:55 events-db reports TRANSACTION 87799, opened by enrichment-svc-reconciler, which had been active for 101s while holding a row lock on events (#168). After that, UPDATE events statements started hitting lock wait timeouts (#176, #189, #192). enrichment-svc's /enrich UPDATEs were canceled by the 10s statement timeout (#187, #194, #200). Those requests hung in the call chain: ingest-api's EnrichClient timed out after 15s (#188, #195, #201), its 50-connection pool to enrichment-svc filled up and requests started queueing (#203, #206, #216, #233), and the gateway returned 504s (#199 onward). These are downstream symptoms. Requests that don't touch locked rows keep succeeding (e.g. #178, #222). Ruled out: no deploy appears in the logs; gateway disk at 80% (#88), event-processor GC pauses (#182), a single DLQ'd schema-invalid message (#183) and a 400 validation error (#157) are unrelated noise."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.05,
+              "evidenceLines": [
+                203,
+                233
+              ],
+              "reasoning": "ingest-api's connection pool to enrichment-svc was saturated, but only because calls behind the lock were hanging. This is a symptom, not the origin."
+            },
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.03,
+              "evidenceLines": [
+                183
+              ],
+              "reasoning": "One message failed schema validation and was moved to the DLQ. It was handled correctly and is not on the POST path."
+            }
+          ],
+          "recommendedAction": "In events-db, find transaction 87799 (owned by enrichment-svc-reconciler) and kill it so the row lock on events is released. Then fix the reconciler so it doesn't hold row locks across long work: commit in small batches, set short lock and transaction timeouts, and lower its lock priority. Add an alert for long-running transactions on events-db. Also consider making ingest-api's enrich timeout shorter than the gateway's timeout and failing fast, so its connection pool can't fill up behind a lock."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1214,
+      "cacheReadTokens": 20838,
+      "cacheWriteTokens": 8343
+    },
+    "durationMs": 14231,
+    "stopReason": "tool_use"
+  }
+}

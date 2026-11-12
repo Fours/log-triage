@@ -1,0 +1,154 @@
+{
+  "score": {
+    "incidentId": "test-011",
+    "difficulty": "hard",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.92,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 9,
+      "correct": 9,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 1,
+    "costUsd": 0.06598839999999999,
+    "durationMs": 13781,
+    "iterations": 4,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 10,
+      "output": 1108,
+      "cacheRead": 14442,
+      "cacheWrite": 8180
+    }
+  },
+  "result": {
+    "incidentId": "test-011",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.92,
+          "evidenceLines": [
+            99,
+            135,
+            179,
+            182,
+            183,
+            214,
+            215,
+            243,
+            244
+          ],
+          "reasoning": "Starting at 00:21, ingest-api's old gen stops being reclaimed after full GC: heap goes 78% → 84% → 90% and GC overhead goes 20% → 35% → 50%. Then it throws OutOfMemoryError at eventCache.put, and the pods are OOMKilled at the 2Gi limit: ingest-api-2 at 00:26, ingest-api-1 at 00:29, ingest-api-2 again at 00:31. That pattern points to an unbounded or leaking eventCache. While pods restart and GC thrashes, the gateway has no healthy upstream and returns 502s ('connection reset'), which is why they come in bursts. Ruled out: the event-processor v1.16.8 deploy (00:24:13) came after the heap growth began and is a different service. The events-db audit_log slow query and the 429 throttle on one client key look unrelated. Downstream services logged no errors."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.04,
+          "evidenceLines": [
+            151
+          ],
+          "reasoning": "The event-processor deploy falls inside the window. But it came after the heap growth started and it's in a service that isn't on the failing path, so it's unlikely to be the cause."
+        }
+      ],
+      "recommendedAction": "Raise the ingest-api memory limit and/or put a size cap or TTL eviction on eventCache to stop the OOM loop now. Take a heap dump to find what's holding onto cache entries (leak or unbounded growth), fix it, and add an alert on heap usage after full GC."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 80
+        },
+        "output": "23 match(es):\n#99 2026-10-19T00:21:03Z WARN ingest-api heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#135 2026-10-19T00:23:01Z WARN ingest-api heap usage 84% after full GC (old gen not reclaimed), GC overhead 35%\n#179 2026-10-19T00:26:00Z WARN ingest-api heap usage 90% after full GC (old gen not reclaimed), GC overhead 50%\n#182 2026-10-19T00:26:15Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#183 2026-10-19T00:26:16Z ERROR ingest-api container ingest-api-2 killed: OOMKilled (memory limit 2Gi), restart count 1\n#185 2026-10-19T00:26:24Z ERROR ingest-gateway [t-5421] POST /v1/events 502 26030ms: upstream ingest-api connection reset (no healthy upstream)\n#186 2026-10-19T00:26:26Z WARN ingest-gateway rate limiter: client key k-4124 throttled (429), 139 req/s over quota\n#189 2026-10-19T00:26:31Z WARN events-db slow query 1224ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#203 2026-10-19T00:28:12Z ERROR ingest-gateway [t-5433] POST /v1/events 502 21233ms: upstream ingest-api connection reset (no healthy upstream)\n#211 2026-10-19T00:28:55Z ERROR ingest-gateway [t-5440] POST /v1/events 502 19275ms: upstream ingest-api connection reset (no healthy upstream)\n#214 2026-10-19T00:29:03Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#215 2026-10-19T00:29:04Z ERROR ingest-api container ingest-api-1 killed: OOMKilled (memory limit 2Gi), restart count 2\n#226 2026-10-19T00:29:53Z ERROR ingest-gateway [t-5452] POST /v1/events 502 9061ms: upstream ingest-api connection reset (no healthy upstream)\n#242 2026-10-19T00:31:36Z ERROR ingest-gateway [t-5464] POST /v1/events 502 26135ms: upstream ingest-api connection reset (no healthy upstream)\n#243 2026-10-19T00:31:46Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#244 2026-10-19T00:31:47Z ERROR ingest-api container ingest-api-2 killed: OOMKilled (memory limit 2Gi), restart count 3\n#259 2026-10-19T00:32:49Z ERROR ingest-gateway [t-5473] POST /v1/events 502 27204ms: upstream ingest-api connection reset (no healthy upstream)\n#261 2026-10-19T00:33:23Z ERROR ingest-gateway [t-5475] POST /v1/events 502 7627ms: upstream ingest-api connection reset (no healthy upstream)\n#269 2026-10-19T00:34:48Z ERROR ingest-gateway [t-5481] POST /v1/events 502 6242ms: upstream ingest-api connection reset (no healthy upstream)\n#281 2026-10-19T00:36:00Z ERROR ingest-gateway [t-5492] POST /v1/events 502 23471ms: upstream ingest-api connection reset (no healthy upstream)\n#289 2026-10-19T00:36:50Z ERROR ingest-gateway [t-5499] POST /v1/events 502 27327ms: upstream ingest-api connection reset (no healthy upstream)\n#303 2026-10-19T00:38:43Z ERROR ingest-gateway [t-5507] POST /v1/events 502 13237ms: upstream ingest-api connection reset (no healthy upstream)\n#312 2026-10-19T00:39:26Z ERROR ingest-gateway [t-5515] POST /v1/events 502 24697ms: upstream ingest-api connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "query": "eventCache"
+        },
+        "output": "3 match(es):\n#182 2026-10-19T00:26:15Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#214 2026-10-19T00:29:03Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#243 2026-10-19T00:31:46Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "1 match(es):\n#151 2026-10-19T00:24:13Z INFO event-processor deploy: rolling out event-processor v1.16.8 (build 250701a)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "query": "heap"
+        },
+        "output": "18 match(es):\n#4 2026-10-19T00:15:15Z DEBUG ingest-api GC pause 15ms (young), heap 39%\n#37 2026-10-19T00:17:01Z DEBUG ingest-api GC pause 5ms (young), heap 36%\n#72 2026-10-19T00:19:29Z DEBUG ingest-api GC pause 5ms (young), heap 33%\n#99 2026-10-19T00:21:03Z WARN ingest-api heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#111 2026-10-19T00:21:45Z DEBUG ingest-api GC pause 19ms (young), heap 32%\n#135 2026-10-19T00:23:01Z WARN ingest-api heap usage 84% after full GC (old gen not reclaimed), GC overhead 35%\n#140 2026-10-19T00:23:26Z DEBUG ingest-api GC pause 9ms (young), heap 34%\n#172 2026-10-19T00:25:35Z DEBUG ingest-api GC pause 17ms (young), heap 36%\n#179 2026-10-19T00:26:00Z WARN ingest-api heap usage 90% after full GC (old gen not reclaimed), GC overhead 50%\n#182 2026-10-19T00:26:15Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#205 2026-10-19T00:28:17Z DEBUG ingest-api GC pause 15ms (young), heap 39%\n#214 2026-10-19T00:29:03Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#236 2026-10-19T00:30:59Z DEBUG ingest-api GC pause 13ms (young), heap 31%\n#243 2026-10-19T00:31:46Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#255 2026-10-19T00:32:47Z DEBUG ingest-api GC pause 25ms (young), heap 31%\n#280 2026-10-19T00:35:42Z DEBUG ingest-api GC pause 24ms (young), heap 42%\n#295 2026-10-19T00:37:46Z DEBUG ingest-api GC pause 5ms (young), heap 38%\n#313 2026-10-19T00:39:49Z DEBUG ingest-api GC pause 10ms (young), heap 38%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "level": "INFO",
+          "limit": 30
+        },
+        "output": "92 match(es), showing first 30:\n#1 2026-10-19T00:15:06Z INFO ingest-api [t-5292] event e-3437 accepted, calling enrichment-svc POST /enrich\n#6 2026-10-19T00:15:19Z INFO ingest-api [t-5294] event e-3438 accepted, calling enrichment-svc POST /enrich\n#9 2026-10-19T00:15:28Z INFO ingest-api [t-5295] event e-3439 accepted, calling enrichment-svc POST /enrich\n#12 2026-10-19T00:15:39Z INFO ingest-api [t-5298] event e-3441 accepted, calling enrichment-svc POST /enrich\n#14 2026-10-19T00:15:50Z INFO ingest-api [t-5300] event e-3443 accepted, calling enrichment-svc POST /enrich\n#17 2026-10-19T00:16:06Z INFO ingest-api [t-5301] event e-3444 accepted, calling enrichment-svc POST /enrich\n#21 2026-10-19T00:16:12Z INFO ingest-api [t-5303] event e-3445 accepted, calling enrichment-svc POST /enrich\n#24 2026-10-19T00:16:28Z INFO ingest-api [t-5306] event e-3446 accepted, calling enrichment-svc POST /enrich\n#27 2026-10-19T00:16:40Z INFO ingest-api [t-5310] event e-3447 accepted, calling enrichment-svc POST /enrich\n#31 2026-10-19T00:16:50Z INFO ingest-api [t-5314] event e-3450 accepted, calling enrichment-svc POST /enrich\n#34 2026-10-19T00:17:00Z INFO ingest-api [t-5316] event e-3453 accepted, calling enrichment-svc POST /enrich\n#39 2026-10-19T00:17:10Z INFO ingest-api [t-5319] event e-3454 accepted, calling enrichment-svc POST /enrich\n#42 2026-10-19T00:17:22Z INFO ingest-api [t-5320] event e-3456 accepted, calling enrichment-svc POST /enrich\n#46 2026-10-19T00:17:34Z INFO ingest-api [t-5322] event e-3459 accepted, calling enrichment-svc POST /enrich\n#48 2026-10-19T00:17:48Z INFO ingest-api [t-5324] event e-3462 accepted, calling enrichment-svc POST /enrich\n#51 2026-10-19T00:18:04Z INFO ingest-api [t-5325] event e-3464 accepted, calling enrichment-svc POST /enrich\n#53 2026-10-19T00:18:13Z INFO ingest-api [t-5329] event e-3467 accepted, calling enrichment-svc POST /enrich\n#56 2026-10-19T00:18:26Z INFO ingest-api [t-5332] event e-3468 accepted, calling enrichment-svc POST /enrich\n#60 2026-10-19T00:18:45Z INFO ingest-api [t-5333] event e-3469 accepted, calling enrichment-svc POST /enrich\n#64 2026-10-19T00:18:55Z INFO ingest-api [t-5335] event e-3470 accepted, calling enrichment-svc POST /enrich\n#66 2026-10-19T00:19:08Z INFO ingest-api [t-5338] event e-3473 accepted, calling enrichment-svc POST /enrich\n#68 2026-10-19T00:19:25Z INFO ingest-api [t-5339] event e-3475 accepted, calling enrichment-svc POST /enrich\n#74 2026-10-19T00:19:41Z INFO ingest-api [t-5343] event e-3476 accepted, calling enrichment-svc POST /enrich\n#77 2026-10-19T00:19:54Z INFO ingest-api [t-5345] event e-3479 accepted, calling enrichment-svc POST /enrich\n#81 2026-10-19T00:20:09Z INFO ingest-api [t-5347] event e-3481 accepted, calling enrichment-svc POST /enrich\n#84 2026-10-19T00:20:20Z INFO ingest-api [t-5350] event e-3482 accepted, calling enrichment-svc POST /enrich\n#86 2026-10-19T00:20:28Z INFO ingest-api [t-5352] event e-3483 accepted, calling enrichment-svc POST /enrich\n#90 2026-10-19T00:20:42Z INFO ingest-api [t-5353] event e-3486 accepted, calling enrichment-svc POST /enrich\n#92 2026-10-19T00:20:56Z INFO ingest-api [t-5354] event e-3487 accepted, calling enrichment-svc POST /enrich\n#96 2026-10-19T00:21:03Z INFO ingest-api [t-5356] event e-3489 accepted, calling enrichment-svc POST /enrich"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.92,
+              "evidenceLines": [
+                99,
+                135,
+                179,
+                182,
+                183,
+                214,
+                215,
+                243,
+                244
+              ],
+              "reasoning": "Starting at 00:21, ingest-api's old gen stops being reclaimed after full GC: heap goes 78% → 84% → 90% and GC overhead goes 20% → 35% → 50%. Then it throws OutOfMemoryError at eventCache.put, and the pods are OOMKilled at the 2Gi limit: ingest-api-2 at 00:26, ingest-api-1 at 00:29, ingest-api-2 again at 00:31. That pattern points to an unbounded or leaking eventCache. While pods restart and GC thrashes, the gateway has no healthy upstream and returns 502s ('connection reset'), which is why they come in bursts. Ruled out: the event-processor v1.16.8 deploy (00:24:13) came after the heap growth began and is a different service. The events-db audit_log slow query and the 429 throttle on one client key look unrelated. Downstream services logged no errors."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.04,
+              "evidenceLines": [
+                151
+              ],
+              "reasoning": "The event-processor deploy falls inside the window. But it came after the heap growth started and it's in a service that isn't on the failing path, so it's unlikely to be the cause."
+            }
+          ],
+          "recommendedAction": "Raise the ingest-api memory limit and/or put a size cap or TTL eviction on eventCache to stop the OOM loop now. Take a heap dump to find what's holding onto cache entries (leak or unbounded growth), fix it, and add an alert on heap usage after full GC."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1108,
+      "cacheReadTokens": 14442,
+      "cacheWriteTokens": 8180
+    },
+    "durationMs": 13781,
+    "stopReason": "tool_use"
+  }
+}

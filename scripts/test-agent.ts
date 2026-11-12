@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { strict as assert } from "node:assert";
 import Anthropic from "@anthropic-ai/sdk";
 import { triage, type MessagesClient, type TriageResult } from "../src/agent.js";
+import { PROMPTS } from "../src/prompts.js";
 import { loadIncident } from "../src/tools.js";
 import { toIncidentView } from "../src/types.js";
 
@@ -293,6 +294,17 @@ await check("usage, iterations and duration are accounted", async () => {
   assert.equal(r.usage.outputTokens, 200);
   assert.equal(r.usage.cacheReadTokens, 500);
   assert.ok(r.durationMs >= 0);
+});
+
+await check("prompt versions: the chosen version's system prompt is sent and recorded; unknown versions are rejected", async () => {
+  const v1 = await run([{ content: [submit()] }], { prompt: "v1" });
+  const v2 = await run([{ content: [submit()] }], { prompt: "v2" });
+  assert.equal(v1.fake.requests[0].system, PROMPTS.v1.system);
+  assert.equal(v2.fake.requests[0].system, PROMPTS.v2.system);
+  assert.notEqual(PROMPTS.v1.system, PROMPTS.v2.system);
+  assert.equal(v1.r.prompt, "v1");
+  assert.equal(v2.r.prompt, "v2");
+  await assert.rejects(run([{ content: [submit()] }], { prompt: "v999" }), /Unknown prompt version/);
 });
 
 console.log(`\n${passed} checks passed.`);

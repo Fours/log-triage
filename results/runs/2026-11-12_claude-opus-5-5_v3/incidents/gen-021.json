@@ -1,0 +1,138 @@
+{
+  "score": {
+    "incidentId": "gen-021",
+    "difficulty": "easy",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.92,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0582408,
+    "durationMs": 12185,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 872,
+      "cacheRead": 14629,
+      "cacheWrite": 7567
+    }
+  },
+  "result": {
+    "incidentId": "gen-021",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.92,
+          "evidenceLines": [
+            86,
+            109,
+            130,
+            131,
+            158,
+            159
+          ],
+          "reasoning": "ingest-api's old-gen heap keeps growing and full GC can't reclaim it: 78% at #86, then 87% at #109. It then hits OutOfMemoryError in eventCache.put (#130, #158), and both pods get OOMKilled at the 2Gi limit (#131, #159). The gateway's 502s ('connection reset / no healthy upstream') come in bursts that line up with those crashes and restarts, which explains why the 502s are intermittent. This looks like an unbounded cache or a leak. The restarts run the same version, v3.26.6, and no deploy shows up in the window. The schema-validation DLQ at #41 was handled normally and doesn't explain the 502s. enrichment-svc, events-db and geo-cache logged no errors."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.05,
+          "evidenceLines": [
+            133
+          ],
+          "reasoning": "v3.26.6 might have added the unbounded eventCache, but the logs show no deploy event during the incident window."
+        }
+      ],
+      "recommendedAction": "Raise ingest-api's memory limit or scale out for now. Then bound or evict eventCache (cap its size, add a TTL), take a heap dump to confirm the leak, and check recent changes to how eventCache is filled."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "11 match(es):\n#41 2026-10-13T19:43:53Z WARN event-processor msg-866402 from events.raw failed schema validation (missing field \"version\"), moved to events.raw.dlq\n#86 2026-10-13T19:49:10Z WARN ingest-api heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#109 2026-10-13T19:52:33Z WARN ingest-api heap usage 87% after full GC (old gen not reclaimed), GC overhead 35%\n#130 2026-10-13T19:55:00Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#131 2026-10-13T19:55:01Z ERROR ingest-api container ingest-api-0 killed: OOMKilled (memory limit 2Gi), restart count 1\n#141 2026-10-13T19:56:26Z ERROR ingest-gateway [t-4414] POST /v1/events 502 17188ms: upstream ingest-api connection reset (no healthy upstream)\n#158 2026-10-13T19:58:39Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#159 2026-10-13T19:58:40Z ERROR ingest-api container ingest-api-1 killed: OOMKilled (memory limit 2Gi), restart count 2\n#168 2026-10-13T20:00:21Z ERROR ingest-gateway [t-4426] POST /v1/events 502 12971ms: upstream ingest-api connection reset (no healthy upstream)\n#184 2026-10-13T20:03:48Z ERROR ingest-gateway [t-4429] POST /v1/events 502 15775ms: upstream ingest-api connection reset (no healthy upstream)\n#205 2026-10-13T20:06:46Z ERROR ingest-gateway [t-4440] POST /v1/events 502 7360ms: upstream ingest-api connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "limit": 60
+        },
+        "output": "57 match(es):\n#2 2026-10-13T19:39:23Z INFO ingest-api [t-4339] event e-7357 accepted, calling enrichment-svc POST /enrich\n#6 2026-10-13T19:39:58Z INFO ingest-api [t-4341] event e-7360 accepted, calling enrichment-svc POST /enrich\n#9 2026-10-13T19:40:28Z INFO ingest-api [t-4343] event e-7362 accepted, calling enrichment-svc POST /enrich\n#14 2026-10-13T19:40:47Z DEBUG ingest-api GC pause 17ms (young), heap 44%\n#15 2026-10-13T19:41:14Z INFO ingest-api [t-4344] event e-7364 accepted, calling enrichment-svc POST /enrich\n#20 2026-10-13T19:41:49Z INFO ingest-api [t-4347] event e-7365 accepted, calling enrichment-svc POST /enrich\n#24 2026-10-13T19:42:07Z INFO ingest-api [t-4350] event e-7366 accepted, calling enrichment-svc POST /enrich\n#29 2026-10-13T19:42:36Z INFO ingest-api [t-4354] event e-7368 accepted, calling enrichment-svc POST /enrich\n#32 2026-10-13T19:42:58Z INFO ingest-api [t-4358] event e-7370 accepted, calling enrichment-svc POST /enrich\n#35 2026-10-13T19:43:09Z DEBUG ingest-api GC pause 9ms (young), heap 41%\n#38 2026-10-13T19:43:48Z INFO ingest-api [t-4360] event e-7372 accepted, calling enrichment-svc POST /enrich\n#45 2026-10-13T19:44:23Z INFO ingest-api [t-4364] event e-7373 accepted, calling enrichment-svc POST /enrich\n#48 2026-10-13T19:44:56Z DEBUG ingest-api GC pause 9ms (young), heap 47%\n#49 2026-10-13T19:45:09Z INFO ingest-api [t-4366] event e-7374 accepted, calling enrichment-svc POST /enrich\n#54 2026-10-13T19:45:34Z INFO ingest-api [t-4370] event e-7375 accepted, calling enrichment-svc POST /enrich\n#61 2026-10-13T19:46:11Z INFO ingest-api [t-4373] event e-7377 accepted, calling enrichment-svc POST /enrich\n#63 2026-10-13T19:46:42Z INFO ingest-api [t-4375] event e-7378 accepted, calling enrichment-svc POST /enrich\n#68 2026-10-13T19:47:26Z INFO ingest-api [t-4376] event e-7381 accepted, calling enrichment-svc POST /enrich\n#70 2026-10-13T19:47:37Z DEBUG ingest-api GC pause 16ms (young), heap 36%\n#72 2026-10-13T19:47:48Z INFO ingest-api [t-4379] event e-7384 accepted, calling enrichment-svc POST /enrich\n#76 2026-10-13T19:48:12Z INFO ingest-api [t-4383] event e-7386 accepted, calling enrichment-svc POST /enrich\n#81 2026-10-13T19:48:58Z INFO ingest-api [t-4387] event e-7388 accepted, calling enrichment-svc POST /enrich\n#86 2026-10-13T19:49:10Z WARN ingest-api heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#87 2026-10-13T19:49:43Z INFO ingest-api [t-4388] event e-7389 accepted, calling enrichment-svc POST /enrich\n#89 2026-10-13T19:49:51Z DEBUG ingest-api GC pause 13ms (young), heap 34%\n#94 2026-10-13T19:50:31Z INFO ingest-api [t-4389] event e-7391 accepted, calling enrichment-svc POST /enrich\n#97 2026-10-13T19:50:55Z INFO ingest-api [t-4392] event e-7393 accepted, calling enrichment-svc POST /enrich\n#101 2026-10-13T19:51:26Z INFO ingest-api [t-4396] event e-7394 accepted, calling enrichment-svc POST /enrich\n#105 2026-10-13T19:52:08Z INFO ingest-api [t-4397] event e-7397 accepted, calling enrichment-svc POST /enrich\n#109 2026-10-13T19:52:33Z WARN ingest-api heap usage 87% after full GC (old gen not reclaimed), GC overhead 35%\n#112 2026-10-13T19:52:53Z INFO ingest-api [t-4399] event e-7398 accepted, calling enrichment-svc POST /enrich\n#115 2026-10-13T19:53:03Z DEBUG ingest-api GC pause 17ms (young), heap 38%\n#118 2026-10-13T19:53:39Z INFO ingest-api [t-4401] event e-7400 accepted, calling enrichment-svc POST /enrich\n#120 2026-10-13T19:54:01Z INFO ingest-api [t-4403] event e-7402 accepted, calling enrichment-svc POST /enrich\n#124 2026-10-13T19:54:30Z INFO ingest-api [t-4406] event e-7403 accepted, calling enrichment-svc POST /enrich\n#130 2026-10-13T19:55:00Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#131 2026-10-13T19:55:01Z ERROR ingest-api container ingest-api-0 killed: OOMKilled (memory limit 2Gi), restart count 1\n#133 2026-10-13T19:55:23Z INFO ingest-api started ingest-api v3.26.6, pid 1, warming event cache\n#135 2026-10-13T19:55:58Z DEBUG ingest-api GC pause 11ms (young), heap 47%\n#137 2026-10-13T19:56:08Z INFO ingest-api [t-4410] event e-7405 accepted, calling enrichment-svc POST /enrich\n#142 2026-10-13T19:56:30Z INFO ingest-api [t-4415] event e-7406 accepted, calling enrichment-svc POST /enrich\n#146 2026-10-13T19:57:03Z INFO ingest-api [t-4417] event e-7409 accepted, calling enrichment-svc POST /enrich\n#151 2026-10-13T19:57:42Z DEBUG ingest-api GC pause 13ms (young), heap 34%\n#155 2026-10-13T19:58:38Z INFO ingest-api [t-4419] event e-7412 accepted, calling enrichment-svc POST /enrich\n#158 2026-10-13T19:58:39Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#159 2026-10-13T19:58:40Z ERROR ingest-api container ingest-api-1 killed: OOMKilled (memory limit 2Gi), restart count 2\n#162 2026-10-13T19:59:11Z INFO ingest-api started ingest-api v3.26.6, pid 1, warming event cache\n#166 2026-10-13T20:00:11Z INFO ingest-api [t-4422] event e-7415 accepted, calling enrichment-svc POST /enrich\n#169 2026-10-13T20:00:21Z DEBUG ingest-api GC pause 13ms (young), heap 37%\n#176 2026-10-13T20:02:32Z INFO ingest-api [t-4427] event e-7416 accepted, calling enrichment-svc POST /enrich\n#181 2026-10-13T20:02:39Z DEBUG ingest-api GC pause 25ms (young), heap 33%\n#189 2026-10-13T20:05:02Z INFO ingest-api [t-4430] event e-7418 accepted, calling enrichment-svc POST /enrich\n#193 2026-10-13T20:05:32Z INFO ingest-api [t-4432] event e-7421 accepted, calling enrichment-svc POST /enrich\n#197 2026-10-13T20:05:51Z DEBUG ingest-api GC pause 21ms (young), heap 48%\n#201 2026-10-13T20:06:44Z INFO ingest-api [t-4436] event e-7423 accepted, calling enrichment-svc POST /enrich\n#206 2026-10-13T20:07:13Z INFO ingest-api [t-4441] event e-7425 accepted, calling enrichment-svc POST /enrich\n#210 2026-10-13T20:07:52Z INFO ingest-api [t-4442] event e-7426 accepted, calling enrichment-svc POST /enrich"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "v3.2"
+        },
+        "output": "2 match(es):\n#133 2026-10-13T19:55:23Z INFO ingest-api started ingest-api v3.26.6, pid 1, warming event cache\n#162 2026-10-13T19:59:11Z INFO ingest-api started ingest-api v3.26.6, pid 1, warming event cache"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.92,
+              "evidenceLines": [
+                86,
+                109,
+                130,
+                131,
+                158,
+                159
+              ],
+              "reasoning": "ingest-api's old-gen heap keeps growing and full GC can't reclaim it: 78% at #86, then 87% at #109. It then hits OutOfMemoryError in eventCache.put (#130, #158), and both pods get OOMKilled at the 2Gi limit (#131, #159). The gateway's 502s ('connection reset / no healthy upstream') come in bursts that line up with those crashes and restarts, which explains why the 502s are intermittent. This looks like an unbounded cache or a leak. The restarts run the same version, v3.26.6, and no deploy shows up in the window. The schema-validation DLQ at #41 was handled normally and doesn't explain the 502s. enrichment-svc, events-db and geo-cache logged no errors."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.05,
+              "evidenceLines": [
+                133
+              ],
+              "reasoning": "v3.26.6 might have added the unbounded eventCache, but the logs show no deploy event during the incident window."
+            }
+          ],
+          "recommendedAction": "Raise ingest-api's memory limit or scale out for now. Then bound or evict eventCache (cap its size, add a TTL), take a heap dump to confirm the leak, and check recent changes to how eventCache is filled."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 872,
+      "cacheReadTokens": 14629,
+      "cacheWriteTokens": 7567
+    },
+    "durationMs": 12185,
+    "stopReason": "tool_use"
+  }
+}

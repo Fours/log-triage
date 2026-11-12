@@ -289,6 +289,29 @@ try {
     writeLeaderboard(tmp);
     assert.ok(readFileSync(join(tmp, "README.md"), "utf8").includes("[transient]"));
   });
+  await checkAsync("prompt version and dataset are recorded; resuming with a different prompt is refused; leaderboard splits dev and test", async () => {
+    let seen: string | undefined;
+    const fn: TriageFn = async (view, o) => ((seen = o.prompt), { ...baselineTriage(view), model: "claude-opus-5-5", prompt: o.prompt });
+    const dev = await runEval({ ...base, runId: "v2-dev", prompt: "v2", concurrency: 2, triageFn: fn });
+    assert.equal(seen, "v2");
+    assert.equal(readJson(join(dev.runDir, "config.json")).prompt, "v2");
+    assert.match(readFileSync(join(dev.runDir, "report.md"), "utf8"), /prompt \*\*v2\*\*/);
+    await assert.rejects(runEval({ ...base, runId: "v2-dev", prompt: "v1", resume: true, concurrency: 1, triageFn: fn }), /prompt v2, not v1/);
+    await assert.rejects(runEval({ ...base, runId: "bad", prompt: "nope", concurrency: 1, triageFn: fn }), /Unknown prompt version/);
+
+    const test = await runEval({ ...base, datasetDir: resolve(root, "incidents/test"), ids: ["test-001", "test-002"], prompt: "v2", concurrency: 1, triageFn: fn });
+    assert.match(test.runId, /_claude-opus-5-5_v2_test$/, "test-set runs are tagged");
+    // A run from before prompts were versioned has no `prompt` field: it used v1.
+    const legacy = join(tmp, "runs", "transient", "config.json");
+    const { prompt: _, ...unversioned } = readJson(legacy);
+    writeFileSync(legacy, JSON.stringify(unversioned));
+    writeLeaderboard(tmp);
+    const board = readFileSync(join(tmp, "README.md"), "utf8");
+    const devAt = board.indexOf("## Dev set"), testAt = board.indexOf("## Held-out test set");
+    assert.ok(devAt >= 0 && testAt > devAt);
+    assert.ok(board.indexOf("[v2-dev]") < testAt && board.indexOf(`[${test.runId}]`) > testAt);
+    assert.match(board, /\| \[transient\]\(runs\/transient\/report.md\) \| claude-opus-5-5 \| v1 \|/, "unversioned runs show v1");
+  });
 } finally {
   if (existsSync(tmp)) rmSync(tmp, { recursive: true, force: true });
 }

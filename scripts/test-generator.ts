@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { strict as assert } from "node:assert";
-import { DEFAULT_SEED, generateDataset } from "../src/generator/index.js";
+import { DEFAULT_SEED, TEST_SET, generateDataset } from "../src/generator/index.js";
 import { ROOT_CAUSE_CATEGORIES } from "../src/types.js";
 import { loadIncident } from "../src/tools.js";
 
@@ -156,6 +156,23 @@ check("logs exceed one search page, so the agent must filter", () => {
 check("a 'first ERROR line' heuristic misses in a meaningful share of incidents", () => {
   const misses = dataset.filter((g) => !g.meta.firstErrorIsEvidence).length;
   assert.ok(misses >= incidents.length / 4, `first-error heuristic only misses ${misses}/${incidents.length}`);
+});
+
+check("held-out test set: in sync on disk, distinct ids, no incident shared with the dev set", () => {
+  const test = generateDataset(TEST_SET.seed, TEST_SET).map((d) => d.incident);
+  const testDir = resolve(here, "../incidents/test");
+  for (const inc of test) {
+    assert.match(inc.id, /^test-\d{3}$/);
+    assert.deepEqual(loadIncident(resolve(testDir, `${inc.id}.json`)), inc, `${inc.id} is stale — run \`npm run generate -- --test\``);
+  }
+  // Same balance as the dev set.
+  for (const cat of ROOT_CAUSE_CATEGORIES) assert.equal(test.filter((i) => i.label.rootCause === cat).length, 6, cat);
+  // No dev incident reappears: different logs, and each scenario × difficulty sits on a different topology.
+  const devLogs = new Set(incidents.map((i) => JSON.stringify(i.logs.map((l) => l.msg))));
+  for (const inc of test) assert.ok(!devLogs.has(JSON.stringify(inc.logs.map((l) => l.msg))), `${inc.id} duplicates a dev incident`);
+  const placement = (i: (typeof incidents)[number]) => `${i.label.scenario}/${i.label.difficulty}/${[...i.services].sort().join(",")}`;
+  const devPlacements = new Set(incidents.map(placement));
+  assert.equal(test.filter((i) => devPlacements.has(placement(i))).length, 0, "a scenario landed on the same services as in the dev set");
 });
 
 console.log(`\n${passed} checks passed.`);

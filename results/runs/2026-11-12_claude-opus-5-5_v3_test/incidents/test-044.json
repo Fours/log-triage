@@ -1,0 +1,156 @@
+{
+  "score": {
+    "incidentId": "test-044",
+    "difficulty": "medium",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 9,
+      "correct": 4,
+      "precision": 0.4444444444444444,
+      "recall": 0.8,
+      "f1": 0.5714285714285714
+    },
+    "herringsCited": 1,
+    "costUsd": 0.0497048,
+    "durationMs": 12415,
+    "iterations": 3,
+    "toolCalls": 3,
+    "tokens": {
+      "input": 8,
+      "output": 1006,
+      "cacheRead": 7664,
+      "cacheWrite": 5604
+    }
+  },
+  "result": {
+    "incidentId": "test-044",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.88,
+          "evidenceLines": [
+            157,
+            158,
+            163,
+            162,
+            164,
+            171,
+            202,
+            219,
+            226
+          ],
+          "reasoning": "redis-cache restarted after node replacement with no RDB snapshot, so it started with 0 keys (#157, 13:03:17). Requests were healthy right up to that point (~100ms 200s). Straight after, search-api's cache miss ratio jumped to 94-97% and every miss went to catalog-db (#158, #163). That pushed catalog-db to 490/500 connections and 99% CPU (#162), with simple primary-key lookups slowing to 3-8s (#164, #226). search-api queries on products then timed out after 5s (#171, #202, #219), and web-bff returned 504s to clients. The trigger was small and survivable on its own (a cold cache); the damage came from every cache miss hitting the database at once."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.07,
+          "evidenceLines": [
+            162,
+            174
+          ],
+          "reasoning": "catalog-db is close to its connection limit and CPU is pegged. But that started only after the cache went cold, so it reads as a symptom, not the origin."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.03,
+          "evidenceLines": [
+            64
+          ],
+          "reasoning": "index-worker v3.9.2 rolled out at 12:54, 8 minutes before onset. index-worker kept processing normally and isn't on the /search request path, so this is unlikely."
+        }
+      ],
+      "recommendedAction": "Shed load or rate-limit cache-miss reads to catalog-db, and warm redis-cache with the hot product keys. Add request coalescing (single-flight) or locking on cache misses in search-api, plus jittered TTLs. Turn on RDB/AOF persistence or a replica so a node replacement doesn't bring the cache back empty. Consider adding catalog-db read replicas."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "20 match(es):\n#157 2026-10-09T13:03:17Z WARN redis-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#158 2026-10-09T13:03:31Z WARN search-api redis-cache miss ratio 97% over last 30s (baseline 5%), loading from catalog-db\n#162 2026-10-09T13:04:24Z WARN catalog-db connections 490/500 (active 439), CPU 99%\n#163 2026-10-09T13:04:25Z WARN search-api redis-cache miss ratio 94% over last 30s (baseline 2%), loading from catalog-db\n#164 2026-10-09T13:04:27Z WARN catalog-db slow query 4385ms: SELECT * FROM products WHERE id = $1\n#171 2026-10-09T13:05:34Z ERROR search-api [t-1328] query on products timed out after 5000ms (p-7722)\n#172 2026-10-09T13:05:35Z ERROR web-bff [t-1330] GET /search 504 13793ms: upstream search-api timed out\n#174 2026-10-09T13:06:08Z WARN catalog-db connections 494/500 (active 423), CPU 95%\n#186 2026-10-09T13:08:11Z ERROR web-bff [t-1337] GET /search 504 24473ms: upstream search-api timed out\n#188 2026-10-09T13:08:38Z ERROR web-bff [t-1340] GET /search 504 18729ms: upstream search-api timed out\n#191 2026-10-09T13:08:56Z WARN catalog-db slow query 4634ms: SELECT * FROM products WHERE id = $1\n#195 2026-10-09T13:10:03Z WARN catalog-db slow query 3449ms: SELECT * FROM products WHERE id = $1\n#198 2026-10-09T13:11:17Z ERROR web-bff [t-1341] GET /search 504 7877ms: upstream search-api timed out\n#202 2026-10-09T13:11:46Z ERROR search-api [t-1344] query on products timed out after 5000ms (p-7728)\n#216 2026-10-09T13:14:01Z ERROR web-bff [t-1359] GET /search 504 26043ms: upstream search-api timed out\n#219 2026-10-09T13:14:26Z ERROR search-api [t-1365] query on products timed out after 5000ms (p-7740)\n#226 2026-10-09T13:14:57Z WARN catalog-db slow query 7847ms: SELECT * FROM products WHERE id = $1\n#230 2026-10-09T13:15:21Z ERROR web-bff [t-1371] GET /search 504 25934ms: upstream search-api timed out\n#235 2026-10-09T13:16:12Z WARN catalog-db slow query 7270ms: SELECT * FROM products WHERE id = $1\n#241 2026-10-09T13:17:26Z ERROR web-bff [t-1379] GET /search 504 9127ms: upstream search-api timed out"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 157,
+          "before": 12,
+          "after": 6
+        },
+        "output": "#145 2026-10-09T13:02:26Z INFO web-bff [t-1318] GET /search 200 120ms\n#146 2026-10-09T13:02:30Z INFO redis-cache stats: hits=18050 misses=426 evicted=0 connected_clients=51\n#147 2026-10-09T13:02:35Z DEBUG web-bff upstream health: search-api ok, catalog-svc ok\n#148 2026-10-09T13:02:37Z INFO search-api [t-1319] product p-7713 accepted, calling catalog-svc GET /products/batch\n#149 2026-10-09T13:02:37Z INFO catalog-svc [t-1319] GET /products/batch p-7713 ok 73ms\n#150 2026-10-09T13:02:37Z INFO web-bff [t-1319] GET /search 200 139ms\n#151 2026-10-09T13:02:48Z INFO search-api [t-1322] product p-7716 accepted, calling catalog-svc GET /products/batch\n#152 2026-10-09T13:02:48Z INFO catalog-svc [t-1322] GET /products/batch p-7716 ok 81ms\n#153 2026-10-09T13:02:48Z INFO web-bff [t-1322] GET /search 200 86ms\n#154 2026-10-09T13:03:01Z INFO index-worker processed batch of 43 messages from catalog.updates (lag 171ms)\n#155 2026-10-09T13:03:15Z INFO search-api [t-1325] product p-7717 accepted, calling catalog-svc GET /products/batch\n#156 2026-10-09T13:03:15Z INFO web-bff [t-1325] GET /search 200 115ms\n#157 2026-10-09T13:03:17Z WARN redis-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#158 2026-10-09T13:03:31Z WARN search-api redis-cache miss ratio 97% over last 30s (baseline 5%), loading from catalog-db\n#159 2026-10-09T13:03:40Z DEBUG search-api GC pause 16ms (young), heap 46%\n#160 2026-10-09T13:03:44Z INFO index-worker processed batch of 22 messages from catalog.updates (lag 75ms)\n#161 2026-10-09T13:04:00Z DEBUG catalog-svc GC pause 16ms (young), heap 31%\n#162 2026-10-09T13:04:24Z WARN catalog-db connections 490/500 (active 439), CPU 99%\n#163 2026-10-09T13:04:25Z WARN search-api redis-cache miss ratio 94% over last 30s (baseline 2%), loading from catalog-db"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "1 match(es):\n#64 2026-10-09T12:54:57Z INFO index-worker deploy: rolling out index-worker v3.9.2 (build 4ba6cfe)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.88,
+              "evidenceLines": [
+                157,
+                158,
+                163,
+                162,
+                164,
+                171,
+                202,
+                219,
+                226
+              ],
+              "reasoning": "redis-cache restarted after node replacement with no RDB snapshot, so it started with 0 keys (#157, 13:03:17). Requests were healthy right up to that point (~100ms 200s). Straight after, search-api's cache miss ratio jumped to 94-97% and every miss went to catalog-db (#158, #163). That pushed catalog-db to 490/500 connections and 99% CPU (#162), with simple primary-key lookups slowing to 3-8s (#164, #226). search-api queries on products then timed out after 5s (#171, #202, #219), and web-bff returned 504s to clients. The trigger was small and survivable on its own (a cold cache); the damage came from every cache miss hitting the database at once."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.07,
+              "evidenceLines": [
+                162,
+                174
+              ],
+              "reasoning": "catalog-db is close to its connection limit and CPU is pegged. But that started only after the cache went cold, so it reads as a symptom, not the origin."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.03,
+              "evidenceLines": [
+                64
+              ],
+              "reasoning": "index-worker v3.9.2 rolled out at 12:54, 8 minutes before onset. index-worker kept processing normally and isn't on the /search request path, so this is unlikely."
+            }
+          ],
+          "recommendedAction": "Shed load or rate-limit cache-miss reads to catalog-db, and warm redis-cache with the hot product keys. Add request coalescing (single-flight) or locking on cache misses in search-api, plus jittered TTLs. Turn on RDB/AOF persistence or a replica so a node replacement doesn't bring the cache back empty. Consider adding catalog-db read replicas."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 3,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 1006,
+      "cacheReadTokens": 7664,
+      "cacheWriteTokens": 5604
+    },
+    "durationMs": 12415,
+    "stopReason": "tool_use"
+  }
+}

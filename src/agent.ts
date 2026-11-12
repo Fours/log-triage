@@ -11,6 +11,7 @@ import {
   listServices,
   searchLogs,
 } from "./tools.js";
+import { getPrompt } from "./prompts.js";
 
 export const DEFAULT_MODEL = process.env.TRIAGE_MODEL ?? "claude-opus-5-5";
 
@@ -95,6 +96,8 @@ export const FATAL_API_ERRORS: ReadonlySet<ApiErrorKind> = new Set(["billing", "
 export interface TriageResult {
   incidentId: string;
   model: string;
+  /** Prompt version used (absent for the baseline and pre-Phase-4 records). */
+  prompt?: string;
   outcome: Outcome;
   verdict: TriageVerdict | null;
   trace: TraceStep[];
@@ -115,29 +118,14 @@ export type MessagesClient = Pick<Anthropic, "messages">;
 
 export interface TriageOptions {
   model?: string;
+  /** Prompt version id from src/prompts.ts (default: TRIAGE_PROMPT or DEFAULT_PROMPT). */
+  prompt?: string;
   effort?: Effort;
   client?: MessagesClient;
   budget?: Partial<Budget>;
   /** Clock override for tests. */
   now?: () => number;
 }
-
-const SYSTEM_PROMPT = `You are an on-call incident triage agent for an event-driven microservice platform.
-You are given an alert and a high-level overview of which services logged during the incident window. You do NOT have the raw logs in front of you — you must investigate by calling tools to pull exactly the lines you need.
-
-Your job: find the ROOT CAUSE, not just the loudest symptom. In a cascade, the service that paged (e.g. the gateway returning 5xx) is usually downstream of the real fault. Follow the evidence upstream.
-
-Method:
-- Start from the alert. Use list_services to see where errors concentrated and the time window.
-- Use search_logs to find the earliest errors/warnings and where they originate. Prefer the EARLIEST anomaly over the most frequent one.
-- Use correlate_trace to follow a single request across services when a trace id appears.
-- Use get_context to read the lines around a key line.
-- Distinguish root cause from downstream symptoms (retry storms, pool/queue saturation, 5xx at the edge) and from red herrings (unrelated slow queries, deploys that predate the onset).
-
-Classify the root cause into exactly one of these categories:
-${ROOT_CAUSE_CATEGORIES.map((c) => `- ${c}`).join("\n")}
-
-When you are confident, call submit_triage with hypotheses ranked most-likely first. Each hypothesis MUST cite the specific log line numbers (the #N ids) that support it. Set a calibrated confidence in [0,1] — be honest when the evidence is ambiguous. Keep investigating until you can cite concrete evidence; do not guess before you have looked.`;
 
 // ---- Tool definitions. Arguments are validated with zod at execution time
 // (see runTool); bounds here are hints to the model, not strict-mode guarantees. ----
@@ -247,6 +235,7 @@ const SUBMIT = "submit_triage";
  */
 export async function triage(incident: IncidentView, opts: TriageOptions = {}): Promise<TriageResult> {
   const model = opts.model ?? DEFAULT_MODEL;
+  const prompt = getPrompt(opts.prompt);
   const effort = opts.effort ?? DEFAULT_EFFORT;
   const client = opts.client ?? new Anthropic({ maxRetries: API_MAX_RETRIES });
   const budget: Budget = { ...DEFAULT_BUDGET, ...opts.budget };
@@ -257,6 +246,7 @@ export async function triage(incident: IncidentView, opts: TriageOptions = {}): 
   const result: TriageResult = {
     incidentId: incident.id,
     model,
+    prompt: prompt.id,
     outcome: "no_verdict",
     verdict: null,
     trace: [],
@@ -270,20 +260,7 @@ export async function triage(incident: IncidentView, opts: TriageOptions = {}): 
   // Append-only: earlier turns are never edited or dropped. That keeps the
   // prompt-cache prefix stable and replays thinking blocks exactly as returned.
   const messages: Anthropic.MessageParam[] = [
-    {
-      role: "user",
-      content: `INCIDENT ${incident.id}: ${incident.title}
-
-ALERT:
-${incident.alert}
-
-SERVICES INVOLVED: ${incident.services.join(", ")}
-
-SERVICE OVERVIEW:
-${listServices(logs)}
-
-Investigate with the tools, then call submit_triage. The raw logs are only available through the tools.`,
-    },
+    { role: "user", content: prompt.firstMessage(incident) },
   ];
 
   const seen = new Map<string, string>(); // repeated-call cache: call key -> output
@@ -314,7 +291,7 @@ Investigate with the tools, then call submit_triage. The raw logs are only avail
       const response = await client.messages.create({
         model,
         max_tokens: 16000,
-        system: SYSTEM_PROMPT,
+        system: prompt.system,
         tools,
         messages,
         // Auto-cache the growing prefix: each turn re-sends everything before it.

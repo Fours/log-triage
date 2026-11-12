@@ -46,6 +46,20 @@ export function listServices(logs: LogLine[]): string {
   return `${window}\n${rows.join("\n")}`;
 }
 
+/**
+ * Each service's earliest WARN-or-worse line, in log order: a starting map of
+ * where trouble appeared first. Not an answer: in many incidents the earliest
+ * warning is a red herring or background noise.
+ */
+export function firstAnomalies(logs: LogLine[]): string {
+  const first = new Map<string, LogLine>();
+  for (const l of logs) {
+    if (LEVEL_RANK[l.level] >= LEVEL_RANK.WARN && !first.has(l.service)) first.set(l.service, l);
+  }
+  if (first.size === 0) return "no WARN or worse lines";
+  return [...first.values()].sort((a, b) => a.n - b.n).map(formatLine).join("\n");
+}
+
 export interface SearchArgs {
   query?: string;
   service?: string;

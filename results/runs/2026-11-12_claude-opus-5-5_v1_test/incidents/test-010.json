@@ -1,0 +1,173 @@
+{
+  "score": {
+    "incidentId": "test-010",
+    "difficulty": "medium",
+    "scenario": "external_outage/cloud-object-storage",
+    "truth": "external_outage",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.8,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 10,
+      "correct": 5,
+      "precision": 0.5,
+      "recall": 1,
+      "f1": 0.6666666666666666
+    },
+    "herringsCited": 1,
+    "costUsd": 0.059800599999999995,
+    "durationMs": 13762,
+    "iterations": 4,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 10,
+      "output": 1113,
+      "cacheRead": 10878,
+      "cacheWrite": 7065
+    }
+  },
+  "result": {
+    "incidentId": "test-010",
+    "model": "claude-opus-5-5",
+    "prompt": "v1",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.8,
+          "evidenceLines": [
+            124,
+            129,
+            133,
+            140,
+            147,
+            127,
+            136,
+            151,
+            126,
+            130
+          ],
+          "reasoning": "First anomaly in the chain is catalog-svc PutObject to S3 us-east-1 failing with 503 SlowDown and then 500 InternalError (#124 onward). AWS SDK retry quota exhausted (#133). catalog-svc returns 500 'storage write failed' to search-api (#127, #136, #151), and search-api's 500s reach web-bff (#126...). catalog-svc request volume did not spike, the DB, redis and GC all look healthy, and no deploy shows up in the logs. That points to the provider-side S3 fault, not to our own load."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.1,
+          "evidenceLines": [
+            124,
+            129
+          ],
+          "reasoning": "The 503 'reduce your request rate' message could be S3 throttling caused by our own request rate. But no traffic increase is visible, and the later errors are 500 InternalError, which suggests a provider problem."
+        },
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.05,
+          "evidenceLines": [
+            59
+          ],
+          "reasoning": "One catalog.updates message went to the DLQ at 21:55, but that was isolated. index-worker kept processing normally, so this is probably a red herring."
+        }
+      ],
+      "recommendedAction": "Check the AWS Health Dashboard for S3 us-east-1 and open a support case with the S3 request IDs from the logs. Take the S3 artifact write out of the synchronous GET /products/batch path: make it async or best-effort, or fail open so search still serves when the write fails. Add a circuit breaker and backoff on catalog-svc's S3 client, and consider failing over to a replica bucket in another region."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "17 match(es):\n#59 2026-10-06T21:55:16Z WARN index-worker msg-544140 from catalog.updates failed schema validation (missing field \"version\"), moved to catalog.updates.dlq\n#124 2026-10-06T22:00:46Z ERROR catalog-svc [t-7556] PutObject s3://search-artifacts-prod/p-8070.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 3D87FDE)\n#126 2026-10-06T22:00:58Z ERROR web-bff [t-7558] GET /search 500 16964ms: upstream search-api returned 500 Internal Server Error\n#127 2026-10-06T22:01:01Z ERROR search-api [t-7560] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#129 2026-10-06T22:01:17Z ERROR catalog-svc [t-7564] PutObject s3://search-artifacts-prod/p-8072.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 1594BC7)\n#130 2026-10-06T22:01:36Z ERROR web-bff [t-7566] GET /search 500 15262ms: upstream search-api returned 500 Internal Server Error\n#133 2026-10-06T22:01:51Z WARN catalog-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (52 failed attempts in 60s)\n#136 2026-10-06T22:02:23Z ERROR search-api [t-7570] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#140 2026-10-06T22:02:57Z ERROR catalog-svc [t-7573] PutObject s3://search-artifacts-prod/p-8075.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id 3C9EE10)\n#141 2026-10-06T22:02:57Z ERROR web-bff [t-7576] GET /search 500 7544ms: upstream search-api returned 500 Internal Server Error\n#147 2026-10-06T22:03:56Z ERROR catalog-svc [t-7580] PutObject s3://search-artifacts-prod/p-8079.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id AFF5E99)\n#149 2026-10-06T22:04:21Z ERROR web-bff [t-7582] GET /search 500 29294ms: upstream search-api returned 500 Internal Server Error\n#151 2026-10-06T22:04:45Z ERROR search-api [t-7584] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#158 2026-10-06T22:05:30Z ERROR web-bff [t-7595] GET /search 500 21168ms: upstream search-api returned 500 Internal Server Error\n#168 2026-10-06T22:06:13Z ERROR search-api [t-7601] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#170 2026-10-06T22:06:36Z ERROR web-bff [t-7604] GET /search 500 13405ms: upstream search-api returned 500 Internal Server Error\n#173 2026-10-06T22:07:05Z ERROR web-bff [t-7608] GET /search 500 8573ms: upstream search-api returned 500 Internal Server Error"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 124,
+          "before": 15,
+          "after": 2
+        },
+        "output": "#109 2026-10-06T21:59:09Z INFO index-worker processed batch of 42 messages from catalog.updates (lag 250ms)\n#110 2026-10-06T21:59:26Z DEBUG web-bff upstream health: search-api ok, catalog-svc ok\n#111 2026-10-06T21:59:35Z INFO search-api [t-7553] product p-8065 accepted, calling catalog-svc GET /products/batch\n#112 2026-10-06T21:59:35Z INFO catalog-svc [t-7553] GET /products/batch p-8065 ok 73ms\n#113 2026-10-06T21:59:35Z INFO web-bff [t-7553] GET /search 200 121ms\n#114 2026-10-06T21:59:45Z INFO index-worker processed batch of 62 messages from catalog.updates (lag 115ms)\n#115 2026-10-06T21:59:48Z INFO redis-cache stats: hits=8931 misses=773 evicted=0 connected_clients=35\n#116 2026-10-06T21:59:53Z INFO search-api [t-7554] product p-8066 accepted, calling catalog-svc GET /products/batch\n#117 2026-10-06T21:59:53Z INFO web-bff [t-7554] GET /search 200 130ms\n#118 2026-10-06T22:00:06Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 38\n#119 2026-10-06T22:00:20Z INFO index-worker processed batch of 57 messages from catalog.updates (lag 127ms)\n#120 2026-10-06T22:00:41Z DEBUG search-api GC pause 13ms (young), heap 39%\n#121 2026-10-06T22:00:43Z INFO search-api [t-7555] product p-8068 accepted, calling catalog-svc GET /products/batch\n#122 2026-10-06T22:00:43Z INFO catalog-svc [t-7555] GET /products/batch p-8068 ok 70ms\n#123 2026-10-06T22:00:43Z INFO web-bff [t-7555] GET /search 200 68ms\n#124 2026-10-06T22:00:46Z ERROR catalog-svc [t-7556] PutObject s3://search-artifacts-prod/p-8070.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 3D87FDE)\n#125 2026-10-06T22:00:54Z INFO index-worker processed batch of 70 messages from catalog.updates (lag 220ms)\n#126 2026-10-06T22:00:58Z ERROR web-bff [t-7558] GET /search 500 16964ms: upstream search-api returned 500 Internal Server Error"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-7556"
+        },
+        "output": "1 line(s) for t-7556:\n#124 2026-10-06T22:00:46Z ERROR catalog-svc [t-7556] PutObject s3://search-artifacts-prod/p-8070.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 3D87FDE)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-svc",
+          "limit": 40
+        },
+        "output": "34 match(es):\n#4 2026-10-06T21:50:11Z DEBUG catalog-svc GC pause 19ms (young), heap 44%\n#6 2026-10-06T21:50:22Z INFO catalog-svc [t-7481] GET /products/batch p-8014 ok 49ms\n#15 2026-10-06T21:51:24Z INFO catalog-svc [t-7489] GET /products/batch p-8020 ok 27ms\n#19 2026-10-06T21:51:40Z INFO catalog-svc [t-7492] GET /products/batch p-8022 ok 44ms\n#24 2026-10-06T21:52:09Z INFO catalog-svc [t-7496] GET /products/batch p-8024 ok 51ms\n#27 2026-10-06T21:52:27Z DEBUG catalog-svc GC pause 13ms (young), heap 44%\n#29 2026-10-06T21:52:36Z INFO catalog-svc [t-7499] GET /products/batch p-8027 ok 80ms\n#34 2026-10-06T21:53:05Z INFO catalog-svc [t-7503] GET /products/batch p-8028 ok 83ms\n#38 2026-10-06T21:53:18Z INFO catalog-svc [t-7507] GET /products/batch p-8031 ok 70ms\n#51 2026-10-06T21:54:29Z INFO catalog-svc [t-7517] GET /products/batch p-8038 ok 85ms\n#60 2026-10-06T21:55:20Z DEBUG catalog-svc GC pause 6ms (young), heap 35%\n#63 2026-10-06T21:55:26Z INFO catalog-svc [t-7527] GET /products/batch p-8045 ok 53ms\n#67 2026-10-06T21:55:43Z INFO catalog-svc [t-7531] GET /products/batch p-8047 ok 85ms\n#71 2026-10-06T21:55:56Z INFO catalog-svc [t-7534] GET /products/batch p-8048 ok 33ms\n#74 2026-10-06T21:56:07Z INFO catalog-svc [t-7535] GET /products/batch p-8051 ok 67ms\n#79 2026-10-06T21:56:34Z INFO catalog-svc [t-7536] GET /products/batch p-8054 ok 50ms\n#86 2026-10-06T21:57:14Z INFO catalog-svc [t-7541] GET /products/batch p-8056 ok 37ms\n#92 2026-10-06T21:57:47Z INFO catalog-svc [t-7545] GET /products/batch p-8059 ok 38ms\n#99 2026-10-06T21:58:22Z INFO catalog-svc [t-7548] GET /products/batch p-8061 ok 55ms\n#101 2026-10-06T21:58:26Z DEBUG catalog-svc GC pause 4ms (young), heap 34%\n#107 2026-10-06T21:59:08Z INFO catalog-svc [t-7550] GET /products/batch p-8064 ok 81ms\n#112 2026-10-06T21:59:35Z INFO catalog-svc [t-7553] GET /products/batch p-8065 ok 73ms\n#122 2026-10-06T22:00:43Z INFO catalog-svc [t-7555] GET /products/batch p-8068 ok 70ms\n#124 2026-10-06T22:00:46Z ERROR catalog-svc [t-7556] PutObject s3://search-artifacts-prod/p-8070.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 3D87FDE)\n#129 2026-10-06T22:01:17Z ERROR catalog-svc [t-7564] PutObject s3://search-artifacts-prod/p-8072.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 1594BC7)\n#131 2026-10-06T22:01:45Z DEBUG catalog-svc GC pause 15ms (young), heap 32%\n#133 2026-10-06T22:01:51Z WARN catalog-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (52 failed attempts in 60s)\n#140 2026-10-06T22:02:57Z ERROR catalog-svc [t-7573] PutObject s3://search-artifacts-prod/p-8075.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id 3C9EE10)\n#142 2026-10-06T22:03:30Z DEBUG catalog-svc GC pause 20ms (young), heap 29%\n#147 2026-10-06T22:03:56Z ERROR catalog-svc [t-7580] PutObject s3://search-artifacts-prod/p-8079.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id AFF5E99)\n#159 2026-10-06T22:05:47Z DEBUG catalog-svc GC pause 13ms (young), heap 45%\n#161 2026-10-06T22:05:48Z INFO catalog-svc [t-7596] GET /products/batch p-8086 ok 76ms\n#166 2026-10-06T22:06:08Z INFO catalog-svc [t-7599] GET /products/batch p-8087 ok 39ms\n#176 2026-10-06T22:07:33Z INFO catalog-svc [t-7612] GET /products/batch p-8090 ok 28ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.8,
+              "evidenceLines": [
+                124,
+                129,
+                133,
+                140,
+                147,
+                127,
+                136,
+                151,
+                126,
+                130
+              ],
+              "reasoning": "First anomaly in the chain is catalog-svc PutObject to S3 us-east-1 failing with 503 SlowDown and then 500 InternalError (#124 onward). AWS SDK retry quota exhausted (#133). catalog-svc returns 500 'storage write failed' to search-api (#127, #136, #151), and search-api's 500s reach web-bff (#126...). catalog-svc request volume did not spike, the DB, redis and GC all look healthy, and no deploy shows up in the logs. That points to the provider-side S3 fault, not to our own load."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.1,
+              "evidenceLines": [
+                124,
+                129
+              ],
+              "reasoning": "The 503 'reduce your request rate' message could be S3 throttling caused by our own request rate. But no traffic increase is visible, and the later errors are 500 InternalError, which suggests a provider problem."
+            },
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.05,
+              "evidenceLines": [
+                59
+              ],
+              "reasoning": "One catalog.updates message went to the DLQ at 21:55, but that was isolated. index-worker kept processing normally, so this is probably a red herring."
+            }
+          ],
+          "recommendedAction": "Check the AWS Health Dashboard for S3 us-east-1 and open a support case with the S3 request IDs from the logs. Take the S3 artifact write out of the synchronous GET /products/batch path: make it async or best-effort, or fail open so search still serves when the write fails. Add a circuit breaker and backoff on catalog-svc's S3 client, and consider failing over to a replica bucket in another region."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1113,
+      "cacheReadTokens": 10878,
+      "cacheWriteTokens": 7065
+    },
+    "durationMs": 13762,
+    "stopReason": "tool_use"
+  }
+}

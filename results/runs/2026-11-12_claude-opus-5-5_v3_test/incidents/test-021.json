@@ -1,0 +1,161 @@
+{
+  "score": {
+    "incidentId": "test-021",
+    "difficulty": "easy",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 3,
+      "precision": 0.42857142857142855,
+      "recall": 0.75,
+      "f1": 0.5454545454545454
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0509818,
+    "durationMs": 11280,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 1052,
+      "cacheRead": 12609,
+      "cacheWrite": 5476
+    }
+  },
+  "result": {
+    "incidentId": "test-021",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.88,
+          "evidenceLines": [
+            68,
+            69,
+            74,
+            75,
+            84,
+            108,
+            114
+          ],
+          "reasoning": "At 20:08:17 Redis restarted after a node replacement with no RDB snapshot, so it came back with 0 keys (#68). Before that, Redis stats showed a miss rate of about 2%. Fifteen seconds later order-service reported a 95% miss ratio and started loading everything from Postgres (#69). This cache stampede pushed Postgres to 491/500 connections and 94–98% CPU (#74, #79). Simple primary-key SELECTs on orders slowed to 2.5–8s (#75, #99, #114), order-service queries timed out after 5s (#84, #108), and the gateway returned 504s on /checkout starting at 20:10 (#78, #88, ...). The trigger, losing the cache, would have been survivable alone; the damage came from every miss hitting the database at once. The card-processor connection reset at 20:03 (#33) succeeded on retry and happened before onset, so it is a red herring."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.07,
+          "evidenceLines": [
+            74,
+            79
+          ],
+          "reasoning": "Postgres hit its connection and CPU limits. But this was caused by the cache-miss load, not by the resource being too small on its own."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.05,
+          "evidenceLines": [
+            84,
+            108
+          ],
+          "reasoning": "Postgres queries timing out is the direct cause of the 504s, but Postgres was slow because of the stampede."
+        }
+      ],
+      "recommendedAction": "Warm the Redis cache, or rate-limit and coalesce cache fills (single-flight / request coalescing) in order-service. Temporarily shed or throttle /checkout load until Postgres CPU and connection counts recover. Afterwards, turn on Redis persistence or replication so a node replacement doesn't come back empty, and add stampede protection."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "14 match(es):\n#33 2026-11-23T20:03:49Z WARN payment-svc [t-1909] card processor call failed: connection reset by peer POST https://api.cardproc.example/v1/charges, retry 1/3\n#68 2026-11-23T20:08:17Z WARN redis restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#69 2026-11-23T20:08:32Z WARN order-service redis miss ratio 95% over last 30s (baseline 2%), loading from postgres\n#74 2026-11-23T20:09:32Z WARN postgres connections 491/500 (active 382), CPU 94%\n#75 2026-11-23T20:09:32Z WARN postgres slow query 2538ms: SELECT * FROM orders WHERE id = $1\n#78 2026-11-23T20:10:19Z ERROR api-gateway [t-1932] POST /checkout 504 5571ms: upstream order-service timed out\n#79 2026-11-23T20:10:36Z WARN postgres connections 477/500 (active 422), CPU 98%\n#84 2026-11-23T20:11:52Z ERROR order-service [t-1934] query on orders timed out after 5000ms (o-8801)\n#88 2026-11-23T20:12:32Z ERROR api-gateway [t-1938] POST /checkout 504 28620ms: upstream order-service timed out\n#99 2026-11-23T20:14:31Z WARN postgres slow query 3367ms: SELECT * FROM orders WHERE id = $1\n#102 2026-11-23T20:15:06Z ERROR api-gateway [t-1947] POST /checkout 504 27929ms: upstream order-service timed out\n#108 2026-11-23T20:16:02Z ERROR order-service [t-1952] query on orders timed out after 5000ms (o-8813)\n#109 2026-11-23T20:16:25Z ERROR api-gateway [t-1953] POST /checkout 504 24124ms: upstream order-service timed out\n#114 2026-11-23T20:16:59Z WARN postgres slow query 8285ms: SELECT * FROM orders WHERE id = $1"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "redis"
+        },
+        "output": "7 match(es):\n#11 2026-11-23T20:01:15Z INFO redis stats: hits=15941 misses=621 evicted=0 connected_clients=58\n#21 2026-11-23T20:02:42Z INFO redis stats: hits=8752 misses=250 evicted=0 connected_clients=34\n#32 2026-11-23T20:03:49Z INFO redis stats: hits=15043 misses=220 evicted=0 connected_clients=59\n#45 2026-11-23T20:05:12Z INFO redis stats: hits=14953 misses=656 evicted=0 connected_clients=31\n#55 2026-11-23T20:06:18Z INFO redis stats: hits=13280 misses=303 evicted=0 connected_clients=42\n#64 2026-11-23T20:07:41Z INFO redis stats: hits=17709 misses=321 evicted=0 connected_clients=58\n#68 2026-11-23T20:08:17Z WARN redis restarted after node replacement; no RDB snapshot found, starting with 0 keys"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 69,
+          "before": 6,
+          "after": 5
+        },
+        "output": "#63 2026-11-23T20:07:38Z INFO postgres checkpoint complete: wrote 529 buffers (1.7%)\n#64 2026-11-23T20:07:41Z INFO redis stats: hits=17709 misses=321 evicted=0 connected_clients=58\n#65 2026-11-23T20:07:43Z INFO order-consumer processed batch of 94 messages from orders.events (lag 344ms)\n#66 2026-11-23T20:07:57Z INFO order-service [t-1929] order o-8798 accepted, calling payment-svc POST /charge\n#67 2026-11-23T20:07:57Z INFO api-gateway [t-1929] POST /checkout 200 129ms\n#68 2026-11-23T20:08:17Z WARN redis restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#69 2026-11-23T20:08:32Z WARN order-service redis miss ratio 95% over last 30s (baseline 2%), loading from postgres\n#70 2026-11-23T20:08:32Z INFO order-consumer processed batch of 37 messages from orders.events (lag 97ms)\n#71 2026-11-23T20:08:55Z DEBUG payment-svc GC pause 7ms (young), heap 34%\n#72 2026-11-23T20:09:13Z INFO order-consumer processed batch of 37 messages from orders.events (lag 344ms)\n#73 2026-11-23T20:09:17Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 2\n#74 2026-11-23T20:09:32Z WARN postgres connections 491/500 (active 382), CPU 94%"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-1909"
+        },
+        "output": "2 line(s) for t-1909:\n#33 2026-11-23T20:03:49Z WARN payment-svc [t-1909] card processor call failed: connection reset by peer POST https://api.cardproc.example/v1/charges, retry 1/3\n#34 2026-11-23T20:03:49Z INFO payment-svc [t-1909] card processor call ok on retry 2/3 (95ms)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.88,
+              "evidenceLines": [
+                68,
+                69,
+                74,
+                75,
+                84,
+                108,
+                114
+              ],
+              "reasoning": "At 20:08:17 Redis restarted after a node replacement with no RDB snapshot, so it came back with 0 keys (#68). Before that, Redis stats showed a miss rate of about 2%. Fifteen seconds later order-service reported a 95% miss ratio and started loading everything from Postgres (#69). This cache stampede pushed Postgres to 491/500 connections and 94–98% CPU (#74, #79). Simple primary-key SELECTs on orders slowed to 2.5–8s (#75, #99, #114), order-service queries timed out after 5s (#84, #108), and the gateway returned 504s on /checkout starting at 20:10 (#78, #88, ...). The trigger, losing the cache, would have been survivable alone; the damage came from every miss hitting the database at once. The card-processor connection reset at 20:03 (#33) succeeded on retry and happened before onset, so it is a red herring."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.07,
+              "evidenceLines": [
+                74,
+                79
+              ],
+              "reasoning": "Postgres hit its connection and CPU limits. But this was caused by the cache-miss load, not by the resource being too small on its own."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.05,
+              "evidenceLines": [
+                84,
+                108
+              ],
+              "reasoning": "Postgres queries timing out is the direct cause of the 504s, but Postgres was slow because of the stampede."
+            }
+          ],
+          "recommendedAction": "Warm the Redis cache, or rate-limit and coalesce cache fills (single-flight / request coalescing) in order-service. Temporarily shed or throttle /checkout load until Postgres CPU and connection counts recover. Afterwards, turn on Redis persistence or replication so a node replacement doesn't come back empty, and add stampede protection."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1052,
+      "cacheReadTokens": 12609,
+      "cacheWriteTokens": 5476
+    },
+    "durationMs": 11280,
+    "stopReason": "tool_use"
+  }
+}

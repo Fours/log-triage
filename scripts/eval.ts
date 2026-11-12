@@ -12,6 +12,8 @@ import { runEval } from "../src/eval/runner.js";
  *   npm run eval -- --baseline                       # free keyword baseline
  *   npm run eval -- --model claude-haiku-5-5 --limit 5
  *   npm run eval -- --effort high --concurrency 6
+ *   npm run eval -- --prompt v2                      # a prompt version from src/prompts.ts
+ *   npm run eval -- --prompt v2 --test               # the held-out test set (incidents/test)
  *   npm run eval -- --run-id <id> --resume           # continue an interrupted run
  *
  * Exits 1 if the run is incomplete (stopped early or some incidents failed).
@@ -22,6 +24,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const { values: args } = parseArgs({
   options: {
     model: { type: "string" },
+    prompt: { type: "string" },
+    test: { type: "boolean", default: false },
     effort: { type: "string" },
     baseline: { type: "boolean", default: false },
     dataset: { type: "string", default: "incidents/generated" },
@@ -38,8 +42,9 @@ try {
   const outcome = await runEval({
     root,
     resultsDir: resolve(root, "results"),
-    datasetDir: resolve(root, args.dataset!),
+    datasetDir: resolve(root, args.test ? "incidents/test" : args.dataset!),
     model: args.model ?? DEFAULT_MODEL,
+    prompt: args.prompt,
     effort: (args.effort as Effort | undefined) ?? DEFAULT_EFFORT ?? null,
     baseline: args.baseline,
     ids: args.ids?.split(","),

@@ -1,0 +1,148 @@
+{
+  "score": {
+    "incidentId": "test-036",
+    "difficulty": "easy",
+    "scenario": "resource_exhaustion/db-disk-full",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.93,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.055288199999999996,
+    "durationMs": 13086,
+    "iterations": 4,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 10,
+      "output": 1096,
+      "cacheRead": 12291,
+      "cacheWrite": 6174
+    }
+  },
+  "result": {
+    "incidentId": "test-036",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.93,
+          "evidenceLines": [
+            38,
+            57,
+            90,
+            101,
+            91,
+            107
+          ],
+          "reasoning": "The events-db data volume filled up. Disk usage on /var/lib/mysql hit 95% at 12:55 (#38) and 99% at 12:57 (#57), with WAL/binlog growing at 635 then 834MB/h. InnoDB writes then started failing with 'No space left on device' (#90, #101). As a direct result, ingest-api inserts failed with error 1114 'The table is full' (#91, #107), and ingest-gateway passed those back to clients as 500s on POST /v1/events. Reads don't need disk space, which is why they stayed healthy. Ruled out: enrichment-svc responded fine the whole time (~60-90ms), I found no deploy in the logs, and there were no other errors or warnings anywhere before the disk warnings."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.05,
+          "evidenceLines": [
+            38,
+            57
+          ],
+          "reasoning": "Binlog growth sped up, so binlog retention or purge settings may be misconfigured. That would explain why the disk filled, but the logs don't show any config change."
+        }
+      ],
+      "recommendedAction": "Free space on events-db now: purge old binary logs (PURGE BINARY LOGS) or grow the /var/lib/mysql volume, then confirm inserts succeed again. After that, find out why binlog/WAL growth sped up (retention settings, a replica that has stopped reading binlogs), set binlog_expire_logs_seconds, and add disk alerts that fire before usage reaches 90%."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "10 match(es):\n#38 2026-11-02T12:55:41Z WARN events-db disk usage 95% on /var/lib/mysql (WAL/binlog growth 635MB/h)\n#57 2026-11-02T12:57:46Z WARN events-db disk usage 99% on /var/lib/mysql (WAL/binlog growth 834MB/h)\n#87 2026-11-02T13:01:16Z ERROR ingest-gateway [t-1199] POST /v1/events 500 24014ms: upstream ingest-api returned 500 Internal Server Error\n#90 2026-11-02T13:01:29Z ERROR events-db [ERROR] [MY-012639] InnoDB: Write to file ./events.ibd failed: No space left on device\n#91 2026-11-02T13:01:59Z ERROR ingest-api [t-1206] insert into events failed for e-5927: error 1114: The table is full\n#100 2026-11-02T13:03:17Z ERROR ingest-gateway [t-1211] POST /v1/events 500 15025ms: upstream ingest-api returned 500 Internal Server Error\n#101 2026-11-02T13:03:22Z ERROR events-db [ERROR] [MY-012639] InnoDB: Write to file ./events.ibd failed: No space left on device\n#107 2026-11-02T13:04:15Z ERROR ingest-api [t-1217] insert into events failed for e-5932: error 1114: The table is full\n#123 2026-11-02T13:07:17Z ERROR ingest-gateway [t-1222] POST /v1/events 500 29264ms: upstream ingest-api returned 500 Internal Server Error\n#130 2026-11-02T13:08:25Z ERROR ingest-gateway [t-1227] POST /v1/events 500 25911ms: upstream ingest-api returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "events-db",
+          "limit": 20
+        },
+        "output": "13 match(es):\n#5 2026-11-02T12:51:57Z INFO events-db InnoDB: page cleaner flushed 663 pages, buffer pool hit rate 98.5%\n#26 2026-11-02T12:54:20Z INFO events-db InnoDB: page cleaner flushed 127 pages, buffer pool hit rate 99.7%\n#38 2026-11-02T12:55:41Z WARN events-db disk usage 95% on /var/lib/mysql (WAL/binlog growth 635MB/h)\n#41 2026-11-02T12:56:01Z INFO events-db InnoDB: page cleaner flushed 819 pages, buffer pool hit rate 99.2%\n#54 2026-11-02T12:57:41Z INFO events-db InnoDB: page cleaner flushed 646 pages, buffer pool hit rate 98.7%\n#57 2026-11-02T12:57:46Z WARN events-db disk usage 99% on /var/lib/mysql (WAL/binlog growth 834MB/h)\n#76 2026-11-02T13:00:09Z INFO events-db InnoDB: page cleaner flushed 726 pages, buffer pool hit rate 99.2%\n#90 2026-11-02T13:01:29Z ERROR events-db [ERROR] [MY-012639] InnoDB: Write to file ./events.ibd failed: No space left on device\n#95 2026-11-02T13:02:28Z INFO events-db InnoDB: page cleaner flushed 307 pages, buffer pool hit rate 99.6%\n#101 2026-11-02T13:03:22Z ERROR events-db [ERROR] [MY-012639] InnoDB: Write to file ./events.ibd failed: No space left on device\n#110 2026-11-02T13:04:31Z INFO events-db InnoDB: page cleaner flushed 665 pages, buffer pool hit rate 99.6%\n#119 2026-11-02T13:06:38Z INFO events-db InnoDB: page cleaner flushed 881 pages, buffer pool hit rate 99.7%\n#132 2026-11-02T13:08:50Z INFO events-db InnoDB: page cleaner flushed 756 pages, buffer pool hit rate 99%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-1206"
+        },
+        "output": "1 line(s) for t-1206:\n#91 2026-11-02T13:01:59Z ERROR ingest-api [t-1206] insert into events failed for e-5927: error 1114: The table is full"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "enrichment-svc",
+          "limit": 20
+        },
+        "output": "18 match(es):\n#1 2026-11-02T12:51:19Z DEBUG enrichment-svc GC pause 13ms (young), heap 32%\n#17 2026-11-02T12:53:20Z INFO enrichment-svc [t-1159] POST /enrich e-5893 ok 79ms\n#19 2026-11-02T12:53:41Z DEBUG enrichment-svc GC pause 5ms (young), heap 41%\n#23 2026-11-02T12:53:55Z INFO enrichment-svc [t-1162] POST /enrich e-5896 ok 66ms\n#32 2026-11-02T12:54:44Z INFO enrichment-svc [t-1170] POST /enrich e-5899 ok 54ms\n#39 2026-11-02T12:55:48Z DEBUG enrichment-svc GC pause 22ms (young), heap 35%\n#48 2026-11-02T12:57:02Z INFO enrichment-svc [t-1178] POST /enrich e-5906 ok 89ms\n#52 2026-11-02T12:57:39Z INFO enrichment-svc [t-1182] POST /enrich e-5909 ok 59ms\n#63 2026-11-02T12:58:39Z DEBUG enrichment-svc GC pause 5ms (young), heap 45%\n#65 2026-11-02T12:58:43Z INFO enrichment-svc [t-1186] POST /enrich e-5915 ok 60ms\n#74 2026-11-02T12:59:44Z INFO enrichment-svc [t-1192] POST /enrich e-5920 ok 72ms\n#78 2026-11-02T13:00:10Z INFO enrichment-svc [t-1195] POST /enrich e-5922 ok 61ms\n#86 2026-11-02T13:01:13Z DEBUG enrichment-svc GC pause 13ms (young), heap 33%\n#104 2026-11-02T13:03:38Z DEBUG enrichment-svc GC pause 4ms (young), heap 39%\n#115 2026-11-02T13:05:57Z INFO enrichment-svc [t-1220] POST /enrich e-5933 ok 64ms\n#120 2026-11-02T13:06:50Z DEBUG enrichment-svc GC pause 25ms (young), heap 33%\n#131 2026-11-02T13:08:46Z DEBUG enrichment-svc GC pause 14ms (young), heap 28%\n#137 2026-11-02T13:09:56Z INFO enrichment-svc [t-1231] POST /enrich e-5939 ok 58ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.93,
+              "evidenceLines": [
+                38,
+                57,
+                90,
+                101,
+                91,
+                107
+              ],
+              "reasoning": "The events-db data volume filled up. Disk usage on /var/lib/mysql hit 95% at 12:55 (#38) and 99% at 12:57 (#57), with WAL/binlog growing at 635 then 834MB/h. InnoDB writes then started failing with 'No space left on device' (#90, #101). As a direct result, ingest-api inserts failed with error 1114 'The table is full' (#91, #107), and ingest-gateway passed those back to clients as 500s on POST /v1/events. Reads don't need disk space, which is why they stayed healthy. Ruled out: enrichment-svc responded fine the whole time (~60-90ms), I found no deploy in the logs, and there were no other errors or warnings anywhere before the disk warnings."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.05,
+              "evidenceLines": [
+                38,
+                57
+              ],
+              "reasoning": "Binlog growth sped up, so binlog retention or purge settings may be misconfigured. That would explain why the disk filled, but the logs don't show any config change."
+            }
+          ],
+          "recommendedAction": "Free space on events-db now: purge old binary logs (PURGE BINARY LOGS) or grow the /var/lib/mysql volume, then confirm inserts succeed again. After that, find out why binlog/WAL growth sped up (retention settings, a replica that has stopped reading binlogs), set binlog_expire_logs_seconds, and add disk alerts that fire before usage reaches 90%."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1096,
+      "cacheReadTokens": 12291,
+      "cacheWriteTokens": 6174
+    },
+    "durationMs": 13086,
+    "stopReason": "tool_use"
+  }
+}

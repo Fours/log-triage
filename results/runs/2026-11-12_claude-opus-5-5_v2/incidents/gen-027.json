@@ -1,0 +1,181 @@
+{
+  "score": {
+    "incidentId": "gen-027",
+    "difficulty": "easy",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 6,
+      "precision": 0.75,
+      "recall": 0.8571428571428571,
+      "f1": 0.7999999999999999
+    },
+    "herringsCited": 0,
+    "costUsd": 0.06362419999999999,
+    "durationMs": 16086,
+    "iterations": 4,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 10,
+      "output": 1357,
+      "cacheRead": 11696,
+      "cacheWrite": 6821
+    }
+  },
+  "result": {
+    "incidentId": "gen-027",
+    "model": "claude-opus-5-5",
+    "prompt": "v2",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.85,
+          "evidenceLines": [
+            94,
+            96,
+            102,
+            108,
+            104,
+            123,
+            114,
+            130
+          ],
+          "reasoning": "Payment-svc was healthy until 08:07:34, when payment-svc-1 failed its liveness probe and restarted (capacity 3/4) (#94). The instance was back by 08:08:22 (#98). During that short gap order-service's PaymentClient got 503s and retried right away with backoff disabled (#96, #102, #108). Those retries stacked up: inbound load reached 3.2x baseline with 447 in flight (#104), then 4.1x with 848 in flight (#123). Payment-svc started rejecting requests with 503 because its queue was full (#114, #130, #140). That caused more retries, so the load kept itself going even with full capacity back. This is why the 503s don't recover. The gateway 503s (#107, #111, #135, #142) are the impact at the edge, not the cause. There are no deploy or config-change lines in the window, and postgres and redis look normal."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.1,
+          "evidenceLines": [
+            96,
+            102,
+            108
+          ],
+          "reasoning": "Backoff being disabled in the order-service PaymentClient retry policy could be a misconfiguration. If so, it is what keeps the storm going. But no config change appears in the window."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.05,
+          "evidenceLines": [
+            94
+          ],
+          "reasoning": "Payment-svc-1 failing its liveness probe could be a resource problem on that instance. But GC and heap numbers are normal and the instance recovered quickly."
+        }
+      ],
+      "recommendedAction": "Stop the retry storm. Turn on exponential backoff with jitter in the order-service PaymentClient, or temporarily turn retries off, and add a retry budget or circuit breaker. Shed or rate-limit traffic at the gateway or order-service until payment-svc's queue drains, and scale payment-svc up for a while. After that, look into why payment-svc-1 failed its liveness probe."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "13 match(es):\n#94 2026-10-31T08:07:34Z WARN payment-svc instance payment-svc-1 restarting (liveness probe failed), capacity 3/4\n#96 2026-10-31T08:07:41Z WARN order-service [t-6664] PaymentClient.charge got 503, retrying immediately (attempt 2/4, backoff disabled)\n#102 2026-10-31T08:09:24Z WARN order-service [t-6666] PaymentClient.charge got 503, retrying immediately (attempt 3/4, backoff disabled)\n#104 2026-10-31T08:09:40Z WARN payment-svc inbound request rate 3.2x baseline (inflight 447), shedding load with 503\n#107 2026-10-31T08:10:08Z ERROR api-gateway [t-6670] POST /checkout 503 26939ms: upstream order-service returned 503 (retries exhausted)\n#108 2026-10-31T08:10:24Z WARN order-service [t-6672] PaymentClient.charge got 503, retrying immediately (attempt 4/4, backoff disabled)\n#111 2026-10-31T08:10:35Z ERROR api-gateway [t-6674] POST /checkout 503 29824ms: upstream order-service returned 503 (retries exhausted)\n#114 2026-10-31T08:11:00Z ERROR payment-svc [t-6676] load shed: rejected POST /charge with 503 (queue full)\n#123 2026-10-31T08:11:59Z WARN payment-svc inbound request rate 4.1x baseline (inflight 848), shedding load with 503\n#130 2026-10-31T08:13:39Z ERROR payment-svc [t-6687] load shed: rejected POST /charge with 503 (queue full)\n#135 2026-10-31T08:14:22Z ERROR api-gateway [t-6693] POST /checkout 503 10863ms: upstream order-service returned 503 (retries exhausted)\n#140 2026-10-31T08:15:21Z ERROR payment-svc [t-6696] load shed: rejected POST /charge with 503 (queue full)\n#142 2026-10-31T08:15:48Z ERROR api-gateway [t-6697] POST /checkout 503 23879ms: upstream order-service returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 94,
+          "before": 20,
+          "after": 3
+        },
+        "output": "#74 2026-10-31T08:05:09Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 6\n#75 2026-10-31T08:05:12Z INFO order-consumer processed batch of 90 messages from orders.events (lag 337ms)\n#76 2026-10-31T08:05:19Z INFO redis stats: hits=11984 misses=760 evicted=0 connected_clients=49\n#77 2026-10-31T08:05:39Z DEBUG order-service GC pause 18ms (young), heap 44%\n#78 2026-10-31T08:05:42Z INFO order-service [t-6654] order o-7930 accepted, calling payment-svc POST /charge\n#79 2026-10-31T08:05:43Z INFO api-gateway [t-6654] POST /checkout 200 139ms\n#80 2026-10-31T08:05:59Z INFO order-consumer processed batch of 63 messages from orders.events (lag 70ms)\n#81 2026-10-31T08:06:25Z INFO order-service [t-6655] order o-7933 accepted, calling payment-svc POST /charge\n#82 2026-10-31T08:06:25Z INFO api-gateway [t-6655] POST /checkout 200 194ms\n#83 2026-10-31T08:06:35Z INFO redis stats: hits=19884 misses=845 evicted=0 connected_clients=43\n#84 2026-10-31T08:06:43Z INFO order-consumer processed batch of 102 messages from orders.events (lag 258ms)\n#85 2026-10-31T08:07:07Z INFO order-service [t-6657] order o-7936 accepted, calling payment-svc POST /charge\n#86 2026-10-31T08:07:07Z INFO api-gateway [t-6657] POST /checkout 200 172ms\n#87 2026-10-31T08:07:07Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 2\n#88 2026-10-31T08:07:16Z DEBUG api-gateway upstream health: order-service ok, payment-svc ok\n#89 2026-10-31T08:07:25Z INFO order-consumer processed batch of 65 messages from orders.events (lag 322ms)\n#90 2026-10-31T08:07:30Z DEBUG payment-svc GC pause 24ms (young), heap 35%\n#91 2026-10-31T08:07:31Z INFO order-service [t-6660] order o-7938 accepted, calling payment-svc POST /charge\n#92 2026-10-31T08:07:31Z INFO api-gateway [t-6660] POST /checkout 200 235ms\n#93 2026-10-31T08:07:32Z DEBUG order-service GC pause 6ms (young), heap 48%\n#94 2026-10-31T08:07:34Z WARN payment-svc instance payment-svc-1 restarting (liveness probe failed), capacity 3/4\n#95 2026-10-31T08:07:38Z INFO redis stats: hits=9372 misses=688 evicted=0 connected_clients=44\n#96 2026-10-31T08:07:41Z WARN order-service [t-6664] PaymentClient.charge got 503, retrying immediately (attempt 2/4, backoff disabled)\n#97 2026-10-31T08:08:07Z INFO order-consumer processed batch of 70 messages from orders.events (lag 125ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "backoff",
+          "limit": 10
+        },
+        "output": "3 match(es):\n#96 2026-10-31T08:07:41Z WARN order-service [t-6664] PaymentClient.charge got 503, retrying immediately (attempt 2/4, backoff disabled)\n#102 2026-10-31T08:09:24Z WARN order-service [t-6666] PaymentClient.charge got 503, retrying immediately (attempt 3/4, backoff disabled)\n#108 2026-10-31T08:10:24Z WARN order-service [t-6672] PaymentClient.charge got 503, retrying immediately (attempt 4/4, backoff disabled)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "config",
+          "limit": 10
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 10
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "limit": 30
+        },
+        "output": "25 match(es):\n#2 2026-10-31T07:56:08Z INFO payment-svc [t-6624] POST /charge o-7900 ok 84ms\n#6 2026-10-31T07:56:57Z INFO payment-svc [t-6627] POST /charge o-7903 ok 28ms\n#10 2026-10-31T07:57:23Z DEBUG payment-svc GC pause 18ms (young), heap 44%\n#27 2026-10-31T07:59:30Z DEBUG payment-svc GC pause 24ms (young), heap 34%\n#40 2026-10-31T08:01:13Z INFO payment-svc [t-6644] POST /charge o-7917 ok 87ms\n#46 2026-10-31T08:01:32Z INFO payment-svc [t-6645] POST /charge o-7920 ok 55ms\n#48 2026-10-31T08:01:43Z DEBUG payment-svc GC pause 16ms (young), heap 37%\n#51 2026-10-31T08:02:04Z INFO payment-svc [t-6646] POST /charge o-7921 ok 57ms\n#57 2026-10-31T08:02:55Z INFO payment-svc [t-6648] POST /charge o-7922 ok 73ms\n#66 2026-10-31T08:04:19Z INFO payment-svc [t-6650] POST /charge o-7926 ok 88ms\n#69 2026-10-31T08:04:45Z DEBUG payment-svc GC pause 8ms (young), heap 32%\n#72 2026-10-31T08:05:01Z INFO payment-svc [t-6651] POST /charge o-7929 ok 41ms\n#90 2026-10-31T08:07:30Z DEBUG payment-svc GC pause 24ms (young), heap 35%\n#94 2026-10-31T08:07:34Z WARN payment-svc instance payment-svc-1 restarting (liveness probe failed), capacity 3/4\n#98 2026-10-31T08:08:22Z INFO payment-svc instance payment-svc-1 ready, capacity 4/4\n#104 2026-10-31T08:09:40Z WARN payment-svc inbound request rate 3.2x baseline (inflight 447), shedding load with 503\n#110 2026-10-31T08:10:33Z DEBUG payment-svc GC pause 11ms (young), heap 31%\n#114 2026-10-31T08:11:00Z ERROR payment-svc [t-6676] load shed: rejected POST /charge with 503 (queue full)\n#116 2026-10-31T08:11:08Z INFO payment-svc [t-6680] POST /charge o-7940 ok 58ms\n#123 2026-10-31T08:11:59Z WARN payment-svc inbound request rate 4.1x baseline (inflight 848), shedding load with 503\n#127 2026-10-31T08:12:58Z DEBUG payment-svc GC pause 9ms (young), heap 28%\n#130 2026-10-31T08:13:39Z ERROR payment-svc [t-6687] load shed: rejected POST /charge with 503 (queue full)\n#140 2026-10-31T08:15:21Z ERROR payment-svc [t-6696] load shed: rejected POST /charge with 503 (queue full)\n#141 2026-10-31T08:15:30Z DEBUG payment-svc GC pause 25ms (young), heap 35%\n#148 2026-10-31T08:17:10Z INFO payment-svc [t-6698] POST /charge o-7945 ok 84ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.85,
+              "evidenceLines": [
+                94,
+                96,
+                102,
+                108,
+                104,
+                123,
+                114,
+                130
+              ],
+              "reasoning": "Payment-svc was healthy until 08:07:34, when payment-svc-1 failed its liveness probe and restarted (capacity 3/4) (#94). The instance was back by 08:08:22 (#98). During that short gap order-service's PaymentClient got 503s and retried right away with backoff disabled (#96, #102, #108). Those retries stacked up: inbound load reached 3.2x baseline with 447 in flight (#104), then 4.1x with 848 in flight (#123). Payment-svc started rejecting requests with 503 because its queue was full (#114, #130, #140). That caused more retries, so the load kept itself going even with full capacity back. This is why the 503s don't recover. The gateway 503s (#107, #111, #135, #142) are the impact at the edge, not the cause. There are no deploy or config-change lines in the window, and postgres and redis look normal."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.1,
+              "evidenceLines": [
+                96,
+                102,
+                108
+              ],
+              "reasoning": "Backoff being disabled in the order-service PaymentClient retry policy could be a misconfiguration. If so, it is what keeps the storm going. But no config change appears in the window."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.05,
+              "evidenceLines": [
+                94
+              ],
+              "reasoning": "Payment-svc-1 failing its liveness probe could be a resource problem on that instance. But GC and heap numbers are normal and the instance recovered quickly."
+            }
+          ],
+          "recommendedAction": "Stop the retry storm. Turn on exponential backoff with jitter in the order-service PaymentClient, or temporarily turn retries off, and add a retry budget or circuit breaker. Shed or rate-limit traffic at the gateway or order-service until payment-svc's queue drains, and scale payment-svc up for a while. After that, look into why payment-svc-1 failed its liveness probe."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1357,
+      "cacheReadTokens": 11696,
+      "cacheWriteTokens": 6821
+    },
+    "durationMs": 16086,
+    "stopReason": "tool_use"
+  }
+}

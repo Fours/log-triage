@@ -1,0 +1,140 @@
+{
+  "score": {
+    "incidentId": "test-043",
+    "difficulty": "easy",
+    "scenario": "data_integrity/partial-migration",
+    "truth": "data_integrity",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.65,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 5,
+      "precision": 0.625,
+      "recall": 0.8333333333333334,
+      "f1": 0.7142857142857143
+    },
+    "herringsCited": 0,
+    "costUsd": 0.039857,
+    "durationMs": 11353,
+    "iterations": 3,
+    "toolCalls": 3,
+    "tokens": {
+      "input": 8,
+      "output": 909,
+      "cacheRead": 5375,
+      "cacheWrite": 4114
+    }
+  },
+  "result": {
+    "incidentId": "test-043",
+    "model": "claude-opus-5-5",
+    "prompt": "v1",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.65,
+          "evidenceLines": [
+            89,
+            90,
+            92,
+            95,
+            97,
+            93,
+            106,
+            116
+          ],
+          "reasoning": "At 09:10:03 account-svc started migration 0106_add_region_id (#89). Step 1 renamed accounts.region_id to region_id_old (#90). Step 2 then failed on a lock timeout, and because the DDL was non-transactional, step 1 stayed committed (#92). The schema is now half-migrated: account-svc queries still use region_id, and accounts-db rejects them with 'column does not exist' (#95, #106, #110, #97, #116). account-svc returns 500, and edge-proxy surfaces that as POST /login 500s starting at #93. Logins succeeded right up to #88. auth-svc, session-cache and audit-consumer show no errors."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.3,
+          "evidenceLines": [
+            89,
+            92
+          ],
+          "reasoning": "The trigger was a schema-migration rollout from account-svc. If migrations count as part of a deploy, this could be classed as a bad deploy (a non-atomic migration released without a rollback)."
+        }
+      ],
+      "recommendedAction": "Restore the schema: rename accounts.region_id_old back to region_id, or finish steps 2 and 3 of 0106 once the lock contention clears. Pause or disable automatic migrations on account-svc. Rewrite 0106 so it runs in a transaction or is backward compatible (expand/contract). Check that /login recovers."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "11 match(es):\n#30 2026-11-18T09:03:18Z WARN edge-proxy disk usage 78% on /var/log (threshold 75%)\n#92 2026-11-18T09:10:23Z ERROR account-svc migrate: 0106_add_region_id step 2/3 failed: lock timeout on accounts; step 1 already committed (non-transactional DDL), not rolled back\n#93 2026-11-18T09:10:36Z ERROR edge-proxy [t-2271] POST /login 500 14882ms: upstream account-svc returned 500 Internal Server Error\n#95 2026-11-18T09:10:39Z ERROR accounts-db column \"region_id\" of relation \"accounts\" does not exist at character 72\n#97 2026-11-18T09:11:05Z ERROR account-svc [t-2274] query on accounts failed for u-1934: column \"region_id\" does not exist\n#103 2026-11-18T09:12:27Z ERROR edge-proxy [t-2278] POST /login 500 21977ms: upstream account-svc returned 500 Internal Server Error\n#106 2026-11-18T09:12:47Z ERROR accounts-db column \"region_id\" of relation \"accounts\" does not exist at character 62\n#110 2026-11-18T09:13:39Z ERROR accounts-db column \"region_id\" of relation \"accounts\" does not exist at character 30\n#116 2026-11-18T09:15:23Z ERROR account-svc [t-2281] query on accounts failed for u-1936: column \"region_id\" does not exist\n#120 2026-11-18T09:15:33Z ERROR edge-proxy [t-2285] POST /login 500 29393ms: upstream account-svc returned 500 Internal Server Error\n#131 2026-11-18T09:17:38Z ERROR edge-proxy [t-2291] POST /login 500 29504ms: upstream account-svc returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "migrat"
+        },
+        "output": "3 match(es):\n#89 2026-11-18T09:10:03Z INFO account-svc migrate: applying 0106_add_region_id (3 steps) to accounts-db\n#90 2026-11-18T09:10:05Z INFO account-svc migrate: 0106_add_region_id step 1/3 ok: renamed column accounts.region_id -> region_id_old\n#92 2026-11-18T09:10:23Z ERROR account-svc migrate: 0106_add_region_id step 2/3 failed: lock timeout on accounts; step 1 already committed (non-transactional DDL), not rolled back"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 92,
+          "before": 8,
+          "after": 3
+        },
+        "output": "#84 2026-11-18T09:09:55Z DEBUG auth-svc GC pause 5ms (young), heap 45%\n#85 2026-11-18T09:09:58Z INFO audit-consumer processed batch of 56 messages from audit.events (lag 214ms)\n#86 2026-11-18T09:10:02Z INFO account-svc [t-2269] user u-1931 accepted, calling auth-svc POST /tokens\n#87 2026-11-18T09:10:02Z INFO auth-svc [t-2269] POST /tokens u-1931 ok 30ms\n#88 2026-11-18T09:10:02Z INFO edge-proxy [t-2269] POST /login 200 154ms\n#89 2026-11-18T09:10:03Z INFO account-svc migrate: applying 0106_add_region_id (3 steps) to accounts-db\n#90 2026-11-18T09:10:05Z INFO account-svc migrate: 0106_add_region_id step 1/3 ok: renamed column accounts.region_id -> region_id_old\n#91 2026-11-18T09:10:07Z DEBUG account-svc GC pause 7ms (young), heap 37%\n#92 2026-11-18T09:10:23Z ERROR account-svc migrate: 0106_add_region_id step 2/3 failed: lock timeout on accounts; step 1 already committed (non-transactional DDL), not rolled back\n#93 2026-11-18T09:10:36Z ERROR edge-proxy [t-2271] POST /login 500 14882ms: upstream account-svc returned 500 Internal Server Error\n#94 2026-11-18T09:10:37Z INFO audit-consumer processed batch of 80 messages from audit.events (lag 382ms)\n#95 2026-11-18T09:10:39Z ERROR accounts-db column \"region_id\" of relation \"accounts\" does not exist at character 72"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.65,
+              "evidenceLines": [
+                89,
+                90,
+                92,
+                95,
+                97,
+                93,
+                106,
+                116
+              ],
+              "reasoning": "At 09:10:03 account-svc started migration 0106_add_region_id (#89). Step 1 renamed accounts.region_id to region_id_old (#90). Step 2 then failed on a lock timeout, and because the DDL was non-transactional, step 1 stayed committed (#92). The schema is now half-migrated: account-svc queries still use region_id, and accounts-db rejects them with 'column does not exist' (#95, #106, #110, #97, #116). account-svc returns 500, and edge-proxy surfaces that as POST /login 500s starting at #93. Logins succeeded right up to #88. auth-svc, session-cache and audit-consumer show no errors."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.3,
+              "evidenceLines": [
+                89,
+                92
+              ],
+              "reasoning": "The trigger was a schema-migration rollout from account-svc. If migrations count as part of a deploy, this could be classed as a bad deploy (a non-atomic migration released without a rollback)."
+            }
+          ],
+          "recommendedAction": "Restore the schema: rename accounts.region_id_old back to region_id, or finish steps 2 and 3 of 0106 once the lock contention clears. Pause or disable automatic migrations on account-svc. Rewrite 0106 so it runs in a transaction or is backward compatible (expand/contract). Check that /login recovers."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 3,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 909,
+      "cacheReadTokens": 5375,
+      "cacheWriteTokens": 4114
+    },
+    "durationMs": 11353,
+    "stopReason": "tool_use"
+  }
+}

@@ -1,0 +1,187 @@
+{
+  "score": {
+    "incidentId": "test-016",
+    "difficulty": "medium",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.8,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 11,
+      "correct": 8,
+      "precision": 0.7272727272727273,
+      "recall": 0.8888888888888888,
+      "f1": 0.7999999999999999
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0576232,
+    "durationMs": 14429,
+    "iterations": 4,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 10,
+      "output": 1292,
+      "cacheRead": 11466,
+      "cacheWrite": 5890
+    }
+  },
+  "result": {
+    "incidentId": "test-016",
+    "model": "claude-opus-5-5",
+    "prompt": "v1",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.8,
+          "evidenceLines": [
+            189,
+            196,
+            197,
+            200,
+            201,
+            204,
+            215,
+            217,
+            208,
+            203,
+            278
+          ],
+          "reasoning": "Until 05:22:50 logins succeeded. Then auth-svc-3 restarted after a failed liveness probe (#189), dropping capacity to 3/4. A few 503s led account-svc's AuthClient to retry right away with backoff disabled (#196, #200, #204). auth-svc was back at 4/4 by 05:23:38 (#197), but inbound load kept climbing: 3.2x (#201), 4.1x (#215), 5.0x baseline (#217), with queue-full load shedding (#208 onward). The edge-proxy 503s (#203 to #278) are the downstream symptom. This is a self-sustaining retry storm (metastable failure): the trigger went away, but the failure did not stop."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.15,
+          "evidenceLines": [
+            196,
+            209
+          ],
+          "reasoning": "account-svc retries with 'backoff disabled', which looks like a misconfigured retry policy. That setting amplifies the problem, but it wasn't the trigger."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.05,
+          "evidenceLines": [
+            189,
+            208
+          ],
+          "reasoning": "The auth-svc liveness failure could point to resource pressure on that instance, but there's little evidence for it. The slow audit_log query (#38) and the audit-consumer deploy (#96) look like unrelated red herrings."
+        }
+      ],
+      "recommendedAction": "Stop the retry storm: turn on exponential backoff with jitter, or turn off immediate retries, in account-svc's AuthClient. Add a retry budget or circuit breaker toward auth-svc. In the meantime, rate-limit /login at edge-proxy or briefly scale auth-svc out so its queue can drain. Then look into why auth-svc-3's liveness probe failed."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "21 match(es):\n#38 2026-10-23T05:09:16Z WARN accounts-db slow query 1552ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#189 2026-10-23T05:22:50Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4\n#196 2026-10-23T05:23:27Z WARN account-svc [t-1650] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#200 2026-10-23T05:24:10Z WARN account-svc [t-1654] AuthClient.issueToken got 503, retrying immediately (attempt 3/4, backoff disabled)\n#201 2026-10-23T05:24:31Z WARN auth-svc inbound request rate 3.2x baseline (inflight 487), shedding load with 503\n#203 2026-10-23T05:24:37Z ERROR edge-proxy [t-1656] POST /login 503 5447ms: upstream account-svc returned 503 (retries exhausted)\n#204 2026-10-23T05:24:59Z WARN account-svc [t-1657] AuthClient.issueToken got 503, retrying immediately (attempt 4/4, backoff disabled)\n#208 2026-10-23T05:25:32Z ERROR auth-svc [t-1658] load shed: rejected POST /tokens with 503 (queue full)\n#209 2026-10-23T05:25:36Z WARN account-svc [t-1662] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#215 2026-10-23T05:26:12Z WARN auth-svc inbound request rate 4.1x baseline (inflight 663), shedding load with 503\n#217 2026-10-23T05:26:29Z WARN auth-svc inbound request rate 5.0x baseline (inflight 825), shedding load with 503\n#218 2026-10-23T05:26:33Z ERROR edge-proxy [t-1666] POST /login 503 14651ms: upstream account-svc returned 503 (retries exhausted)\n#225 2026-10-23T05:27:09Z ERROR auth-svc [t-1669] load shed: rejected POST /tokens with 503 (queue full)\n#231 2026-10-23T05:27:25Z ERROR edge-proxy [t-1679] POST /login 503 20202ms: upstream account-svc returned 503 (retries exhausted)\n#242 2026-10-23T05:28:59Z ERROR auth-svc [t-1683] load shed: rejected POST /tokens with 503 (queue full)\n#244 2026-10-23T05:29:07Z ERROR edge-proxy [t-1687] POST /login 503 16855ms: upstream account-svc returned 503 (retries exhausted)\n#250 2026-10-23T05:31:01Z ERROR edge-proxy [t-1690] POST /login 503 15375ms: upstream account-svc returned 503 (retries exhausted)\n#259 2026-10-23T05:32:30Z ERROR auth-svc [t-1693] load shed: rejected POST /tokens with 503 (queue full)\n#269 2026-10-23T05:33:54Z ERROR edge-proxy [t-1701] POST /login 503 25890ms: upstream account-svc returned 503 (retries exhausted)\n#270 2026-10-23T05:34:07Z ERROR auth-svc [t-1705] load shed: rejected POST /tokens with 503 (queue full)\n#278 2026-10-23T05:35:42Z ERROR edge-proxy [t-1707] POST /login 503 8267ms: upstream account-svc returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 189,
+          "before": 12,
+          "after": 8
+        },
+        "output": "#177 2026-10-23T05:21:53Z INFO account-svc [t-1636] user u-3680 accepted, calling auth-svc POST /tokens\n#178 2026-10-23T05:21:53Z INFO edge-proxy [t-1636] POST /login 200 155ms\n#179 2026-10-23T05:22:10Z INFO account-svc [t-1638] user u-3681 accepted, calling auth-svc POST /tokens\n#180 2026-10-23T05:22:10Z INFO auth-svc [t-1638] POST /tokens u-3681 ok 76ms\n#181 2026-10-23T05:22:10Z INFO edge-proxy [t-1638] POST /login 200 137ms\n#182 2026-10-23T05:22:19Z INFO audit-consumer processed batch of 56 messages from audit.events (lag 196ms)\n#183 2026-10-23T05:22:31Z INFO account-svc [t-1641] user u-3684 accepted, calling auth-svc POST /tokens\n#184 2026-10-23T05:22:31Z INFO edge-proxy [t-1641] POST /login 200 146ms\n#185 2026-10-23T05:22:36Z INFO session-cache stats: hits=14616 misses=574 evicted=0 connected_clients=39\n#186 2026-10-23T05:22:42Z INFO account-svc [t-1642] user u-3686 accepted, calling auth-svc POST /tokens\n#187 2026-10-23T05:22:42Z INFO auth-svc [t-1642] POST /tokens u-3686 ok 32ms\n#188 2026-10-23T05:22:42Z INFO edge-proxy [t-1642] POST /login 200 138ms\n#189 2026-10-23T05:22:50Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4\n#190 2026-10-23T05:22:57Z INFO account-svc [t-1646] user u-3687 accepted, calling auth-svc POST /tokens\n#191 2026-10-23T05:22:58Z INFO edge-proxy [t-1646] POST /login 200 78ms\n#192 2026-10-23T05:22:58Z DEBUG auth-svc GC pause 25ms (young), heap 28%\n#193 2026-10-23T05:23:09Z INFO audit-consumer processed batch of 28 messages from audit.events (lag 141ms)\n#194 2026-10-23T05:23:23Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 7\n#195 2026-10-23T05:23:24Z DEBUG account-svc GC pause 15ms (young), heap 47%\n#196 2026-10-23T05:23:27Z WARN account-svc [t-1650] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#197 2026-10-23T05:23:38Z INFO auth-svc instance auth-svc-3 ready, capacity 4/4"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "backoff",
+          "limit": 5
+        },
+        "output": "4 match(es):\n#196 2026-10-23T05:23:27Z WARN account-svc [t-1650] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#200 2026-10-23T05:24:10Z WARN account-svc [t-1654] AuthClient.issueToken got 503, retrying immediately (attempt 3/4, backoff disabled)\n#204 2026-10-23T05:24:59Z WARN account-svc [t-1657] AuthClient.issueToken got 503, retrying immediately (attempt 4/4, backoff disabled)\n#209 2026-10-23T05:25:36Z WARN account-svc [t-1662] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "1 match(es):\n#96 2026-10-23T05:14:40Z INFO audit-consumer deploy: rolling out audit-consumer v1.15.2 (build bebe25d)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "retry",
+          "service": "account-svc",
+          "level": "DEBUG",
+          "limit": 3
+        },
+        "output": "4 match(es), showing first 3:\n#196 2026-10-23T05:23:27Z WARN account-svc [t-1650] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#200 2026-10-23T05:24:10Z WARN account-svc [t-1654] AuthClient.issueToken got 503, retrying immediately (attempt 3/4, backoff disabled)\n#204 2026-10-23T05:24:59Z WARN account-svc [t-1657] AuthClient.issueToken got 503, retrying immediately (attempt 4/4, backoff disabled)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "config"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.8,
+              "evidenceLines": [
+                189,
+                196,
+                197,
+                200,
+                201,
+                204,
+                215,
+                217,
+                208,
+                203,
+                278
+              ],
+              "reasoning": "Until 05:22:50 logins succeeded. Then auth-svc-3 restarted after a failed liveness probe (#189), dropping capacity to 3/4. A few 503s led account-svc's AuthClient to retry right away with backoff disabled (#196, #200, #204). auth-svc was back at 4/4 by 05:23:38 (#197), but inbound load kept climbing: 3.2x (#201), 4.1x (#215), 5.0x baseline (#217), with queue-full load shedding (#208 onward). The edge-proxy 503s (#203 to #278) are the downstream symptom. This is a self-sustaining retry storm (metastable failure): the trigger went away, but the failure did not stop."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.15,
+              "evidenceLines": [
+                196,
+                209
+              ],
+              "reasoning": "account-svc retries with 'backoff disabled', which looks like a misconfigured retry policy. That setting amplifies the problem, but it wasn't the trigger."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.05,
+              "evidenceLines": [
+                189,
+                208
+              ],
+              "reasoning": "The auth-svc liveness failure could point to resource pressure on that instance, but there's little evidence for it. The slow audit_log query (#38) and the audit-consumer deploy (#96) look like unrelated red herrings."
+            }
+          ],
+          "recommendedAction": "Stop the retry storm: turn on exponential backoff with jitter, or turn off immediate retries, in account-svc's AuthClient. Add a retry budget or circuit breaker toward auth-svc. In the meantime, rate-limit /login at edge-proxy or briefly scale auth-svc out so its queue can drain. Then look into why auth-svc-3's liveness probe failed."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1292,
+      "cacheReadTokens": 11466,
+      "cacheWriteTokens": 5890
+    },
+    "durationMs": 14429,
+    "stopReason": "tool_use"
+  }
+}

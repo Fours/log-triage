@@ -1,0 +1,148 @@
+{
+  "score": {
+    "incidentId": "test-039",
+    "difficulty": "medium",
+    "scenario": "dependency_timeout/external-hang",
+    "truth": "dependency_timeout",
+    "acceptable": [
+      "external_outage"
+    ],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 8,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0510928,
+    "durationMs": 10874,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 952,
+      "cacheRead": 13014,
+      "cacheWrite": 5882
+    }
+  },
+  "result": {
+    "incidentId": "test-039",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.88,
+          "evidenceLines": [
+            168,
+            171,
+            181,
+            184,
+            199,
+            182,
+            185,
+            200
+          ],
+          "reasoning": "The third-party translation API (api.translate.example) that catalog-svc calls started slowing down at 20:43 (4.8s, then 12s) and then hung until the 30s timeout (#181, #184, #199). Each hang made search-api's CatalogClient.getBatch time out after 30s on the same traces (#182, #185, #200). Because these calls were held open, search-api's 50-connection pool to catalog-svc filled up (#198, #210), then pool checkouts timed out (#221), and web-bff returned 503s on GET /search (#201 onward). Those are downstream symptoms. catalog-db only shows routine checkpoints and vacuums, no deploy appears in the logs, and the TLS cert warning (#75) is unrelated. Since the provider hung rather than failing fast, this is a dependency timeout and not an outage."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.1,
+          "evidenceLines": [
+            181,
+            184,
+            199
+          ],
+          "reasoning": "The translation API is a third party and may be degraded. But the failures are hangs/timeouts, not 5xx errors or connection refusals."
+        }
+      ],
+      "recommendedAction": "Put a short timeout (~2s) and a circuit breaker on catalog-svc's translation API calls, and fall back to untranslated text or a cached translation. Take translation out of the synchronous /products/batch path. Check the translation provider's status. Consider bulkheading search-api's catalog-svc pool and making its client timeouts shorter than 30s."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "19 match(es):\n#75 2026-11-26T20:34:52Z WARN web-bff TLS certificate for *.internal.example expires in 28 days\n#168 2026-11-26T20:43:23Z WARN catalog-svc [t-1507] translation API call slow: 4784ms (soft threshold 2000ms) POST https://api.translate.example/v2/translate\n#171 2026-11-26T20:44:02Z WARN catalog-svc [t-1510] translation API call slow: 11950ms (soft threshold 2000ms) POST https://api.translate.example/v2/translate\n#181 2026-11-26T20:44:53Z ERROR catalog-svc [t-1518] translation API call FAILED: upstream timeout after 30000ms POST https://api.translate.example/v2/translate\n#182 2026-11-26T20:44:53Z ERROR search-api [t-1518] CatalogClient.getBatch timed out after 30000ms calling catalog-svc GET /products/batch (p-1191)\n#184 2026-11-26T20:45:36Z ERROR catalog-svc [t-1522] translation API call FAILED: upstream timeout after 30000ms POST https://api.translate.example/v2/translate\n#185 2026-11-26T20:45:37Z ERROR search-api [t-1522] CatalogClient.getBatch timed out after 30000ms calling catalog-svc GET /products/batch (p-1192)\n#198 2026-11-26T20:46:51Z WARN search-api HTTP connection pool to catalog-svc at capacity (50/50 in use), 29 requests queued\n#199 2026-11-26T20:47:18Z ERROR catalog-svc [t-1531] translation API call FAILED: upstream timeout after 30000ms POST https://api.translate.example/v2/translate\n#200 2026-11-26T20:47:18Z ERROR search-api [t-1531] CatalogClient.getBatch timed out after 30000ms calling catalog-svc GET /products/batch (p-1198)\n#201 2026-11-26T20:47:30Z ERROR web-bff [t-1532] GET /search 503 26591ms: upstream search-api returned 503 Service Unavailable\n#205 2026-11-26T20:47:58Z ERROR web-bff [t-1533] GET /search 503 24621ms: upstream search-api returned 503 Service Unavailable\n#210 2026-11-26T20:48:48Z WARN search-api HTTP connection pool to catalog-svc at capacity (50/50 in use), 50 requests queued\n#213 2026-11-26T20:48:57Z ERROR web-bff [t-1538] GET /search 503 14904ms: upstream search-api returned 503 Service Unavailable\n#221 2026-11-26T20:50:04Z ERROR search-api pool checkout timeout: no connection to catalog-svc available after 5000ms\n#223 2026-11-26T20:50:13Z ERROR web-bff [t-1544] GET /search 503 14146ms: upstream search-api returned 503 Service Unavailable\n#227 2026-11-26T20:51:24Z ERROR web-bff [t-1547] GET /search 503 13339ms: upstream search-api returned 503 Service Unavailable\n#229 2026-11-26T20:52:02Z ERROR web-bff [t-1551] GET /search 503 23296ms: upstream search-api returned 503 Service Unavailable\n#240 2026-11-26T20:53:29Z ERROR web-bff [t-1553] GET /search 503 18987ms: upstream search-api returned 503 Service Unavailable"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "translat",
+          "limit": 40
+        },
+        "output": "5 match(es):\n#168 2026-11-26T20:43:23Z WARN catalog-svc [t-1507] translation API call slow: 4784ms (soft threshold 2000ms) POST https://api.translate.example/v2/translate\n#171 2026-11-26T20:44:02Z WARN catalog-svc [t-1510] translation API call slow: 11950ms (soft threshold 2000ms) POST https://api.translate.example/v2/translate\n#181 2026-11-26T20:44:53Z ERROR catalog-svc [t-1518] translation API call FAILED: upstream timeout after 30000ms POST https://api.translate.example/v2/translate\n#184 2026-11-26T20:45:36Z ERROR catalog-svc [t-1522] translation API call FAILED: upstream timeout after 30000ms POST https://api.translate.example/v2/translate\n#199 2026-11-26T20:47:18Z ERROR catalog-svc [t-1531] translation API call FAILED: upstream timeout after 30000ms POST https://api.translate.example/v2/translate"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-db"
+        },
+        "output": "12 match(es):\n#12 2026-11-26T20:28:56Z INFO catalog-db checkpoint complete: wrote 1272 buffers (7.8%)\n#36 2026-11-26T20:31:11Z INFO catalog-db checkpoint complete: wrote 401 buffers (3.3%)\n#64 2026-11-26T20:33:51Z INFO catalog-db checkpoint complete: wrote 903 buffers (2.6%)\n#79 2026-11-26T20:35:21Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 36\n#109 2026-11-26T20:37:50Z INFO catalog-db checkpoint complete: wrote 1188 buffers (4.6%)\n#136 2026-11-26T20:40:29Z INFO catalog-db checkpoint complete: wrote 571 buffers (3.0%)\n#156 2026-11-26T20:42:13Z INFO catalog-db checkpoint complete: wrote 747 buffers (3.6%)\n#180 2026-11-26T20:44:51Z INFO catalog-db checkpoint complete: wrote 655 buffers (1.3%)\n#191 2026-11-26T20:46:23Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 23\n#204 2026-11-26T20:47:57Z INFO catalog-db checkpoint complete: wrote 898 buffers (2.7%)\n#222 2026-11-26T20:50:11Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 1\n#234 2026-11-26T20:52:35Z INFO catalog-db checkpoint complete: wrote 473 buffers (7.4%)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.88,
+              "evidenceLines": [
+                168,
+                171,
+                181,
+                184,
+                199,
+                182,
+                185,
+                200
+              ],
+              "reasoning": "The third-party translation API (api.translate.example) that catalog-svc calls started slowing down at 20:43 (4.8s, then 12s) and then hung until the 30s timeout (#181, #184, #199). Each hang made search-api's CatalogClient.getBatch time out after 30s on the same traces (#182, #185, #200). Because these calls were held open, search-api's 50-connection pool to catalog-svc filled up (#198, #210), then pool checkouts timed out (#221), and web-bff returned 503s on GET /search (#201 onward). Those are downstream symptoms. catalog-db only shows routine checkpoints and vacuums, no deploy appears in the logs, and the TLS cert warning (#75) is unrelated. Since the provider hung rather than failing fast, this is a dependency timeout and not an outage."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.1,
+              "evidenceLines": [
+                181,
+                184,
+                199
+              ],
+              "reasoning": "The translation API is a third party and may be degraded. But the failures are hangs/timeouts, not 5xx errors or connection refusals."
+            }
+          ],
+          "recommendedAction": "Put a short timeout (~2s) and a circuit breaker on catalog-svc's translation API calls, and fall back to untranslated text or a cached translation. Take translation out of the synchronous /products/batch path. Check the translation provider's status. Consider bulkheading search-api's catalog-svc pool and making its client timeouts shorter than 30s."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 952,
+      "cacheReadTokens": 13014,
+      "cacheWriteTokens": 5882
+    },
+    "durationMs": 10874,
+    "stopReason": "tool_use"
+  }
+}

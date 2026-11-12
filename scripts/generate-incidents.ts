@@ -1,27 +1,30 @@
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_SEED, GENERATOR_VERSION, generateDataset } from "../src/generator/index.js";
+import { DEFAULT_SEED, GENERATOR_VERSION, TEST_SET, generateDataset, type DatasetOptions } from "../src/generator/index.js";
 
 /**
- * Regenerate the labeled incident set into incidents/generated/.
- * Deterministic: the same seed produces byte-identical files, so the dataset is
- * committed and diffs show exactly what a generator change did.
+ * Regenerate a labeled incident set. Deterministic: the same seed produces
+ * byte-identical files, so the datasets are committed and diffs show exactly
+ * what a generator change did.
  *
- *   npm run generate              # default seed
- *   npm run generate -- my-seed   # a different (but still reproducible) set
+ *   npm run generate              # dev set (default seed) → incidents/generated/
+ *   npm run generate -- --test    # held-out test set      → incidents/test/
+ *   npm run generate -- my-seed   # a different (but still reproducible) dev-style set
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
-const outDir = resolve(here, "../incidents/generated");
-const seed = process.argv[2] ?? DEFAULT_SEED;
+const isTest = process.argv.includes("--test");
+const outDir = resolve(here, isTest ? "../incidents/test" : "../incidents/generated");
+const seed = isTest ? TEST_SET.seed : (process.argv.slice(2).find((a) => !a.startsWith("--")) ?? DEFAULT_SEED);
+const options: DatasetOptions = isTest ? { idPrefix: TEST_SET.idPrefix, topologyShift: TEST_SET.topologyShift } : {};
 
 mkdirSync(outDir, { recursive: true });
 for (const f of readdirSync(outDir)) {
   if (f.endsWith(".json")) rmSync(resolve(outDir, f));
 }
 
-const dataset = generateDataset(seed);
+const dataset = generateDataset(seed, options);
 for (const { incident } of dataset) {
   writeFileSync(resolve(outDir, `${incident.id}.json`), JSON.stringify(incident, null, 2) + "\n");
 }
@@ -29,6 +32,7 @@ for (const { incident } of dataset) {
 const manifest = {
   generatorVersion: GENERATOR_VERSION,
   seed,
+  ...options,
   count: dataset.length,
   incidents: dataset.map(({ incident, meta }) => ({
     id: incident.id,

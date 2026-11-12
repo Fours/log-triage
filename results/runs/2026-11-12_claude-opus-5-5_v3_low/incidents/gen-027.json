@@ -1,0 +1,127 @@
+{
+  "score": {
+    "incidentId": "gen-027",
+    "difficulty": "easy",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 0.8571428571428571,
+      "f1": 0.923076923076923
+    },
+    "herringsCited": 0,
+    "costUsd": 0.021951,
+    "durationMs": 8174,
+    "iterations": 3,
+    "toolCalls": 2,
+    "tokens": {
+      "input": 8,
+      "output": 631,
+      "cacheRead": 10670,
+      "cacheWrite": 1433
+    }
+  },
+  "result": {
+    "incidentId": "gen-027",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.88,
+          "evidenceLines": [
+            94,
+            96,
+            102,
+            108,
+            104,
+            123
+          ],
+          "reasoning": "A single payment-svc instance restarted (capacity dropped to 3/4), which on its own should have been survivable. order-service retries 503s immediately with backoff disabled, so inbound load on payment-svc climbed to 3.2x and then 4.1x baseline. payment-svc started shedding load with 503 (queue full), the gateway's checkout calls ran out of retries and returned 503, and the retry storm kept it from recovering."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.07,
+          "evidenceLines": [
+            114,
+            130
+          ],
+          "reasoning": "payment-svc rejecting requests could be read as the dependency itself failing, but the 3-4x load spike points to retries amplifying a small loss of capacity."
+        }
+      ],
+      "recommendedAction": "Turn on exponential backoff with jitter and a retry budget or circuit breaker in order-service's PaymentClient. Temporarily scale out payment-svc to drain the backlog, and look into why payment-svc-1 failed its liveness probe."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "13 match(es):\n#94 2026-10-31T08:07:34Z WARN payment-svc instance payment-svc-1 restarting (liveness probe failed), capacity 3/4\n#96 2026-10-31T08:07:41Z WARN order-service [t-6664] PaymentClient.charge got 503, retrying immediately (attempt 2/4, backoff disabled)\n#102 2026-10-31T08:09:24Z WARN order-service [t-6666] PaymentClient.charge got 503, retrying immediately (attempt 3/4, backoff disabled)\n#104 2026-10-31T08:09:40Z WARN payment-svc inbound request rate 3.2x baseline (inflight 447), shedding load with 503\n#107 2026-10-31T08:10:08Z ERROR api-gateway [t-6670] POST /checkout 503 26939ms: upstream order-service returned 503 (retries exhausted)\n#108 2026-10-31T08:10:24Z WARN order-service [t-6672] PaymentClient.charge got 503, retrying immediately (attempt 4/4, backoff disabled)\n#111 2026-10-31T08:10:35Z ERROR api-gateway [t-6674] POST /checkout 503 29824ms: upstream order-service returned 503 (retries exhausted)\n#114 2026-10-31T08:11:00Z ERROR payment-svc [t-6676] load shed: rejected POST /charge with 503 (queue full)\n#123 2026-10-31T08:11:59Z WARN payment-svc inbound request rate 4.1x baseline (inflight 848), shedding load with 503\n#130 2026-10-31T08:13:39Z ERROR payment-svc [t-6687] load shed: rejected POST /charge with 503 (queue full)\n#135 2026-10-31T08:14:22Z ERROR api-gateway [t-6693] POST /checkout 503 10863ms: upstream order-service returned 503 (retries exhausted)\n#140 2026-10-31T08:15:21Z ERROR payment-svc [t-6696] load shed: rejected POST /charge with 503 (queue full)\n#142 2026-10-31T08:15:48Z ERROR api-gateway [t-6697] POST /checkout 503 23879ms: upstream order-service returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 94,
+          "before": 6,
+          "after": 2
+        },
+        "output": "#88 2026-10-31T08:07:16Z DEBUG api-gateway upstream health: order-service ok, payment-svc ok\n#89 2026-10-31T08:07:25Z INFO order-consumer processed batch of 65 messages from orders.events (lag 322ms)\n#90 2026-10-31T08:07:30Z DEBUG payment-svc GC pause 24ms (young), heap 35%\n#91 2026-10-31T08:07:31Z INFO order-service [t-6660] order o-7938 accepted, calling payment-svc POST /charge\n#92 2026-10-31T08:07:31Z INFO api-gateway [t-6660] POST /checkout 200 235ms\n#93 2026-10-31T08:07:32Z DEBUG order-service GC pause 6ms (young), heap 48%\n#94 2026-10-31T08:07:34Z WARN payment-svc instance payment-svc-1 restarting (liveness probe failed), capacity 3/4\n#95 2026-10-31T08:07:38Z INFO redis stats: hits=9372 misses=688 evicted=0 connected_clients=44\n#96 2026-10-31T08:07:41Z WARN order-service [t-6664] PaymentClient.charge got 503, retrying immediately (attempt 2/4, backoff disabled)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.88,
+              "evidenceLines": [
+                94,
+                96,
+                102,
+                108,
+                104,
+                123
+              ],
+              "reasoning": "A single payment-svc instance restarted (capacity dropped to 3/4), which on its own should have been survivable. order-service retries 503s immediately with backoff disabled, so inbound load on payment-svc climbed to 3.2x and then 4.1x baseline. payment-svc started shedding load with 503 (queue full), the gateway's checkout calls ran out of retries and returned 503, and the retry storm kept it from recovering."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.07,
+              "evidenceLines": [
+                114,
+                130
+              ],
+              "reasoning": "payment-svc rejecting requests could be read as the dependency itself failing, but the 3-4x load spike points to retries amplifying a small loss of capacity."
+            }
+          ],
+          "recommendedAction": "Turn on exponential backoff with jitter and a retry budget or circuit breaker in order-service's PaymentClient. Temporarily scale out payment-svc to drain the backlog, and look into why payment-svc-1 failed its liveness probe."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 2,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 631,
+      "cacheReadTokens": 10670,
+      "cacheWriteTokens": 1433
+    },
+    "durationMs": 8174,
+    "stopReason": "tool_use"
+  }
+}

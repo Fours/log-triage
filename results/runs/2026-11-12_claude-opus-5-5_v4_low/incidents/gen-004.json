@@ -1,0 +1,145 @@
+{
+  "score": {
+    "incidentId": "gen-004",
+    "difficulty": "easy",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 4,
+      "precision": 0.6666666666666666,
+      "recall": 1,
+      "f1": 0.8
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0513534,
+    "durationMs": 13744,
+    "iterations": 3,
+    "toolCalls": 2,
+    "tokens": {
+      "input": 8,
+      "output": 1266,
+      "cacheRead": 8132,
+      "cacheWrite": 4875
+    }
+  },
+  "result": {
+    "incidentId": "gen-004",
+    "model": "claude-opus-5-5",
+    "prompt": "v4",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.85,
+          "evidenceLines": [
+            115,
+            123,
+            124,
+            133,
+            139,
+            161
+          ],
+          "reasoning": "session-cache restarted empty after node replacement (no RDB snapshot); miss ratio jumped to 95% and account-svc fell through to accounts-db, saturating connections/CPU and producing 7-9s queries, causing login timeouts/504s at edge-proxy. Cache stampede amplification."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.1,
+          "evidenceLines": [
+            139,
+            161
+          ],
+          "reasoning": "Slow accounts-db queries could be read as dependency timeout, but they follow the cache wipe and load spike."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.05,
+          "evidenceLines": [
+            124,
+            133
+          ],
+          "reasoning": "DB connection limit near capacity, but driven by stampede not normal load."
+        }
+      ],
+      "recommendedAction": "Stop the stampede on accounts-db: rate-limit or coalesce cache-miss loads in account-svc (single-flight), warm session-cache, and temporarily raise DB capacity. Enable RDB/AOF persistence or replica failover for session-cache so node replacement doesn't start it empty."
+    },
+    "trace": [
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 123,
+          "before": 8,
+          "after": 8
+        },
+        "output": "#115 2026-10-21T02:28:13Z WARN session-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#116 2026-10-21T02:28:27Z INFO audit-consumer processed batch of 111 messages from audit.events (lag 97ms)\n#117 2026-10-21T02:28:29Z INFO account-svc [t-2644] user u-8663 accepted, calling auth-svc POST /tokens\n#118 2026-10-21T02:28:30Z INFO edge-proxy [t-2644] POST /login 200 157ms\n#119 2026-10-21T02:28:49Z INFO accounts-db checkpoint complete: wrote 1330 buffers (2.8%)\n#120 2026-10-21T02:28:57Z INFO account-svc [t-2647] user u-8666 accepted, calling auth-svc POST /tokens\n#121 2026-10-21T02:28:57Z INFO edge-proxy [t-2647] POST /login 200 103ms\n#122 2026-10-21T02:29:01Z INFO audit-consumer processed batch of 108 messages from audit.events (lag 400ms)\n#123 2026-10-21T02:29:03Z WARN account-svc session-cache miss ratio 95% over last 30s (baseline 2%), loading from accounts-db\n#124 2026-10-21T02:29:09Z WARN accounts-db connections 484/500 (active 422), CPU 98%\n#125 2026-10-21T02:29:22Z INFO account-svc [t-2651] user u-8668 accepted, calling auth-svc POST /tokens\n#126 2026-10-21T02:29:23Z INFO edge-proxy [t-2651] POST /login 200 132ms\n#127 2026-10-21T02:29:34Z DEBUG account-svc GC pause 8ms (young), heap 46%\n#128 2026-10-21T02:29:39Z INFO audit-consumer processed batch of 81 messages from audit.events (lag 277ms)\n#129 2026-10-21T02:30:03Z INFO account-svc [t-2654] user u-8670 accepted, calling auth-svc POST /tokens\n#130 2026-10-21T02:30:03Z INFO edge-proxy [t-2654] POST /login 200 125ms\n#131 2026-10-21T02:30:04Z DEBUG auth-svc GC pause 15ms (young), heap 36%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "accounts-db",
+          "level": "WARN"
+        },
+        "output": "5 match(es):\n#124 2026-10-21T02:29:09Z WARN accounts-db connections 484/500 (active 422), CPU 98%\n#133 2026-10-21T02:30:16Z WARN accounts-db connections 493/500 (active 439), CPU 95%\n#139 2026-10-21T02:31:26Z WARN accounts-db slow query 7838ms: SELECT * FROM accounts WHERE id = $1\n#161 2026-10-21T02:36:06Z WARN accounts-db slow query 8786ms: SELECT * FROM accounts WHERE id = $1\n#180 2026-10-21T02:40:26Z WARN accounts-db slow query 2725ms: SELECT * FROM accounts WHERE id = $1"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.85,
+              "evidenceLines": [
+                115,
+                123,
+                124,
+                133,
+                139,
+                161
+              ],
+              "reasoning": "session-cache restarted empty after node replacement (no RDB snapshot); miss ratio jumped to 95% and account-svc fell through to accounts-db, saturating connections/CPU and producing 7-9s queries, causing login timeouts/504s at edge-proxy. Cache stampede amplification."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.1,
+              "evidenceLines": [
+                139,
+                161
+              ],
+              "reasoning": "Slow accounts-db queries could be read as dependency timeout, but they follow the cache wipe and load spike."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.05,
+              "evidenceLines": [
+                124,
+                133
+              ],
+              "reasoning": "DB connection limit near capacity, but driven by stampede not normal load."
+            }
+          ],
+          "recommendedAction": "Stop the stampede on accounts-db: rate-limit or coalesce cache-miss loads in account-svc (single-flight), warm session-cache, and temporarily raise DB capacity. Enable RDB/AOF persistence or replica failover for session-cache so node replacement doesn't start it empty."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 2,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 1266,
+      "cacheReadTokens": 8132,
+      "cacheWriteTokens": 4875
+    },
+    "durationMs": 13744,
+    "stopReason": "tool_use"
+  }
+}

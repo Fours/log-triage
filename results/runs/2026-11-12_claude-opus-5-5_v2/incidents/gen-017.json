@@ -1,0 +1,151 @@
+{
+  "score": {
+    "incidentId": "gen-017",
+    "difficulty": "medium",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.7,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 9,
+      "correct": 5,
+      "precision": 0.5555555555555556,
+      "recall": 1,
+      "f1": 0.7142857142857143
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0545422,
+    "durationMs": 15751,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 1223,
+      "cacheRead": 11736,
+      "cacheWrite": 5539
+    }
+  },
+  "result": {
+    "incidentId": "gen-017",
+    "model": "claude-opus-5-5",
+    "prompt": "v2",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.7,
+          "evidenceLines": [
+            109,
+            114,
+            117,
+            113,
+            124,
+            126,
+            130,
+            131,
+            142
+          ],
+          "reasoning": "Requests were healthy (200s in about 60ms) until 16:33:03. At that moment geo-cache came back after a node replacement with no RDB snapshot and 0 keys (#109). Within 50s, ingest-api's geo-cache miss ratio went to 95% against a 5% baseline, and every miss was loaded from events-db (#114, #117). That stampede pushed events-db to 490/500 threads and 98% CPU (#113, #124). Point lookups by id then slowed to 4-6s (#126, #130), and ingest-api queries started timing out at 5s (#131, #142). The gateway's 504s follow from that (#123 onward, 8-23s). No deploy lines appear in the window. The earlier event-processor GC pause (#36) is minor and comes before the onset."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.25,
+          "evidenceLines": [
+            113,
+            124,
+            126,
+            130
+          ],
+          "reasoning": "Another reading: events-db ran out of threads and CPU. But that saturation was caused by the cold-cache stampede, so it is more of a consequence than the origin."
+        }
+      ],
+      "recommendedAction": "Warm geo-cache again: preload hot keys, or throttle and coalesce cache-miss loads with single-flight or request coalescing. Rate-limit cache-miss reads from ingest-api to events-db so the DB can recover. Turn on RDB/AOF persistence or replica failover for geo-cache, so a node replacement doesn't bring it back empty."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "21 match(es):\n#36 2026-11-22T16:26:04Z WARN event-processor GC pause 681ms (G1 Old Gen), heap 64% after collection\n#109 2026-11-22T16:33:03Z WARN geo-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#113 2026-11-22T16:33:51Z WARN events-db Threads_connected 490/500, CPU 98%\n#114 2026-11-22T16:33:52Z WARN ingest-api geo-cache miss ratio 95% over last 30s (baseline 5%), loading from events-db\n#117 2026-11-22T16:34:22Z WARN ingest-api geo-cache miss ratio 92% over last 30s (baseline 4%), loading from events-db\n#123 2026-11-22T16:35:02Z ERROR ingest-gateway [t-7898] POST /v1/events 504 8152ms: upstream ingest-api timed out\n#124 2026-11-22T16:35:18Z WARN events-db Threads_connected 491/500, CPU 96%\n#126 2026-11-22T16:35:31Z WARN events-db slow query 5994ms: SELECT * FROM events WHERE id = $1\n#129 2026-11-22T16:36:15Z ERROR ingest-gateway [t-7900] POST /v1/events 504 9041ms: upstream ingest-api timed out\n#130 2026-11-22T16:36:22Z WARN events-db slow query 6193ms: SELECT * FROM events WHERE id = $1\n#131 2026-11-22T16:36:38Z ERROR ingest-api [t-7903] query on events timed out after 5000ms (e-5847)\n#134 2026-11-22T16:37:18Z ERROR ingest-gateway [t-7907] POST /v1/events 504 23396ms: upstream ingest-api timed out\n#142 2026-11-22T16:38:07Z ERROR ingest-api [t-7915] query on events timed out after 5000ms (e-5850)\n#146 2026-11-22T16:38:24Z WARN events-db slow query 5777ms: SELECT * FROM events WHERE id = $1\n#152 2026-11-22T16:39:37Z ERROR ingest-gateway [t-7924] POST /v1/events 504 20618ms: upstream ingest-api timed out\n#159 2026-11-22T16:40:29Z WARN events-db slow query 4169ms: SELECT * FROM events WHERE id = $1\n#160 2026-11-22T16:40:37Z ERROR ingest-gateway [t-7926] POST /v1/events 504 12593ms: upstream ingest-api timed out\n#167 2026-11-22T16:41:33Z ERROR ingest-api [t-7931] query on events timed out after 5000ms (e-5863)\n#170 2026-11-22T16:41:39Z ERROR ingest-gateway [t-7936] POST /v1/events 504 12927ms: upstream ingest-api timed out\n#178 2026-11-22T16:43:09Z WARN events-db slow query 4917ms: SELECT * FROM events WHERE id = $1\n#179 2026-11-22T16:43:13Z ERROR ingest-gateway [t-7942] POST /v1/events 504 19520ms: upstream ingest-api timed out"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 109,
+          "before": 8,
+          "after": 5
+        },
+        "output": "#101 2026-11-22T16:32:24Z DEBUG ingest-api GC pause 15ms (young), heap 31%\n#102 2026-11-22T16:32:28Z INFO event-processor processed batch of 116 messages from events.raw (lag 103ms)\n#103 2026-11-22T16:32:34Z INFO ingest-api [t-7886] event e-5837 accepted, calling enrichment-svc POST /enrich\n#104 2026-11-22T16:32:34Z INFO enrichment-svc [t-7886] POST /enrich e-5837 ok 81ms\n#105 2026-11-22T16:32:34Z INFO ingest-gateway [t-7886] POST /v1/events 200 63ms\n#106 2026-11-22T16:32:46Z INFO ingest-api [t-7889] event e-5839 accepted, calling enrichment-svc POST /enrich\n#107 2026-11-22T16:32:46Z INFO ingest-gateway [t-7889] POST /v1/events 200 56ms\n#108 2026-11-22T16:33:01Z DEBUG ingest-gateway upstream health: ingest-api ok, enrichment-svc ok\n#109 2026-11-22T16:33:03Z WARN geo-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#110 2026-11-22T16:33:08Z INFO event-processor processed batch of 102 messages from events.raw (lag 217ms)\n#111 2026-11-22T16:33:46Z DEBUG enrichment-svc GC pause 12ms (young), heap 33%\n#112 2026-11-22T16:33:50Z INFO event-processor processed batch of 62 messages from events.raw (lag 337ms)\n#113 2026-11-22T16:33:51Z WARN events-db Threads_connected 490/500, CPU 98%\n#114 2026-11-22T16:33:52Z WARN ingest-api geo-cache miss ratio 95% over last 30s (baseline 5%), loading from events-db"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "geo-cache"
+        },
+        "output": "8 match(es):\n#7 2026-11-22T16:23:33Z INFO geo-cache stats: hits=15202 misses=505 evicted=0 connected_clients=42\n#22 2026-11-22T16:25:01Z INFO geo-cache stats: hits=14756 misses=886 evicted=0 connected_clients=42\n#39 2026-11-22T16:26:19Z INFO geo-cache stats: hits=8171 misses=734 evicted=0 connected_clients=57\n#53 2026-11-22T16:27:43Z INFO geo-cache stats: hits=13201 misses=886 evicted=0 connected_clients=60\n#69 2026-11-22T16:29:15Z INFO geo-cache stats: hits=14752 misses=722 evicted=0 connected_clients=30\n#85 2026-11-22T16:30:28Z INFO geo-cache stats: hits=18364 misses=864 evicted=0 connected_clients=49\n#97 2026-11-22T16:32:01Z INFO geo-cache stats: hits=12325 misses=318 evicted=0 connected_clients=51\n#109 2026-11-22T16:33:03Z WARN geo-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.7,
+              "evidenceLines": [
+                109,
+                114,
+                117,
+                113,
+                124,
+                126,
+                130,
+                131,
+                142
+              ],
+              "reasoning": "Requests were healthy (200s in about 60ms) until 16:33:03. At that moment geo-cache came back after a node replacement with no RDB snapshot and 0 keys (#109). Within 50s, ingest-api's geo-cache miss ratio went to 95% against a 5% baseline, and every miss was loaded from events-db (#114, #117). That stampede pushed events-db to 490/500 threads and 98% CPU (#113, #124). Point lookups by id then slowed to 4-6s (#126, #130), and ingest-api queries started timing out at 5s (#131, #142). The gateway's 504s follow from that (#123 onward, 8-23s). No deploy lines appear in the window. The earlier event-processor GC pause (#36) is minor and comes before the onset."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.25,
+              "evidenceLines": [
+                113,
+                124,
+                126,
+                130
+              ],
+              "reasoning": "Another reading: events-db ran out of threads and CPU. But that saturation was caused by the cold-cache stampede, so it is more of a consequence than the origin."
+            }
+          ],
+          "recommendedAction": "Warm geo-cache again: preload hot keys, or throttle and coalesce cache-miss loads with single-flight or request coalescing. Rate-limit cache-miss reads from ingest-api to events-db so the DB can recover. Turn on RDB/AOF persistence or replica failover for geo-cache, so a node replacement doesn't bring it back empty."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1223,
+      "cacheReadTokens": 11736,
+      "cacheWriteTokens": 5539
+    },
+    "durationMs": 15751,
+    "stopReason": "tool_use"
+  }
+}

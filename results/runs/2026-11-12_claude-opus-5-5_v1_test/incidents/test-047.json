@@ -1,0 +1,163 @@
+{
+  "score": {
+    "incidentId": "test-047",
+    "difficulty": "hard",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.8,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 11,
+      "correct": 9,
+      "precision": 0.8181818181818182,
+      "recall": 0.9,
+      "f1": 0.8571428571428572
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0517038,
+    "durationMs": 12915,
+    "iterations": 3,
+    "toolCalls": 3,
+    "tokens": {
+      "input": 8,
+      "output": 1125,
+      "cacheRead": 6584,
+      "cacheWrite": 5571
+    }
+  },
+  "result": {
+    "incidentId": "test-047",
+    "model": "claude-opus-5-5",
+    "prompt": "v1",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.8,
+          "evidenceLines": [
+            275,
+            280,
+            282,
+            284,
+            288,
+            292,
+            294,
+            297,
+            299,
+            306,
+            291
+          ],
+          "reasoning": "The payment-svc v1.11.0 rolling deploy drained one instance (#275, #280), which briefly cut capacity to 3/4. During that window a few charges got 503s. order-service's PaymentClient retries those immediately with backoff disabled, up to 4 attempts (#282, #292, #297, #301). Capacity was back to 4/4 by 08:20:33 (#284), but the retries kept growing: inbound rate went 3.2x→4.1x→5.0x baseline (#288, #299, #306) and payment-svc kept shedding load with 503 queue full (#294 onward). That makes the outage a self-sustaining retry storm, not the deploy itself. The gateway 503s (#291 onward) are a downstream symptom."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.12,
+          "evidenceLines": [
+            275,
+            280
+          ],
+          "reasoning": "The onset lines up with the payment-svc v1.11.0 rollout. However, payment-svc logs no errors other than load shedding, and the drained instance came back healthy (#284). That makes the deploy the trigger, not the bug."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.08,
+          "evidenceLines": [
+            282
+          ],
+          "reasoning": "order-service's PaymentClient has retry backoff disabled. That setting is what amplifies the load and keeps the storm going."
+        }
+      ],
+      "recommendedAction": "Stop the retry storm by turning on exponential backoff with jitter (plus a retry budget or circuit breaker) in order-service's PaymentClient, or by cutting retries to 1. While that rolls out, rate-limit /checkout at the gateway or briefly add payment-svc capacity so the queue can drain. Pause the rest of the payment-svc v1.11.0 rollout until things are stable, and make draining-aware capacity a precondition for future deploys."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "31 match(es):\n#48 2026-10-23T08:05:08Z WARN api-gateway disk usage 81% on /var/log (threshold 75%)\n#254 2026-10-23T08:18:30Z WARN postgres slow query 1684ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#279 2026-10-23T08:19:59Z WARN order-consumer GC pause 962ms (G1 Old Gen), heap 55% after collection\n#280 2026-10-23T08:20:00Z WARN payment-svc instance payment-svc-1 draining for rollout, capacity 3/4\n#282 2026-10-23T08:20:21Z WARN order-service [t-1713] PaymentClient.charge got 503, retrying immediately (attempt 2/4, backoff disabled)\n#288 2026-10-23T08:21:16Z WARN payment-svc inbound request rate 3.2x baseline (inflight 475), shedding load with 503\n#291 2026-10-23T08:21:21Z ERROR api-gateway [t-1714] POST /checkout 503 6760ms: upstream order-service returned 503 (retries exhausted)\n#292 2026-10-23T08:21:22Z WARN order-service [t-1716] PaymentClient.charge got 503, retrying immediately (attempt 3/4, backoff disabled)\n#293 2026-10-23T08:21:50Z ERROR api-gateway [t-1718] POST /checkout 503 17887ms: upstream order-service returned 503 (retries exhausted)\n#294 2026-10-23T08:21:50Z ERROR payment-svc [t-1722] load shed: rejected POST /charge with 503 (queue full)\n#297 2026-10-23T08:22:16Z WARN order-service [t-1726] PaymentClient.charge got 503, retrying immediately (attempt 4/4, backoff disabled)\n#299 2026-10-23T08:22:36Z WARN payment-svc inbound request rate 4.1x baseline (inflight 743), shedding load with 503\n#300 2026-10-23T08:22:42Z ERROR payment-svc [t-1728] load shed: rejected POST /charge with 503 (queue full)\n#301 2026-10-23T08:22:57Z WARN order-service [t-1730] PaymentClient.charge got 503, retrying immediately (attempt 2/4, backoff disabled)\n#302 2026-10-23T08:23:03Z ERROR api-gateway [t-1733] POST /checkout 503 25559ms: upstream order-service returned 503 (retries exhausted)\n#306 2026-10-23T08:23:46Z WARN payment-svc inbound request rate 5.0x baseline (inflight 498), shedding load with 503\n#307 2026-10-23T08:23:47Z ERROR api-gateway [t-1736] POST /checkout 503 8292ms: upstream order-service returned 503 (retries exhausted)\n#310 2026-10-23T08:24:41Z ERROR payment-svc [t-1739] load shed: rejected POST /charge with 503 (queue full)\n#316 2026-10-23T08:25:11Z ERROR api-gateway [t-1742] POST /checkout 503 9324ms: upstream order-service returned 503 (retries exhausted)\n#321 2026-10-23T08:25:26Z ERROR payment-svc [t-1748] load shed: rejected POST /charge with 503 (queue full)\n#324 2026-10-23T08:25:37Z ERROR api-gateway [t-1753] POST /checkout 503 17512ms: upstream order-service returned 503 (retries exhausted)\n#331 2026-10-23T08:26:15Z ERROR api-gateway [t-1758] POST /checkout 503 9175ms: upstream order-service returned 503 (retries exhausted)\n#332 2026-10-23T08:26:32Z ERROR payment-svc [t-1760] load shed: rejected POST /charge with 503 (queue full)\n#342 2026-10-23T08:28:00Z ERROR api-gateway [t-1765] POST /checkout 503 14538ms: upstream order-service returned 503 (retries exhausted)\n#344 2026-10-23T08:28:23Z ERROR api-gateway [t-1767] POST /checkout 503 23031ms: upstream order-service returned 503 (retries exhausted)\n#346 2026-10-23T08:28:52Z ERROR payment-svc [t-1771] load shed: rejected POST /charge with 503 (queue full)\n#358 2026-10-23T08:29:39Z ERROR api-gateway [t-1783] POST /checkout 503 6164ms: upstream order-service returned 503 (retries exhausted)\n#361 2026-10-23T08:29:49Z ERROR payment-svc [t-1785] load shed: rejected POST /charge with 503 (queue full)\n#367 2026-10-23T08:30:33Z ERROR api-gateway [t-1790] POST /checkout 503 26832ms: upstream order-service returned 503 (retries exhausted)\n#378 2026-10-23T08:31:23Z ERROR payment-svc [t-1800] load shed: rejected POST /charge with 503 (queue full)\n#379 2026-10-23T08:31:36Z ERROR api-gateway [t-1802] POST /checkout 503 17558ms: upstream order-service returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 281,
+          "before": 8,
+          "after": 6
+        },
+        "output": "#273 2026-10-23T08:19:40Z INFO api-gateway [t-1711] POST /checkout 200 137ms\n#274 2026-10-23T08:19:41Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 2\n#275 2026-10-23T08:19:55Z INFO payment-svc deploy: rolling out payment-svc v1.11.0 (build 4d49326), 1 of 4 instances at a time\n#276 2026-10-23T08:19:55Z INFO order-service [t-1712] order o-6992 accepted, calling payment-svc POST /charge\n#277 2026-10-23T08:19:55Z INFO payment-svc [t-1712] POST /charge o-6992 ok 70ms\n#278 2026-10-23T08:19:56Z INFO api-gateway [t-1712] POST /checkout 200 235ms\n#279 2026-10-23T08:19:59Z WARN order-consumer GC pause 962ms (G1 Old Gen), heap 55% after collection\n#280 2026-10-23T08:20:00Z WARN payment-svc instance payment-svc-1 draining for rollout, capacity 3/4\n#281 2026-10-23T08:20:03Z INFO order-consumer processed batch of 118 messages from orders.events (lag 125ms)\n#282 2026-10-23T08:20:21Z WARN order-service [t-1713] PaymentClient.charge got 503, retrying immediately (attempt 2/4, backoff disabled)\n#283 2026-10-23T08:20:28Z DEBUG payment-svc GC pause 17ms (young), heap 43%\n#284 2026-10-23T08:20:33Z INFO payment-svc instance payment-svc-1 ready, capacity 4/4\n#285 2026-10-23T08:20:47Z INFO order-consumer processed batch of 109 messages from orders.events (lag 291ms)\n#286 2026-10-23T08:20:49Z INFO redis stats: hits=15387 misses=489 evicted=0 connected_clients=40\n#287 2026-10-23T08:21:12Z INFO postgres checkpoint complete: wrote 931 buffers (7.5%)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "backoff",
+          "limit": 10
+        },
+        "output": "4 match(es):\n#282 2026-10-23T08:20:21Z WARN order-service [t-1713] PaymentClient.charge got 503, retrying immediately (attempt 2/4, backoff disabled)\n#292 2026-10-23T08:21:22Z WARN order-service [t-1716] PaymentClient.charge got 503, retrying immediately (attempt 3/4, backoff disabled)\n#297 2026-10-23T08:22:16Z WARN order-service [t-1726] PaymentClient.charge got 503, retrying immediately (attempt 4/4, backoff disabled)\n#301 2026-10-23T08:22:57Z WARN order-service [t-1730] PaymentClient.charge got 503, retrying immediately (attempt 2/4, backoff disabled)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.8,
+              "evidenceLines": [
+                275,
+                280,
+                282,
+                284,
+                288,
+                292,
+                294,
+                297,
+                299,
+                306,
+                291
+              ],
+              "reasoning": "The payment-svc v1.11.0 rolling deploy drained one instance (#275, #280), which briefly cut capacity to 3/4. During that window a few charges got 503s. order-service's PaymentClient retries those immediately with backoff disabled, up to 4 attempts (#282, #292, #297, #301). Capacity was back to 4/4 by 08:20:33 (#284), but the retries kept growing: inbound rate went 3.2x→4.1x→5.0x baseline (#288, #299, #306) and payment-svc kept shedding load with 503 queue full (#294 onward). That makes the outage a self-sustaining retry storm, not the deploy itself. The gateway 503s (#291 onward) are a downstream symptom."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.12,
+              "evidenceLines": [
+                275,
+                280
+              ],
+              "reasoning": "The onset lines up with the payment-svc v1.11.0 rollout. However, payment-svc logs no errors other than load shedding, and the drained instance came back healthy (#284). That makes the deploy the trigger, not the bug."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.08,
+              "evidenceLines": [
+                282
+              ],
+              "reasoning": "order-service's PaymentClient has retry backoff disabled. That setting is what amplifies the load and keeps the storm going."
+            }
+          ],
+          "recommendedAction": "Stop the retry storm by turning on exponential backoff with jitter (plus a retry budget or circuit breaker) in order-service's PaymentClient, or by cutting retries to 1. While that rolls out, rate-limit /checkout at the gateway or briefly add payment-svc capacity so the queue can drain. Pause the rest of the payment-svc v1.11.0 rollout until things are stable, and make draining-aware capacity a precondition for future deploys."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 3,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 1125,
+      "cacheReadTokens": 6584,
+      "cacheWriteTokens": 5571
+    },
+    "durationMs": 12915,
+    "stopReason": "tool_use"
+  }
+}

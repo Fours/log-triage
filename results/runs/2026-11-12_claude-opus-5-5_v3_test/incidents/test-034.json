@@ -1,0 +1,151 @@
+{
+  "score": {
+    "incidentId": "test-034",
+    "difficulty": "hard",
+    "scenario": "external_outage/provider-5xx",
+    "truth": "external_outage",
+    "acceptable": [
+      "dependency_timeout"
+    ],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 0.8571428571428571,
+      "f1": 0.923076923076923
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0606864,
+    "durationMs": 13054,
+    "iterations": 4,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 10,
+      "output": 1007,
+      "cacheRead": 15857,
+      "cacheWrite": 7467
+    }
+  },
+  "result": {
+    "incidentId": "test-034",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.88,
+          "evidenceLines": [
+            233,
+            236,
+            238,
+            243,
+            276,
+            309
+          ],
+          "reasoning": "The first anomaly is at 04:09:43 (#233): the third-party geo-IP provider api.geoip.example returned 503. Before that, traffic was healthy, with 200s in about 50-90ms. After that the provider kept failing with 503s, some 10s timeouts and 502s, and the half-open probes failed at 04:15:55 (#276) and 04:20:55 (#309). Because the provider mostly answers with errors (503/502) rather than hanging, this reads as an external outage. As a result, enrichment-svc's circuit breaker opened (#246) and enrichment returned 503 to ingest-api. ingest-api then sent 503 to the gateway, which set off the alert. I found no deploys or config changes. The audit_log slow query (#213) and the 429 rate-limit warning (#218) are unrelated red herrings."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.1,
+          "evidenceLines": [
+            236,
+            243
+          ],
+          "reasoning": "Some provider calls hang until a 10s timeout, and gateway latency is 12-27s. But most failures are fast 503/502s from the provider, so this fits less well."
+        }
+      ],
+      "recommendedAction": "Check the geo-IP provider's status page or open a ticket with them. Change enrichment-svc so that when geo-IP is unavailable it skips geo lookup, or uses geo-cache only, and still returns success, so ingest-api accepts events instead of returning 503. Also cut the provider timeout well below 10s. Once the provider recovers, let the circuit breaker close."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "28 match(es):\n#39 2026-11-01T03:56:42Z WARN ingest-gateway TLS certificate for *.internal.example expires in 21 days\n#213 2026-11-01T04:08:11Z WARN events-db slow query 1192ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#218 2026-11-01T04:08:36Z WARN ingest-gateway rate limiter: client key k-4038 throttled (429), 105 req/s over quota\n#233 2026-11-01T04:09:43Z ERROR enrichment-svc [t-2814] geo-IP provider returned 503 Service Unavailable POST https://api.geoip.example/v1/lookup (x-request-id 8cc7aa7)\n#236 2026-11-01T04:10:10Z ERROR enrichment-svc [t-2816] geo-IP provider call FAILED: upstream timeout after 10000ms POST https://api.geoip.example/v1/lookup\n#238 2026-11-01T04:10:23Z ERROR enrichment-svc [t-2819] geo-IP provider returned 503 Service Unavailable POST https://api.geoip.example/v1/lookup (x-request-id 384bdfa)\n#240 2026-11-01T04:10:38Z ERROR ingest-gateway [t-2823] POST /v1/events 503 23823ms: upstream ingest-api returned 503 Service Unavailable\n#243 2026-11-01T04:11:01Z ERROR enrichment-svc [t-2827] geo-IP provider call FAILED: upstream timeout after 10000ms POST https://api.geoip.example/v1/lookup\n#246 2026-11-01T04:11:34Z WARN enrichment-svc circuit breaker OPEN for api.geoip.example (failure rate 96% over 20 calls), failing fast for 30s\n#247 2026-11-01T04:11:41Z ERROR ingest-api [t-2829] EnrichClient.enrich failed: enrichment-svc returned 503 (circuit open)\n#249 2026-11-01T04:11:46Z ERROR ingest-gateway [t-2833] POST /v1/events 503 23711ms: upstream ingest-api returned 503 Service Unavailable\n#252 2026-11-01T04:12:29Z ERROR ingest-gateway [t-2836] POST /v1/events 503 12694ms: upstream ingest-api returned 503 Service Unavailable\n#264 2026-11-01T04:14:03Z ERROR ingest-gateway [t-2844] POST /v1/events 503 13640ms: upstream ingest-api returned 503 Service Unavailable\n#266 2026-11-01T04:14:07Z ERROR ingest-api [t-2845] EnrichClient.enrich failed: enrichment-svc returned 503 (circuit open)\n#272 2026-11-01T04:14:42Z ERROR ingest-gateway [t-2851] POST /v1/events 503 22116ms: upstream ingest-api returned 503 Service Unavailable\n#275 2026-11-01T04:15:55Z ERROR ingest-gateway [t-2852] POST /v1/events 503 17076ms: upstream ingest-api returned 503 Service Unavailable\n#276 2026-11-01T04:15:55Z WARN enrichment-svc circuit breaker half-open probe to api.geoip.example failed: 502, re-opening\n#277 2026-11-01T04:16:07Z ERROR ingest-api [t-2854] EnrichClient.enrich failed: enrichment-svc returned 503 (circuit open)\n#287 2026-11-01T04:17:38Z ERROR ingest-gateway [t-2857] POST /v1/events 503 12572ms: upstream ingest-api returned 503 Service Unavailable\n#292 2026-11-01T04:18:52Z ERROR ingest-api [t-2861] EnrichClient.enrich failed: enrichment-svc returned 503 (circuit open)\n#293 2026-11-01T04:18:57Z ERROR ingest-gateway [t-2864] POST /v1/events 503 21653ms: upstream ingest-api returned 503 Service Unavailable\n#295 2026-11-01T04:19:17Z ERROR ingest-gateway [t-2868] POST /v1/events 503 27558ms: upstream ingest-api returned 503 Service Unavailable\n#309 2026-11-01T04:20:55Z WARN enrichment-svc circuit breaker half-open probe to api.geoip.example failed: 503, re-opening\n#310 2026-11-01T04:21:05Z ERROR ingest-gateway [t-2877] POST /v1/events 503 14125ms: upstream ingest-api returned 503 Service Unavailable\n#314 2026-11-01T04:21:20Z ERROR ingest-api [t-2878] EnrichClient.enrich failed: enrichment-svc returned 503 (circuit open)\n#315 2026-11-01T04:22:02Z ERROR ingest-api [t-2880] EnrichClient.enrich failed: enrichment-svc returned 503 (circuit open)\n#319 2026-11-01T04:22:36Z ERROR ingest-gateway [t-2883] POST /v1/events 503 24982ms: upstream ingest-api returned 503 Service Unavailable\n#325 2026-11-01T04:23:17Z ERROR ingest-gateway [t-2887] POST /v1/events 503 23271ms: upstream ingest-api returned 503 Service Unavailable"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 233,
+          "before": 20,
+          "after": 2
+        },
+        "output": "#213 2026-11-01T04:08:11Z WARN events-db slow query 1192ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#214 2026-11-01T04:08:14Z DEBUG ingest-gateway upstream health: ingest-api ok, enrichment-svc ok\n#215 2026-11-01T04:08:24Z INFO ingest-api [t-2794] event e-5194 accepted, calling enrichment-svc POST /enrich\n#216 2026-11-01T04:08:25Z INFO ingest-gateway [t-2794] POST /v1/events 200 77ms\n#217 2026-11-01T04:08:33Z INFO event-processor processed batch of 24 messages from events.raw (lag 387ms)\n#218 2026-11-01T04:08:36Z WARN ingest-gateway rate limiter: client key k-4038 throttled (429), 105 req/s over quota\n#219 2026-11-01T04:08:41Z INFO ingest-api [t-2798] event e-5197 accepted, calling enrichment-svc POST /enrich\n#220 2026-11-01T04:08:41Z INFO ingest-gateway [t-2798] POST /v1/events 200 87ms\n#221 2026-11-01T04:08:45Z DEBUG ingest-api GC pause 15ms (young), heap 36%\n#222 2026-11-01T04:08:49Z INFO geo-cache stats: hits=9581 misses=749 evicted=0 connected_clients=59\n#223 2026-11-01T04:08:52Z INFO ingest-api [t-2802] event e-5198 accepted, calling enrichment-svc POST /enrich\n#224 2026-11-01T04:08:52Z INFO ingest-gateway [t-2802] POST /v1/events 200 53ms\n#225 2026-11-01T04:09:08Z INFO ingest-api [t-2805] event e-5201 accepted, calling enrichment-svc POST /enrich\n#226 2026-11-01T04:09:09Z INFO ingest-gateway [t-2805] POST /v1/events 200 57ms\n#227 2026-11-01T04:09:18Z INFO event-processor processed batch of 67 messages from events.raw (lag 94ms)\n#228 2026-11-01T04:09:20Z INFO ingest-api [t-2809] event e-5204 accepted, calling enrichment-svc POST /enrich\n#229 2026-11-01T04:09:20Z INFO enrichment-svc [t-2809] POST /enrich e-5204 ok 21ms\n#230 2026-11-01T04:09:20Z INFO ingest-gateway [t-2809] POST /v1/events 200 53ms\n#231 2026-11-01T04:09:34Z INFO ingest-api [t-2812] event e-5205 accepted, calling enrichment-svc POST /enrich\n#232 2026-11-01T04:09:35Z INFO ingest-gateway [t-2812] POST /v1/events 200 87ms\n#233 2026-11-01T04:09:43Z ERROR enrichment-svc [t-2814] geo-IP provider returned 503 Service Unavailable POST https://api.geoip.example/v1/lookup (x-request-id 8cc7aa7)\n#234 2026-11-01T04:09:56Z INFO geo-cache stats: hits=12078 misses=355 evicted=0 connected_clients=59\n#235 2026-11-01T04:10:05Z INFO event-processor processed batch of 45 messages from events.raw (lag 147ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "geoip",
+          "limit": 40
+        },
+        "output": "7 match(es):\n#233 2026-11-01T04:09:43Z ERROR enrichment-svc [t-2814] geo-IP provider returned 503 Service Unavailable POST https://api.geoip.example/v1/lookup (x-request-id 8cc7aa7)\n#236 2026-11-01T04:10:10Z ERROR enrichment-svc [t-2816] geo-IP provider call FAILED: upstream timeout after 10000ms POST https://api.geoip.example/v1/lookup\n#238 2026-11-01T04:10:23Z ERROR enrichment-svc [t-2819] geo-IP provider returned 503 Service Unavailable POST https://api.geoip.example/v1/lookup (x-request-id 384bdfa)\n#243 2026-11-01T04:11:01Z ERROR enrichment-svc [t-2827] geo-IP provider call FAILED: upstream timeout after 10000ms POST https://api.geoip.example/v1/lookup\n#246 2026-11-01T04:11:34Z WARN enrichment-svc circuit breaker OPEN for api.geoip.example (failure rate 96% over 20 calls), failing fast for 30s\n#276 2026-11-01T04:15:55Z WARN enrichment-svc circuit breaker half-open probe to api.geoip.example failed: 502, re-opening\n#309 2026-11-01T04:20:55Z WARN enrichment-svc circuit breaker half-open probe to api.geoip.example failed: 503, re-opening"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "version"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.88,
+              "evidenceLines": [
+                233,
+                236,
+                238,
+                243,
+                276,
+                309
+              ],
+              "reasoning": "The first anomaly is at 04:09:43 (#233): the third-party geo-IP provider api.geoip.example returned 503. Before that, traffic was healthy, with 200s in about 50-90ms. After that the provider kept failing with 503s, some 10s timeouts and 502s, and the half-open probes failed at 04:15:55 (#276) and 04:20:55 (#309). Because the provider mostly answers with errors (503/502) rather than hanging, this reads as an external outage. As a result, enrichment-svc's circuit breaker opened (#246) and enrichment returned 503 to ingest-api. ingest-api then sent 503 to the gateway, which set off the alert. I found no deploys or config changes. The audit_log slow query (#213) and the 429 rate-limit warning (#218) are unrelated red herrings."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.1,
+              "evidenceLines": [
+                236,
+                243
+              ],
+              "reasoning": "Some provider calls hang until a 10s timeout, and gateway latency is 12-27s. But most failures are fast 503/502s from the provider, so this fits less well."
+            }
+          ],
+          "recommendedAction": "Check the geo-IP provider's status page or open a ticket with them. Change enrichment-svc so that when geo-IP is unavailable it skips geo lookup, or uses geo-cache only, and still returns success, so ingest-api accepts events instead of returning 503. Also cut the provider timeout well below 10s. Once the provider recovers, let the circuit breaker close."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1007,
+      "cacheReadTokens": 15857,
+      "cacheWriteTokens": 7467
+    },
+    "durationMs": 13054,
+    "stopReason": "tool_use"
+  }
+}

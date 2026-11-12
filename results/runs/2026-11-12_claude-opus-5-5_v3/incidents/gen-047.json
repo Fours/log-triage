@@ -1,0 +1,146 @@
+{
+  "score": {
+    "incidentId": "gen-047",
+    "difficulty": "hard",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 6,
+      "precision": 0.8571428571428571,
+      "recall": 0.6,
+      "f1": 0.7058823529411764
+    },
+    "herringsCited": 0,
+    "costUsd": 0.060411400000000004,
+    "durationMs": 14907,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 1254,
+      "cacheRead": 14607,
+      "cacheWrite": 6474
+    }
+  },
+  "result": {
+    "incidentId": "gen-047",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.85,
+          "evidenceLines": [
+            154,
+            159,
+            167,
+            175,
+            186,
+            198,
+            174
+          ],
+          "reasoning": "A routine rolling deploy of auth-svc v5.17.0 (#152) drained auth-svc-2 at 22:24:39 and dropped capacity to 3/4 (#154). On its own that should have been survivable. Logins were succeeding right up to it (#150, #156). Within seconds, account-svc's AuthClient started retrying 503s straight away, up to 4 attempts, with backoff turned off (#159, #167, #178, #187). Inbound load on auth-svc then climbed to 3.2x, 4.1x and 5.0x baseline (#175, #186, #198). auth-svc shed that load with 503s because its queue was full (#174, #191), and the shed requests triggered more retries. The loop keeps itself going, which is why the 503 rate is not recovering even though the trigger was small. Edge-proxy 503s (#162 onward) are downstream symptoms. Unrelated noise: edge-proxy disk at 81% (#68), the slow audit_log query (#148), audit-consumer GC pauses (#144) and the accounts vacuum (#158)."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.12,
+          "evidenceLines": [
+            152,
+            154
+          ],
+          "reasoning": "The onset lines up with the auth-svc v5.17.0 rollout. But the only auth-svc errors are load-shed 503s that rise with request rate, and there is no sign of bugs in the new version, so the release looks like the trigger rather than the fault."
+        }
+      ],
+      "recommendedAction": "Turn exponential backoff with jitter back on in account-svc's AuthClient, or drop the retry count to 1, and add a retry budget or circuit breaker. To break the loop now, rate-limit /login at edge-proxy or add auth-svc capacity until the extra load drains. Pause the auth-svc rollout until retries are fixed, and size rollouts so that losing one instance leaves enough headroom."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "31 match(es):\n#68 2026-10-24T22:19:13Z WARN edge-proxy disk usage 81% on /var/log (threshold 75%)\n#144 2026-10-24T22:23:56Z WARN audit-consumer GC pause 601ms (G1 Old Gen), heap 63% after collection\n#148 2026-10-24T22:24:20Z WARN accounts-db slow query 1953ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#154 2026-10-24T22:24:39Z WARN auth-svc instance auth-svc-2 draining for rollout, capacity 3/4\n#159 2026-10-24T22:25:00Z WARN account-svc [t-2020] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#162 2026-10-24T22:25:19Z ERROR edge-proxy [t-2023] POST /login 503 10585ms: upstream account-svc returned 503 (retries exhausted)\n#167 2026-10-24T22:25:35Z WARN account-svc [t-2028] AuthClient.issueToken got 503, retrying immediately (attempt 3/4, backoff disabled)\n#173 2026-10-24T22:26:08Z ERROR edge-proxy [t-2034] POST /login 503 29329ms: upstream account-svc returned 503 (retries exhausted)\n#174 2026-10-24T22:26:10Z ERROR auth-svc [t-2038] load shed: rejected POST /tokens with 503 (queue full)\n#175 2026-10-24T22:26:25Z WARN auth-svc inbound request rate 3.2x baseline (inflight 546), shedding load with 503\n#178 2026-10-24T22:26:30Z WARN account-svc [t-2042] AuthClient.issueToken got 503, retrying immediately (attempt 4/4, backoff disabled)\n#186 2026-10-24T22:27:16Z WARN auth-svc inbound request rate 4.1x baseline (inflight 467), shedding load with 503\n#187 2026-10-24T22:27:19Z WARN account-svc [t-2045] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#189 2026-10-24T22:27:35Z ERROR edge-proxy [t-2048] POST /login 503 22941ms: upstream account-svc returned 503 (retries exhausted)\n#191 2026-10-24T22:28:01Z ERROR auth-svc [t-2052] load shed: rejected POST /tokens with 503 (queue full)\n#197 2026-10-24T22:28:18Z ERROR edge-proxy [t-2059] POST /login 503 18937ms: upstream account-svc returned 503 (retries exhausted)\n#198 2026-10-24T22:28:42Z WARN auth-svc inbound request rate 5.0x baseline (inflight 568), shedding load with 503\n#200 2026-10-24T22:28:48Z ERROR auth-svc [t-2063] load shed: rejected POST /tokens with 503 (queue full)\n#202 2026-10-24T22:29:10Z ERROR edge-proxy [t-2066] POST /login 503 27427ms: upstream account-svc returned 503 (retries exhausted)\n#207 2026-10-24T22:29:39Z ERROR auth-svc [t-2067] load shed: rejected POST /tokens with 503 (queue full)\n#212 2026-10-24T22:30:28Z ERROR edge-proxy [t-2069] POST /login 503 23374ms: upstream account-svc returned 503 (retries exhausted)\n#213 2026-10-24T22:30:48Z ERROR edge-proxy [t-2071] POST /login 503 29006ms: upstream account-svc returned 503 (retries exhausted)\n#218 2026-10-24T22:31:20Z ERROR auth-svc [t-2074] load shed: rejected POST /tokens with 503 (queue full)\n#220 2026-10-24T22:32:06Z ERROR edge-proxy [t-2077] POST /login 503 28576ms: upstream account-svc returned 503 (retries exhausted)\n#224 2026-10-24T22:32:25Z ERROR auth-svc [t-2078] load shed: rejected POST /tokens with 503 (queue full)\n#225 2026-10-24T22:32:32Z ERROR edge-proxy [t-2081] POST /login 503 27938ms: upstream account-svc returned 503 (retries exhausted)\n#240 2026-10-24T22:34:05Z ERROR edge-proxy [t-2095] POST /login 503 26043ms: upstream account-svc returned 503 (retries exhausted)\n#242 2026-10-24T22:34:19Z ERROR auth-svc [t-2097] load shed: rejected POST /tokens with 503 (queue full)\n#243 2026-10-24T22:34:32Z ERROR edge-proxy [t-2099] POST /login 503 26861ms: upstream account-svc returned 503 (retries exhausted)\n#247 2026-10-24T22:35:05Z ERROR edge-proxy [t-2103] POST /login 503 14368ms: upstream account-svc returned 503 (retries exhausted)\n#249 2026-10-24T22:35:43Z ERROR auth-svc [t-2106] load shed: rejected POST /tokens with 503 (queue full)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 154,
+          "before": 6,
+          "after": 6
+        },
+        "output": "#148 2026-10-24T22:24:20Z WARN accounts-db slow query 1953ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#149 2026-10-24T22:24:22Z INFO account-svc [t-2016] user u-3901 accepted, calling auth-svc POST /tokens\n#150 2026-10-24T22:24:22Z INFO auth-svc [t-2016] POST /tokens u-3901 ok 31ms\n#151 2026-10-24T22:24:22Z INFO edge-proxy [t-2016] POST /login 200 120ms\n#152 2026-10-24T22:24:34Z INFO auth-svc deploy: rolling out auth-svc v5.17.0 (build a841c7c), 1 of 4 instances at a time\n#153 2026-10-24T22:24:35Z INFO audit-consumer processed batch of 93 messages from audit.events (lag 377ms)\n#154 2026-10-24T22:24:39Z WARN auth-svc instance auth-svc-2 draining for rollout, capacity 3/4\n#155 2026-10-24T22:24:39Z INFO account-svc [t-2017] user u-3904 accepted, calling auth-svc POST /tokens\n#156 2026-10-24T22:24:39Z INFO auth-svc [t-2017] POST /tokens u-3904 ok 81ms\n#157 2026-10-24T22:24:39Z INFO edge-proxy [t-2017] POST /login 200 149ms\n#158 2026-10-24T22:24:55Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 26\n#159 2026-10-24T22:25:00Z WARN account-svc [t-2020] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#160 2026-10-24T22:25:00Z DEBUG account-svc GC pause 10ms (young), heap 42%"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-2020"
+        },
+        "output": "1 line(s) for t-2020:\n#159 2026-10-24T22:25:00Z WARN account-svc [t-2020] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "query": "deploy"
+        },
+        "output": "1 match(es):\n#152 2026-10-24T22:24:34Z INFO auth-svc deploy: rolling out auth-svc v5.17.0 (build a841c7c), 1 of 4 instances at a time"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.85,
+              "evidenceLines": [
+                154,
+                159,
+                167,
+                175,
+                186,
+                198,
+                174
+              ],
+              "reasoning": "A routine rolling deploy of auth-svc v5.17.0 (#152) drained auth-svc-2 at 22:24:39 and dropped capacity to 3/4 (#154). On its own that should have been survivable. Logins were succeeding right up to it (#150, #156). Within seconds, account-svc's AuthClient started retrying 503s straight away, up to 4 attempts, with backoff turned off (#159, #167, #178, #187). Inbound load on auth-svc then climbed to 3.2x, 4.1x and 5.0x baseline (#175, #186, #198). auth-svc shed that load with 503s because its queue was full (#174, #191), and the shed requests triggered more retries. The loop keeps itself going, which is why the 503 rate is not recovering even though the trigger was small. Edge-proxy 503s (#162 onward) are downstream symptoms. Unrelated noise: edge-proxy disk at 81% (#68), the slow audit_log query (#148), audit-consumer GC pauses (#144) and the accounts vacuum (#158)."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.12,
+              "evidenceLines": [
+                152,
+                154
+              ],
+              "reasoning": "The onset lines up with the auth-svc v5.17.0 rollout. But the only auth-svc errors are load-shed 503s that rise with request rate, and there is no sign of bugs in the new version, so the release looks like the trigger rather than the fault."
+            }
+          ],
+          "recommendedAction": "Turn exponential backoff with jitter back on in account-svc's AuthClient, or drop the retry count to 1, and add a retry budget or circuit breaker. To break the loop now, rate-limit /login at edge-proxy or add auth-svc capacity until the extra load drains. Pause the auth-svc rollout until retries are fixed, and size rollouts so that losing one instance leaves enough headroom."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1254,
+      "cacheReadTokens": 14607,
+      "cacheWriteTokens": 6474
+    },
+    "durationMs": 14907,
+    "stopReason": "tool_use"
+  }
+}

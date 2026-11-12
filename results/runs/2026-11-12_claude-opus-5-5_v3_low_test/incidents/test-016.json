@@ -1,0 +1,120 @@
+{
+  "score": {
+    "incidentId": "test-016",
+    "difficulty": "medium",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 7,
+      "precision": 0.875,
+      "recall": 0.7777777777777778,
+      "f1": 0.823529411764706
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0368544,
+    "durationMs": 7839,
+    "iterations": 2,
+    "toolCalls": 1,
+    "tokens": {
+      "input": 6,
+      "output": 645,
+      "cacheRead": 3277,
+      "cacheWrite": 4655
+    }
+  },
+  "result": {
+    "incidentId": "test-016",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.88,
+          "evidenceLines": [
+            189,
+            196,
+            200,
+            204,
+            201,
+            215,
+            217,
+            208
+          ],
+          "reasoning": "An auth-svc instance restarted at 05:22:50, dropping capacity to 3 of 4 (#189). That alone should have been survivable. account-svc then retried every 503 immediately with backoff disabled (#196, #200, #204), which pushed auth-svc load to 3.2x, 4.1x and 5.0x baseline (#201, #215, #217). auth-svc shed load with 503s (#208), producing more 503s and more retries, so the loop kept itself going and the errors never recovered. The edge-proxy 503s are the downstream symptom. The slow audit_log query at 05:09 (#38) came well before the onset and is unrelated."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.08,
+          "evidenceLines": [
+            196
+          ],
+          "reasoning": "'backoff disabled' in AuthClient could be a client misconfiguration. But it is the amplifier here, not the trigger."
+        }
+      ],
+      "recommendedAction": "Turn on exponential backoff with jitter in account-svc's AuthClient (or cut its retries) and add a circuit breaker. Scale auth-svc back to 4 or more instances and shed load or rate-limit at the edge until the retry storm drains. Find out why auth-svc-3 failed its liveness probe."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "21 match(es):\n#38 2026-10-23T05:09:16Z WARN accounts-db slow query 1552ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#189 2026-10-23T05:22:50Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4\n#196 2026-10-23T05:23:27Z WARN account-svc [t-1650] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#200 2026-10-23T05:24:10Z WARN account-svc [t-1654] AuthClient.issueToken got 503, retrying immediately (attempt 3/4, backoff disabled)\n#201 2026-10-23T05:24:31Z WARN auth-svc inbound request rate 3.2x baseline (inflight 487), shedding load with 503\n#203 2026-10-23T05:24:37Z ERROR edge-proxy [t-1656] POST /login 503 5447ms: upstream account-svc returned 503 (retries exhausted)\n#204 2026-10-23T05:24:59Z WARN account-svc [t-1657] AuthClient.issueToken got 503, retrying immediately (attempt 4/4, backoff disabled)\n#208 2026-10-23T05:25:32Z ERROR auth-svc [t-1658] load shed: rejected POST /tokens with 503 (queue full)\n#209 2026-10-23T05:25:36Z WARN account-svc [t-1662] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#215 2026-10-23T05:26:12Z WARN auth-svc inbound request rate 4.1x baseline (inflight 663), shedding load with 503\n#217 2026-10-23T05:26:29Z WARN auth-svc inbound request rate 5.0x baseline (inflight 825), shedding load with 503\n#218 2026-10-23T05:26:33Z ERROR edge-proxy [t-1666] POST /login 503 14651ms: upstream account-svc returned 503 (retries exhausted)\n#225 2026-10-23T05:27:09Z ERROR auth-svc [t-1669] load shed: rejected POST /tokens with 503 (queue full)\n#231 2026-10-23T05:27:25Z ERROR edge-proxy [t-1679] POST /login 503 20202ms: upstream account-svc returned 503 (retries exhausted)\n#242 2026-10-23T05:28:59Z ERROR auth-svc [t-1683] load shed: rejected POST /tokens with 503 (queue full)\n#244 2026-10-23T05:29:07Z ERROR edge-proxy [t-1687] POST /login 503 16855ms: upstream account-svc returned 503 (retries exhausted)\n#250 2026-10-23T05:31:01Z ERROR edge-proxy [t-1690] POST /login 503 15375ms: upstream account-svc returned 503 (retries exhausted)\n#259 2026-10-23T05:32:30Z ERROR auth-svc [t-1693] load shed: rejected POST /tokens with 503 (queue full)\n#269 2026-10-23T05:33:54Z ERROR edge-proxy [t-1701] POST /login 503 25890ms: upstream account-svc returned 503 (retries exhausted)\n#270 2026-10-23T05:34:07Z ERROR auth-svc [t-1705] load shed: rejected POST /tokens with 503 (queue full)\n#278 2026-10-23T05:35:42Z ERROR edge-proxy [t-1707] POST /login 503 8267ms: upstream account-svc returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.88,
+              "evidenceLines": [
+                189,
+                196,
+                200,
+                204,
+                201,
+                215,
+                217,
+                208
+              ],
+              "reasoning": "An auth-svc instance restarted at 05:22:50, dropping capacity to 3 of 4 (#189). That alone should have been survivable. account-svc then retried every 503 immediately with backoff disabled (#196, #200, #204), which pushed auth-svc load to 3.2x, 4.1x and 5.0x baseline (#201, #215, #217). auth-svc shed load with 503s (#208), producing more 503s and more retries, so the loop kept itself going and the errors never recovered. The edge-proxy 503s are the downstream symptom. The slow audit_log query at 05:09 (#38) came well before the onset and is unrelated."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.08,
+              "evidenceLines": [
+                196
+              ],
+              "reasoning": "'backoff disabled' in AuthClient could be a client misconfiguration. But it is the amplifier here, not the trigger."
+            }
+          ],
+          "recommendedAction": "Turn on exponential backoff with jitter in account-svc's AuthClient (or cut its retries) and add a circuit breaker. Scale auth-svc back to 4 or more instances and shed load or rate-limit at the edge until the retry storm drains. Find out why auth-svc-3 failed its liveness probe."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 2,
+    "toolCalls": 1,
+    "usage": {
+      "inputTokens": 6,
+      "outputTokens": 645,
+      "cacheReadTokens": 3277,
+      "cacheWriteTokens": 4655
+    },
+    "durationMs": 7839,
+    "stopReason": "tool_use"
+  }
+}

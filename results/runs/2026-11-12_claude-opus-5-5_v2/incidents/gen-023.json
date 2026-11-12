@@ -1,0 +1,150 @@
+{
+  "score": {
+    "incidentId": "gen-023",
+    "difficulty": "hard",
+    "scenario": "config_error/wrong-endpoint",
+    "truth": "config_error",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "config_error",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 5,
+      "precision": 1,
+      "recall": 0.8333333333333334,
+      "f1": 0.9090909090909091
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0743628,
+    "durationMs": 15596,
+    "iterations": 5,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 12,
+      "output": 1215,
+      "cacheRead": 22149,
+      "cacheWrite": 9117
+    }
+  },
+  "result": {
+    "incidentId": "gen-023",
+    "model": "claude-opus-5-5",
+    "prompt": "v2",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "config_error",
+          "confidence": 0.88,
+          "evidenceLines": [
+            247,
+            256,
+            259,
+            264,
+            275
+          ],
+          "reasoning": "At 19:20:51 order-service reloaded config revision 479, which changed one key: PAYMENT_SVC_URL=http://payment-svc.internal:9090 (#247). Starting at 19:21:42, every PaymentClient.charge call fails with ECONNREFUSED 10.40.42.188:9090 (#256, #259, #264, #275), so nothing is listening on that port. payment-svc itself stays healthy: no errors, normal GC, and some charges still succeed at #266 and #295, probably from pods still on the old config. Checkout requests were returning 200 right up until the reload. After it, the gateway sees 503s from order-service (#252 onward), which is the downstream symptom. The card-processor reset at 19:11 (#108) recovered on retry, and the audit_log slow query (#253) is unrelated."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.1,
+          "evidenceLines": [
+            238,
+            247
+          ],
+          "reasoning": "The order-service v5.24.0 rollout at 19:20:26 shipped with config revision 479. The failure could be put down to the release, but the error lines up exactly with the changed URL key, not a code defect."
+        }
+      ],
+      "recommendedAction": "Roll order-service back to the previous config revision (or set PAYMENT_SVC_URL back to payment-svc's real port) and reload or restart the pods. Check that /charge calls succeed. Then add validation or a health probe for config changes to service URLs."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "19 match(es):\n#108 2026-11-30T19:11:47Z WARN payment-svc [t-5955] card processor call failed: connection reset by peer POST https://api.cardproc.example/v1/charges, retry 1/3\n#251 2026-11-30T19:21:15Z WARN api-gateway [t-6056] POST /checkout 400 12ms: request validation failed: field \"email\" is not a valid address\n#252 2026-11-30T19:21:34Z ERROR api-gateway [t-6058] POST /checkout 503 25202ms: upstream order-service returned 503 Service Unavailable\n#253 2026-11-30T19:21:37Z WARN postgres slow query 2234ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#256 2026-11-30T19:21:42Z ERROR order-service [t-6061] PaymentClient.charge failed: connect ECONNREFUSED 10.40.42.188:9090 (payment-svc.internal)\n#258 2026-11-30T19:22:24Z ERROR api-gateway [t-6065] POST /checkout 503 27367ms: upstream order-service returned 503 Service Unavailable\n#259 2026-11-30T19:22:37Z ERROR order-service [t-6067] PaymentClient.charge failed: connect ECONNREFUSED 10.40.42.188:9090 (payment-svc.internal)\n#264 2026-11-30T19:23:10Z ERROR order-service [t-6069] PaymentClient.charge failed: connect ECONNREFUSED 10.40.42.188:9090 (payment-svc.internal)\n#270 2026-11-30T19:23:32Z ERROR api-gateway [t-6075] POST /checkout 503 21284ms: upstream order-service returned 503 Service Unavailable\n#275 2026-11-30T19:24:52Z ERROR order-service [t-6079] PaymentClient.charge failed: connect ECONNREFUSED 10.40.42.188:9090 (payment-svc.internal)\n#278 2026-11-30T19:25:31Z ERROR api-gateway [t-6081] POST /checkout 503 24261ms: upstream order-service returned 503 Service Unavailable\n#281 2026-11-30T19:25:52Z ERROR api-gateway [t-6085] POST /checkout 503 25357ms: upstream order-service returned 503 Service Unavailable\n#288 2026-11-30T19:27:52Z ERROR api-gateway [t-6089] POST /checkout 503 27277ms: upstream order-service returned 503 Service Unavailable\n#291 2026-11-30T19:28:31Z ERROR api-gateway [t-6090] POST /checkout 503 12720ms: upstream order-service returned 503 Service Unavailable\n#299 2026-11-30T19:29:29Z ERROR api-gateway [t-6095] POST /checkout 503 29896ms: upstream order-service returned 503 Service Unavailable\n#308 2026-11-30T19:30:46Z ERROR api-gateway [t-6100] POST /checkout 503 20679ms: upstream order-service returned 503 Service Unavailable\n#311 2026-11-30T19:31:35Z ERROR api-gateway [t-6103] POST /checkout 503 18630ms: upstream order-service returned 503 Service Unavailable\n#317 2026-11-30T19:33:06Z ERROR api-gateway [t-6106] POST /checkout 503 21463ms: upstream order-service returned 503 Service Unavailable\n#321 2026-11-30T19:34:07Z ERROR api-gateway [t-6109] POST /checkout 503 27894ms: upstream order-service returned 503 Service Unavailable"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "limit": 60
+        },
+        "output": "55 match(es):\n#2 2026-11-30T19:05:03Z INFO payment-svc [t-5880] POST /charge o-7176 ok 31ms\n#6 2026-11-30T19:05:10Z INFO payment-svc [t-5884] POST /charge o-7179 ok 28ms\n#10 2026-11-30T19:05:21Z INFO payment-svc [t-5888] POST /charge o-7182 ok 55ms\n#16 2026-11-30T19:05:55Z INFO payment-svc [t-5892] POST /charge o-7185 ok 48ms\n#24 2026-11-30T19:06:31Z INFO payment-svc [t-5900] POST /charge o-7188 ok 71ms\n#27 2026-11-30T19:06:50Z INFO payment-svc [t-5902] POST /charge o-7190 ok 42ms\n#32 2026-11-30T19:07:05Z INFO payment-svc [t-5906] POST /charge o-7191 ok 87ms\n#34 2026-11-30T19:07:08Z DEBUG payment-svc GC pause 18ms (young), heap 36%\n#37 2026-11-30T19:07:16Z INFO payment-svc [t-5910] POST /charge o-7192 ok 43ms\n#42 2026-11-30T19:07:41Z INFO payment-svc [t-5915] POST /charge o-7197 ok 28ms\n#48 2026-11-30T19:08:00Z INFO payment-svc [t-5916] POST /charge o-7199 ok 46ms\n#51 2026-11-30T19:08:18Z INFO payment-svc [t-5917] POST /charge o-7202 ok 79ms\n#58 2026-11-30T19:08:40Z INFO payment-svc [t-5919] POST /charge o-7206 ok 37ms\n#60 2026-11-30T19:08:51Z DEBUG payment-svc GC pause 17ms (young), heap 40%\n#62 2026-11-30T19:08:55Z INFO payment-svc [t-5922] POST /charge o-7208 ok 58ms\n#66 2026-11-30T19:09:14Z INFO payment-svc [t-5925] POST /charge o-7209 ok 45ms\n#70 2026-11-30T19:09:33Z INFO payment-svc [t-5927] POST /charge o-7211 ok 25ms\n#80 2026-11-30T19:10:10Z INFO payment-svc [t-5935] POST /charge o-7217 ok 35ms\n#86 2026-11-30T19:10:29Z INFO payment-svc [t-5939] POST /charge o-7223 ok 69ms\n#92 2026-11-30T19:10:54Z INFO payment-svc [t-5945] POST /charge o-7227 ok 44ms\n#98 2026-11-30T19:11:19Z INFO payment-svc [t-5950] POST /charge o-7231 ok 44ms\n#103 2026-11-30T19:11:28Z INFO payment-svc [t-5952] POST /charge o-7232 ok 50ms\n#108 2026-11-30T19:11:47Z WARN payment-svc [t-5955] card processor call failed: connection reset by peer POST https://api.cardproc.example/v1/charges, retry 1/3\n#109 2026-11-30T19:11:47Z INFO payment-svc [t-5955] card processor call ok on retry 2/3 (199ms)\n#110 2026-11-30T19:11:52Z DEBUG payment-svc GC pause 9ms (young), heap 41%\n#112 2026-11-30T19:11:53Z INFO payment-svc [t-5957] POST /charge o-7236 ok 56ms\n#117 2026-11-30T19:12:14Z INFO payment-svc [t-5964] POST /charge o-7240 ok 79ms\n#127 2026-11-30T19:12:52Z INFO payment-svc [t-5971] POST /charge o-7246 ok 66ms\n#133 2026-11-30T19:13:14Z INFO payment-svc [t-5974] POST /charge o-7250 ok 21ms\n#136 2026-11-30T19:13:32Z INFO payment-svc [t-5976] POST /charge o-7251 ok 39ms\n#140 2026-11-30T19:13:43Z INFO payment-svc [t-5978] POST /charge o-7254 ok 42ms\n#145 2026-11-30T19:14:00Z INFO payment-svc [t-5980] POST /charge o-7255 ok 75ms\n#149 2026-11-30T19:14:11Z DEBUG payment-svc GC pause 8ms (young), heap 38%\n#160 2026-11-30T19:15:15Z INFO payment-svc [t-5993] POST /charge o-7266 ok 31ms\n#167 2026-11-30T19:15:42Z INFO payment-svc [t-5998] POST /charge o-7269 ok 49ms\n#170 2026-11-30T19:15:49Z INFO payment-svc [t-6000] POST /charge o-7272 ok 41ms\n#173 2026-11-30T19:15:59Z INFO payment-svc [t-6001] POST /charge o-7274 ok 75ms\n#179 2026-11-30T19:16:24Z INFO payment-svc [t-6004] POST /charge o-7278 ok 51ms\n#183 2026-11-30T19:16:36Z INFO payment-svc [t-6008] POST /charge o-7281 ok 71ms\n#185 2026-11-30T19:16:38Z DEBUG payment-svc GC pause 6ms (young), heap 36%\n#195 2026-11-30T19:17:24Z INFO payment-svc [t-6016] POST /charge o-7288 ok 56ms\n#199 2026-11-30T19:17:39Z INFO payment-svc [t-6020] POST /charge o-7290 ok 76ms\n#211 2026-11-30T19:18:37Z INFO payment-svc [t-6027] POST /charge o-7298 ok 62ms\n#220 2026-11-30T19:19:18Z DEBUG payment-svc GC pause 16ms (young), heap 32%\n#228 2026-11-30T19:19:43Z INFO payment-svc [t-6037] POST /charge o-7306 ok 87ms\n#235 2026-11-30T19:20:14Z INFO payment-svc [t-6044] POST /charge o-7310 ok 79ms\n#260 2026-11-30T19:22:38Z DEBUG payment-svc GC pause 23ms (young), heap 30%\n#266 2026-11-30T19:23:16Z INFO payment-svc [t-6073] POST /charge o-7321 ok 76ms\n#276 2026-11-30T19:25:09Z DEBUG payment-svc GC pause 23ms (young), heap 45%\n#283 2026-11-30T19:26:50Z DEBUG payment-svc GC pause 12ms (young), heap 28%\n#293 2026-11-30T19:29:05Z DEBUG payment-svc GC pause 20ms (young), heap 32%\n#295 2026-11-30T19:29:11Z INFO payment-svc [t-6091] POST /charge o-7322 ok 27ms\n#304 2026-11-30T19:30:23Z INFO payment-svc [t-6099] POST /charge o-7325 ok 46ms\n#310 2026-11-30T19:31:25Z DEBUG payment-svc GC pause 24ms (young), heap 41%\n#324 2026-11-30T19:34:40Z DEBUG payment-svc GC pause 25ms (young), heap 43%"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 252,
+          "before": 20,
+          "after": 5
+        },
+        "output": "#232 2026-11-30T19:20:04Z DEBUG order-service GC pause 5ms (young), heap 44%\n#233 2026-11-30T19:20:04Z INFO order-consumer processed batch of 57 messages from orders.events (lag 343ms)\n#234 2026-11-30T19:20:14Z INFO order-service [t-6044] order o-7310 accepted, calling payment-svc POST /charge\n#235 2026-11-30T19:20:14Z INFO payment-svc [t-6044] POST /charge o-7310 ok 79ms\n#236 2026-11-30T19:20:14Z INFO api-gateway [t-6044] POST /checkout 200 223ms\n#237 2026-11-30T19:20:24Z INFO redis stats: hits=15362 misses=803 evicted=0 connected_clients=43\n#238 2026-11-30T19:20:26Z INFO order-service deploy: rolling out order-service v5.24.0 (build 6e2ba31) with config revision 479\n#239 2026-11-30T19:20:29Z INFO order-service [t-6047] order o-7312 accepted, calling payment-svc POST /charge\n#240 2026-11-30T19:20:29Z INFO api-gateway [t-6047] POST /checkout 200 144ms\n#241 2026-11-30T19:20:36Z INFO order-service [t-6048] order o-7314 accepted, calling payment-svc POST /charge\n#242 2026-11-30T19:20:36Z INFO api-gateway [t-6048] POST /checkout 200 125ms\n#243 2026-11-30T19:20:39Z DEBUG api-gateway upstream health: order-service ok, payment-svc ok\n#244 2026-11-30T19:20:42Z INFO order-consumer processed batch of 68 messages from orders.events (lag 151ms)\n#245 2026-11-30T19:20:45Z INFO order-service [t-6052] order o-7316 accepted, calling payment-svc POST /charge\n#246 2026-11-30T19:20:45Z INFO api-gateway [t-6052] POST /checkout 200 119ms\n#247 2026-11-30T19:20:51Z INFO order-service config reloaded from config-service (revision 479): 1 key changed: PAYMENT_SVC_URL=http://payment-svc.internal:9090\n#248 2026-11-30T19:20:54Z INFO order-service [t-6053] order o-7318 accepted, calling payment-svc POST /charge\n#249 2026-11-30T19:20:54Z INFO api-gateway [t-6053] POST /checkout 200 161ms\n#250 2026-11-30T19:21:15Z INFO postgres checkpoint complete: wrote 1018 buffers (5.2%)\n#251 2026-11-30T19:21:15Z WARN api-gateway [t-6056] POST /checkout 400 12ms: request validation failed: field \"email\" is not a valid address\n#252 2026-11-30T19:21:34Z ERROR api-gateway [t-6058] POST /checkout 503 25202ms: upstream order-service returned 503 Service Unavailable\n#253 2026-11-30T19:21:37Z WARN postgres slow query 2234ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#254 2026-11-30T19:21:37Z INFO order-consumer processed batch of 55 messages from orders.events (lag 396ms)\n#255 2026-11-30T19:21:37Z INFO redis stats: hits=10228 misses=325 evicted=0 connected_clients=46\n#256 2026-11-30T19:21:42Z ERROR order-service [t-6061] PaymentClient.charge failed: connect ECONNREFUSED 10.40.42.188:9090 (payment-svc.internal)\n#257 2026-11-30T19:22:22Z INFO order-consumer processed batch of 50 messages from orders.events (lag 59ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "PAYMENT_SVC_URL"
+        },
+        "output": "1 match(es):\n#247 2026-11-30T19:20:51Z INFO order-service config reloaded from config-service (revision 479): 1 key changed: PAYMENT_SVC_URL=http://payment-svc.internal:9090"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "payment-svc.internal",
+          "limit": 10
+        },
+        "output": "5 match(es):\n#247 2026-11-30T19:20:51Z INFO order-service config reloaded from config-service (revision 479): 1 key changed: PAYMENT_SVC_URL=http://payment-svc.internal:9090\n#256 2026-11-30T19:21:42Z ERROR order-service [t-6061] PaymentClient.charge failed: connect ECONNREFUSED 10.40.42.188:9090 (payment-svc.internal)\n#259 2026-11-30T19:22:37Z ERROR order-service [t-6067] PaymentClient.charge failed: connect ECONNREFUSED 10.40.42.188:9090 (payment-svc.internal)\n#264 2026-11-30T19:23:10Z ERROR order-service [t-6069] PaymentClient.charge failed: connect ECONNREFUSED 10.40.42.188:9090 (payment-svc.internal)\n#275 2026-11-30T19:24:52Z ERROR order-service [t-6079] PaymentClient.charge failed: connect ECONNREFUSED 10.40.42.188:9090 (payment-svc.internal)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "config_error",
+              "confidence": 0.88,
+              "evidenceLines": [
+                247,
+                256,
+                259,
+                264,
+                275
+              ],
+              "reasoning": "At 19:20:51 order-service reloaded config revision 479, which changed one key: PAYMENT_SVC_URL=http://payment-svc.internal:9090 (#247). Starting at 19:21:42, every PaymentClient.charge call fails with ECONNREFUSED 10.40.42.188:9090 (#256, #259, #264, #275), so nothing is listening on that port. payment-svc itself stays healthy: no errors, normal GC, and some charges still succeed at #266 and #295, probably from pods still on the old config. Checkout requests were returning 200 right up until the reload. After it, the gateway sees 503s from order-service (#252 onward), which is the downstream symptom. The card-processor reset at 19:11 (#108) recovered on retry, and the audit_log slow query (#253) is unrelated."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.1,
+              "evidenceLines": [
+                238,
+                247
+              ],
+              "reasoning": "The order-service v5.24.0 rollout at 19:20:26 shipped with config revision 479. The failure could be put down to the release, but the error lines up exactly with the changed URL key, not a code defect."
+            }
+          ],
+          "recommendedAction": "Roll order-service back to the previous config revision (or set PAYMENT_SVC_URL back to payment-svc's real port) and reload or restart the pods. Check that /charge calls succeed. Then add validation or a health probe for config changes to service URLs."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1215,
+      "cacheReadTokens": 22149,
+      "cacheWriteTokens": 9117
+    },
+    "durationMs": 15596,
+    "stopReason": "tool_use"
+  }
+}

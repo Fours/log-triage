@@ -1,0 +1,152 @@
+{
+  "score": {
+    "incidentId": "gen-011",
+    "difficulty": "medium",
+    "scenario": "data_integrity/partial-migration",
+    "truth": "data_integrity",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.93,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 4,
+      "precision": 0.5714285714285714,
+      "recall": 0.5714285714285714,
+      "f1": 0.5714285714285714
+    },
+    "herringsCited": 1,
+    "costUsd": 0.0492654,
+    "durationMs": 12246,
+    "iterations": 4,
+    "toolCalls": 3,
+    "tokens": {
+      "input": 10,
+      "output": 936,
+      "cacheRead": 13152,
+      "cacheWrite": 5575
+    }
+  },
+  "result": {
+    "incidentId": "gen-011",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.93,
+          "evidenceLines": [
+            176,
+            177,
+            181,
+            187,
+            192,
+            221,
+            233
+          ],
+          "reasoning": "At 19:05:42 notification-svc began migration 0063_add_status_v2. Step 1 renamed notifications.status_v2 to status_v2_old and committed. Step 2 then failed on a lock timeout, and because the DDL was non-transactional, step 1 was never rolled back. The schema was left half-migrated: from 19:06:37 on, notif-db rejects every query with \"Unknown column 'status_v2'\", notification-svc fails those requests, and the gateway returns 500s on POST /v1/notify. Requests were fine before the migration started. The template-svc email provider reset at 18:51 is an unrelated one-off that was retried. I found no deploy lines."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.04,
+          "evidenceLines": [
+            181
+          ],
+          "reasoning": "A lock timeout on the notifications table is what made step 2 fail. But the lasting damage comes from the broken schema, not from calls hanging."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.02,
+          "evidenceLines": [
+            19
+          ],
+          "reasoning": "There was one email-provider connection reset well before the incident started. It has nothing to do with the 500s."
+        }
+      ],
+      "recommendedAction": "Restore the schema now: rename notifications.status_v2_old back to status_v2, or finish the rest of migration 0063 in a maintenance window once the lock holder is cleared. Then check that POST /v1/notify recovers. After that, make the migration steps transactional or idempotent and safe to resume, and add a lock_timeout pre-check so a failed step can't leave the schema half-applied."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "17 match(es):\n#19 2026-11-27T18:51:39Z WARN template-svc [t-4114] email provider call failed: connection reset by peer POST https://api.mailer.example/v3/send, retry 1/3\n#181 2026-11-27T19:05:53Z ERROR notification-svc migrate: 0063_add_status_v2 step 2/3 failed: lock timeout on notifications; step 1 already committed (non-transactional DDL), not rolled back\n#187 2026-11-27T19:06:37Z ERROR notif-db Unknown column 'status_v2' in 'field list'\n#191 2026-11-27T19:07:13Z ERROR api-gateway [t-4216] POST /v1/notify 500 17908ms: upstream notification-svc returned 500 Internal Server Error\n#192 2026-11-27T19:07:17Z ERROR notification-svc [t-4219] query on notifications failed for m-8789: Unknown column 'status_v2'\n#196 2026-11-27T19:08:24Z ERROR notif-db Unknown column 'status_v2' in 'field list'\n#201 2026-11-27T19:09:00Z ERROR notif-db Unknown column 'status_v2' in 'field list'\n#209 2026-11-27T19:09:46Z ERROR api-gateway [t-4227] POST /v1/notify 500 9577ms: upstream notification-svc returned 500 Internal Server Error\n#210 2026-11-27T19:10:10Z ERROR notif-db Unknown column 'status_v2' in 'field list'\n#219 2026-11-27T19:11:16Z ERROR api-gateway [t-4234] POST /v1/notify 500 29734ms: upstream notification-svc returned 500 Internal Server Error\n#221 2026-11-27T19:11:41Z ERROR notification-svc [t-4238] query on notifications failed for m-8795: Unknown column 'status_v2'\n#227 2026-11-27T19:13:21Z ERROR api-gateway [t-4241] POST /v1/notify 500 13468ms: upstream notification-svc returned 500 Internal Server Error\n#233 2026-11-27T19:13:57Z ERROR notification-svc [t-4244] query on notifications failed for m-8800: Unknown column 'status_v2'\n#237 2026-11-27T19:14:48Z ERROR api-gateway [t-4245] POST /v1/notify 500 28828ms: upstream notification-svc returned 500 Internal Server Error\n#242 2026-11-27T19:15:29Z ERROR api-gateway [t-4251] POST /v1/notify 500 22262ms: upstream notification-svc returned 500 Internal Server Error\n#253 2026-11-27T19:16:56Z ERROR notification-svc [t-4258] query on notifications failed for m-8806: Unknown column 'status_v2'\n#262 2026-11-27T19:18:20Z ERROR api-gateway [t-4264] POST /v1/notify 500 21903ms: upstream notification-svc returned 500 Internal Server Error"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 181,
+          "before": 12,
+          "after": 6
+        },
+        "output": "#169 2026-11-27T19:05:09Z INFO notif-db InnoDB: page cleaner flushed 592 pages, buffer pool hit rate 99%\n#170 2026-11-27T19:05:11Z DEBUG template-svc GC pause 20ms (young), heap 32%\n#171 2026-11-27T19:05:15Z INFO notif-worker processed batch of 66 messages from notifications.outbound (lag 257ms)\n#172 2026-11-27T19:05:23Z INFO notification-svc [t-4211] message m-8785 accepted, calling template-svc POST /render\n#173 2026-11-27T19:05:23Z INFO template-svc [t-4211] POST /render m-8785 ok 35ms\n#174 2026-11-27T19:05:23Z INFO api-gateway [t-4211] POST /v1/notify 200 139ms\n#175 2026-11-27T19:05:37Z DEBUG api-gateway upstream health: notification-svc ok, template-svc ok\n#176 2026-11-27T19:05:42Z INFO notification-svc migrate: applying 0063_add_status_v2 (3 steps) to notif-db\n#177 2026-11-27T19:05:44Z INFO notification-svc migrate: 0063_add_status_v2 step 1/3 ok: renamed column notifications.status_v2 -> status_v2_old\n#178 2026-11-27T19:05:47Z INFO redis stats: hits=8303 misses=885 evicted=0 connected_clients=35\n#179 2026-11-27T19:05:52Z INFO notification-svc [t-4212] message m-8787 accepted, calling template-svc POST /render\n#180 2026-11-27T19:05:52Z INFO api-gateway [t-4212] POST /v1/notify 200 109ms\n#181 2026-11-27T19:05:53Z ERROR notification-svc migrate: 0063_add_status_v2 step 2/3 failed: lock timeout on notifications; step 1 already committed (non-transactional DDL), not rolled back\n#182 2026-11-27T19:05:57Z INFO notif-worker processed batch of 29 messages from notifications.outbound (lag 355ms)\n#183 2026-11-27T19:06:05Z DEBUG notification-svc GC pause 24ms (young), heap 40%\n#184 2026-11-27T19:06:10Z INFO notification-svc [t-4215] message m-8788 accepted, calling template-svc POST /render\n#185 2026-11-27T19:06:10Z INFO template-svc [t-4215] POST /render m-8788 ok 72ms\n#186 2026-11-27T19:06:10Z INFO api-gateway [t-4215] POST /v1/notify 200 142ms\n#187 2026-11-27T19:06:37Z ERROR notif-db Unknown column 'status_v2' in 'field list'"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.93,
+              "evidenceLines": [
+                176,
+                177,
+                181,
+                187,
+                192,
+                221,
+                233
+              ],
+              "reasoning": "At 19:05:42 notification-svc began migration 0063_add_status_v2. Step 1 renamed notifications.status_v2 to status_v2_old and committed. Step 2 then failed on a lock timeout, and because the DDL was non-transactional, step 1 was never rolled back. The schema was left half-migrated: from 19:06:37 on, notif-db rejects every query with \"Unknown column 'status_v2'\", notification-svc fails those requests, and the gateway returns 500s on POST /v1/notify. Requests were fine before the migration started. The template-svc email provider reset at 18:51 is an unrelated one-off that was retried. I found no deploy lines."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.04,
+              "evidenceLines": [
+                181
+              ],
+              "reasoning": "A lock timeout on the notifications table is what made step 2 fail. But the lasting damage comes from the broken schema, not from calls hanging."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.02,
+              "evidenceLines": [
+                19
+              ],
+              "reasoning": "There was one email-provider connection reset well before the incident started. It has nothing to do with the 500s."
+            }
+          ],
+          "recommendedAction": "Restore the schema now: rename notifications.status_v2_old back to status_v2, or finish the rest of migration 0063 in a maintenance window once the lock holder is cleared. Then check that POST /v1/notify recovers. After that, make the migration steps transactional or idempotent and safe to resume, and add a lock_timeout pre-check so a failed step can't leave the schema half-applied."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 3,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 936,
+      "cacheReadTokens": 13152,
+      "cacheWriteTokens": 5575
+    },
+    "durationMs": 12246,
+    "stopReason": "tool_use"
+  }
+}

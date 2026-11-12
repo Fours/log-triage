@@ -2,10 +2,11 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { DEFAULT_BUDGET, FATAL_API_ERRORS, triage, type ApiErrorKind, type Effort, type TriageOptions, type TriageResult } from "../agent.js";
+import { getPrompt } from "../prompts.js";
 import { loadIncident } from "../tools.js";
 import { toIncidentView, type Incident, type IncidentView } from "../types.js";
 import { BASELINE_MODEL, baselineTriage } from "./baseline.js";
-import { renderLeaderboard, renderRunReport, type LeaderboardEntry, type RunConfig } from "./report.js";
+import { renderLeaderboard, renderRunReport, resumeCommand, runPrompt, type LeaderboardEntry, type RunConfig } from "./report.js";
 import { scoreIncident, summarize, type IncidentScore, type Summary } from "./score.js";
 
 /**
@@ -33,6 +34,8 @@ export interface EvalOptions {
   resultsDir: string;
   datasetDir: string;
   model: string;
+  /** Prompt version (src/prompts.ts); defaults like the agent's. Ignored for the baseline. */
+  prompt?: string;
   effort: Effort | null;
   baseline?: boolean;
   ids?: string[];
@@ -95,6 +98,10 @@ export async function runEval(opts: EvalOptions): Promise<EvalOutcome> {
   const log = opts.log ?? console.log;
   const model = opts.baseline ? BASELINE_MODEL : opts.model;
   const effort = opts.baseline ? null : opts.effort;
+  const prompt = opts.baseline ? null : getPrompt(opts.prompt).id; // throws on an unknown version
+  const datasetDir = relative(opts.root, opts.datasetDir);
+  // Runs on anything but the dev set are tagged with the dataset's folder name (e.g. "test").
+  const datasetTag = datasetDir === "incidents/generated" ? null : datasetDir.split("/").pop();
   const triageFn: TriageFn = opts.triageFn ?? ((view, o) => triage(view, o));
   const runsDir = resolve(opts.resultsDir, "runs");
 
@@ -102,7 +109,7 @@ export async function runEval(opts: EvalOptions): Promise<EvalOutcome> {
   if (incidents.length === 0) throw new Error("No incidents selected.");
 
   const today = new Date().toISOString().slice(0, 10);
-  const runId = opts.runId ?? [today, model.replace(/[^a-z0-9.-]+/gi, "-"), effort].filter(Boolean).join("_");
+  const runId = opts.runId ?? [today, model.replace(/[^a-z0-9.-]+/gi, "-"), prompt, effort, datasetTag].filter(Boolean).join("_");
   const runDir = resolve(runsDir, runId);
   const incidentsDir = resolve(runDir, "incidents");
   if (existsSync(runDir) && !opts.resume) {
@@ -116,9 +123,10 @@ export async function runEval(opts: EvalOptions): Promise<EvalOutcome> {
     : {
         runId,
         model,
+        prompt,
         effort,
         dataset: {
-          dir: relative(opts.root, opts.datasetDir),
+          dir: datasetDir,
           generatorVersion: manifest?.generatorVersion ?? null,
           seed: manifest?.seed ?? null,
           incidents: incidents.length,
@@ -130,6 +138,8 @@ export async function runEval(opts: EvalOptions): Promise<EvalOutcome> {
         finishedAt: null,
       };
   if (config.model !== model) throw new Error(`Run ${runId} was made with ${config.model}, not ${model}.`);
+  if (runPrompt(config) !== prompt) throw new Error(`Run ${runId} was made with prompt ${runPrompt(config)}, not ${prompt}.`);
+  if (config.dataset.dir !== datasetDir) throw new Error(`Run ${runId} was made on ${config.dataset.dir}, not ${datasetDir}.`);
   config.status = "incomplete";
   config.finishedAt = null;
   delete config.stoppedBy;
@@ -145,7 +155,7 @@ export async function runEval(opts: EvalOptions): Promise<EvalOutcome> {
 
   const todo = incidents.filter((i) => !finished(i.id));
   log(
-    `\n=== Eval ${runId}: ${model}${effort ? ` (effort ${effort})` : ""} · ${incidents.length} incidents` +
+    `\n=== Eval ${runId}: ${model}${prompt ? ` · prompt ${prompt}` : ""}${effort ? ` · effort ${effort}` : ""} · ${datasetDir} · ${incidents.length} incidents` +
       `${todo.length < incidents.length ? `, ${incidents.length - todo.length} already done` : ""} · concurrency ${opts.concurrency} ===\n`,
   );
 
@@ -154,7 +164,7 @@ export async function runEval(opts: EvalOptions): Promise<EvalOutcome> {
 
   async function runOne(incident: Incident): Promise<void> {
     const view = toIncidentView(incident);
-    const result = opts.baseline ? baselineTriage(view) : await triageFn(view, { model, effort: effort ?? undefined });
+    const result = opts.baseline ? baselineTriage(view) : await triageFn(view, { model, prompt: prompt ?? undefined, effort: effort ?? undefined });
     const score = scoreIncident(incident, result);
     writeFileSync(recordPath(incident.id), JSON.stringify({ score, result } satisfies IncidentRecord, null, 2) + "\n");
     count += 1;
@@ -209,7 +219,7 @@ export async function runEval(opts: EvalOptions): Promise<EvalOutcome> {
   if (!complete) {
     log(
       `\nIncomplete: ${pending.length} of ${incidents.length} incidents unfinished. It's left off the leaderboard. ` +
-        `Fix the cause, then continue (finished incidents are kept):\n  npm run eval -- --run-id ${runId} --resume${model === BASELINE_MODEL ? " --baseline" : ` --model ${model}`}`,
+        `Fix the cause, then continue (finished incidents are kept):\n  ${resumeCommand(config)}`,
     );
   } else {
     const s = summary;

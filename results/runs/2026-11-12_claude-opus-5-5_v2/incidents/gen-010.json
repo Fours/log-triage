@@ -1,0 +1,149 @@
+{
+  "score": {
+    "incidentId": "gen-010",
+    "difficulty": "easy",
+    "scenario": "data_integrity/partial-migration",
+    "truth": "data_integrity",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "bad_deploy",
+    "confidence": 0.65,
+    "top1": false,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 2,
+    "evidence": {
+      "cited": 7,
+      "correct": 5,
+      "precision": 0.7142857142857143,
+      "recall": 0.8333333333333334,
+      "f1": 0.7692307692307692
+    },
+    "herringsCited": 0,
+    "costUsd": 0.047689,
+    "durationMs": 13539,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 1091,
+      "cacheRead": 10645,
+      "cacheWrite": 4740
+    }
+  },
+  "result": {
+    "incidentId": "gen-010",
+    "model": "claude-opus-5-5",
+    "prompt": "v2",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.65,
+          "evidenceLines": [
+            91,
+            92,
+            95,
+            98,
+            101,
+            107,
+            132
+          ],
+          "reasoning": "At 19:40:46 search-api started schema migration 0035_add_currency_code on catalog-db. Step 1 renamed products.currency_code to currency_code_old and committed. Step 2 then failed with a lock timeout, and because the DDL is non-transactional, step 1 was never rolled back (#95). From 19:41:20 on, queries that read products.currency_code fail with 'column does not exist' (#98, #101, #107, #111, #132). search-api returns 500, and web-bff passes those along as GET /search 500s (#100, #113, #133, #142); those are symptoms. Before the migration, /search returned 200 normally (#87, #90). redis, index-worker and catalog-svc logged no errors. The vacuum at #88 is routine."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.3,
+          "evidenceLines": [
+            92,
+            95,
+            98,
+            101
+          ],
+          "reasoning": "The same lines can also be read as a schema integrity problem: the half-applied migration left catalog-db's schema out of step with what the application code expects."
+        }
+      ],
+      "recommendedAction": "Roll back the half-applied migration by renaming products.currency_code_old back to currency_code, or roll forward by finishing steps 2–3 during a low-lock window. Then confirm GET /search recovers. Make migrations transactional or idempotent with an automatic rollback, and stop running them from inside a serving search-api instance."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "10 match(es):\n#95 2026-10-20T19:41:00Z ERROR search-api migrate: 0035_add_currency_code step 2/3 failed: lock timeout on products; step 1 already committed (non-transactional DDL), not rolled back\n#98 2026-10-20T19:41:20Z ERROR catalog-db column \"currency_code\" of relation \"products\" does not exist at character 114\n#100 2026-10-20T19:41:54Z ERROR web-bff [t-6556] GET /search 500 24826ms: upstream search-api returned 500 Internal Server Error\n#101 2026-10-20T19:42:24Z ERROR search-api [t-6558] query on products failed for p-7851: column \"currency_code\" does not exist\n#107 2026-10-20T19:43:14Z ERROR catalog-db column \"currency_code\" of relation \"products\" does not exist at character 50\n#111 2026-10-20T19:44:22Z ERROR catalog-db column \"currency_code\" of relation \"products\" does not exist at character 99\n#113 2026-10-20T19:44:50Z ERROR web-bff [t-6559] GET /search 500 22930ms: upstream search-api returned 500 Internal Server Error\n#132 2026-10-20T19:49:38Z ERROR search-api [t-6562] query on products failed for p-7854: column \"currency_code\" does not exist\n#133 2026-10-20T19:49:43Z ERROR web-bff [t-6566] GET /search 500 28101ms: upstream search-api returned 500 Internal Server Error\n#142 2026-10-20T19:51:47Z ERROR web-bff [t-6570] GET /search 500 26005ms: upstream search-api returned 500 Internal Server Error"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 95,
+          "before": 12,
+          "after": 4
+        },
+        "output": "#83 2026-10-20T19:40:00Z INFO redis-cache stats: hits=19203 misses=210 evicted=0 connected_clients=45\n#84 2026-10-20T19:40:08Z INFO index-worker processed batch of 77 messages from catalog.updates (lag 105ms)\n#85 2026-10-20T19:40:20Z INFO search-api [t-6552] product p-7848 accepted, calling catalog-svc GET /products/batch\n#86 2026-10-20T19:40:20Z INFO catalog-svc [t-6552] GET /products/batch p-7848 ok 38ms\n#87 2026-10-20T19:40:20Z INFO web-bff [t-6552] GET /search 200 110ms\n#88 2026-10-20T19:40:31Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 28\n#89 2026-10-20T19:40:45Z INFO search-api [t-6553] product p-7849 accepted, calling catalog-svc GET /products/batch\n#90 2026-10-20T19:40:46Z INFO web-bff [t-6553] GET /search 200 124ms\n#91 2026-10-20T19:40:46Z INFO search-api migrate: applying 0035_add_currency_code (3 steps) to catalog-db\n#92 2026-10-20T19:40:48Z INFO search-api migrate: 0035_add_currency_code step 1/3 ok: renamed column products.currency_code -> currency_code_old\n#93 2026-10-20T19:40:52Z DEBUG search-api GC pause 11ms (young), heap 46%\n#94 2026-10-20T19:40:54Z INFO index-worker processed batch of 48 messages from catalog.updates (lag 370ms)\n#95 2026-10-20T19:41:00Z ERROR search-api migrate: 0035_add_currency_code step 2/3 failed: lock timeout on products; step 1 already committed (non-transactional DDL), not rolled back\n#96 2026-10-20T19:41:14Z INFO redis-cache stats: hits=8569 misses=519 evicted=0 connected_clients=40\n#97 2026-10-20T19:41:19Z DEBUG catalog-svc GC pause 10ms (young), heap 35%\n#98 2026-10-20T19:41:20Z ERROR catalog-db column \"currency_code\" of relation \"products\" does not exist at character 114\n#99 2026-10-20T19:41:36Z INFO index-worker processed batch of 45 messages from catalog.updates (lag 372ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "version"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.65,
+              "evidenceLines": [
+                91,
+                92,
+                95,
+                98,
+                101,
+                107,
+                132
+              ],
+              "reasoning": "At 19:40:46 search-api started schema migration 0035_add_currency_code on catalog-db. Step 1 renamed products.currency_code to currency_code_old and committed. Step 2 then failed with a lock timeout, and because the DDL is non-transactional, step 1 was never rolled back (#95). From 19:41:20 on, queries that read products.currency_code fail with 'column does not exist' (#98, #101, #107, #111, #132). search-api returns 500, and web-bff passes those along as GET /search 500s (#100, #113, #133, #142); those are symptoms. Before the migration, /search returned 200 normally (#87, #90). redis, index-worker and catalog-svc logged no errors. The vacuum at #88 is routine."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.3,
+              "evidenceLines": [
+                92,
+                95,
+                98,
+                101
+              ],
+              "reasoning": "The same lines can also be read as a schema integrity problem: the half-applied migration left catalog-db's schema out of step with what the application code expects."
+            }
+          ],
+          "recommendedAction": "Roll back the half-applied migration by renaming products.currency_code_old back to currency_code, or roll forward by finishing steps 2–3 during a low-lock window. Then confirm GET /search recovers. Make migrations transactional or idempotent with an automatic rollback, and stop running them from inside a serving search-api instance."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1091,
+      "cacheReadTokens": 10645,
+      "cacheWriteTokens": 4740
+    },
+    "durationMs": 13539,
+    "stopReason": "tool_use"
+  }
+}

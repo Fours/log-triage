@@ -1,0 +1,163 @@
+{
+  "score": {
+    "incidentId": "gen-013",
+    "difficulty": "hard",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [
+      "resource_exhaustion"
+    ],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.8,
+    "top1": false,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 2,
+    "evidence": {
+      "cited": 9,
+      "correct": 5,
+      "precision": 0.5555555555555556,
+      "recall": 0.8333333333333334,
+      "f1": 0.6666666666666667
+    },
+    "herringsCited": 1,
+    "costUsd": 0.0586886,
+    "durationMs": 17323,
+    "iterations": 3,
+    "toolCalls": 3,
+    "tokens": {
+      "input": 8,
+      "output": 1411,
+      "cacheRead": 7358,
+      "cacheWrite": 5793
+    }
+  },
+  "result": {
+    "incidentId": "gen-013",
+    "model": "claude-opus-5-5",
+    "prompt": "v2",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.8,
+          "evidenceLines": [
+            173,
+            177,
+            188,
+            180,
+            191,
+            185,
+            202,
+            192,
+            212
+          ],
+          "reasoning": "At 01:34:07 redis-cache was replaced and restarted with no RDB snapshot, so it came back with 0 keys (#173). Before that, the hit rate was normal (#167). Right after, search-api reported a 92-95% cache miss ratio, against a baseline of 3%, and fell back to catalog-db for every product (#177, #188). Within 30s catalog-db hit 100% CPU and 483-498 of 500 connections (#180, #191). Simple product lookups by primary key (SELECT * FROM products WHERE id = $1) then took 3-8s (#185, #202). search-api product queries timed out at 5s (#192, #212), and web-bff returned 504s on GET /search from 01:36 onward. Red herrings: the translation API connection reset at 01:26 (#60) was a single retry well before onset, and the audit_log seq-scan slow query (#162) and the index-worker GC pause (#176) did not line up with the failures."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.15,
+          "evidenceLines": [
+            173,
+            177,
+            180,
+            192
+          ],
+          "reasoning": "The same chain, read as a cascade: the cache was lost, the miss storm overloaded catalog-db, search-api timed out, and the gateway returned 504s. Whether this counts as a cascade or as the database running out of capacity depends on how you label it."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.05,
+          "evidenceLines": [
+            60
+          ],
+          "reasoning": "A connection reset from the translation API at 01:26. It was isolated and happened before onset, so it is unlikely to matter."
+        }
+      ],
+      "recommendedAction": "Warm the redis cache: pre-load the hot product keys and restore from a snapshot if one exists. Meanwhile, protect catalog-db with request coalescing (single-flight) and rate-limited fallback when the cache misses, and if needed temporarily throttle search-api's direct DB reads or add read replicas. Longer term, turn on RDB/AOF persistence or replication so a replaced node doesn't start empty, and add stampede protection such as jittered TTLs, lock-on-miss and serving stale data."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "33 match(es):\n#26 2026-11-18T01:24:58Z WARN web-bff disk usage 83% on /var/log (threshold 75%)\n#60 2026-11-18T01:26:55Z WARN catalog-svc [t-5200] translation API call failed: connection reset by peer POST https://api.translate.example/v2/translate, retry 1/3\n#162 2026-11-18T01:33:21Z WARN catalog-db slow query 1292ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#173 2026-11-18T01:34:07Z WARN redis-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#176 2026-11-18T01:34:36Z WARN index-worker GC pause 955ms (G1 Old Gen), heap 59% after collection\n#180 2026-11-18T01:35:06Z WARN catalog-db connections 483/500 (active 439), CPU 100%\n#185 2026-11-18T01:35:28Z WARN catalog-db slow query 7706ms: SELECT * FROM products WHERE id = $1\n#191 2026-11-18T01:35:48Z WARN catalog-db connections 498/500 (active 417), CPU 95%\n#192 2026-11-18T01:36:10Z ERROR search-api [t-5301] query on products timed out after 5000ms (p-4408)\n#194 2026-11-18T01:36:15Z ERROR web-bff [t-5303] GET /search 504 7027ms: upstream search-api timed out\n#199 2026-11-18T01:36:41Z WARN catalog-db connections 480/500 (active 411), CPU 97%\n#200 2026-11-18T01:36:57Z ERROR web-bff [t-5305] GET /search 504 30000ms: upstream search-api timed out\n#202 2026-11-18T01:37:08Z WARN catalog-db slow query 3152ms: SELECT * FROM products WHERE id = $1\n#207 2026-11-18T01:37:23Z ERROR web-bff [t-5313] GET /search 504 23699ms: upstream search-api timed out\n#212 2026-11-18T01:37:51Z ERROR search-api [t-5316] query on products timed out after 5000ms (p-4417)\n#217 2026-11-18T01:38:05Z WARN catalog-db slow query 8030ms: SELECT * FROM products WHERE id = $1\n#220 2026-11-18T01:38:32Z ERROR web-bff [t-5324] GET /search 504 16759ms: upstream search-api timed out\n#226 2026-11-18T01:38:54Z WARN catalog-db slow query 3077ms: SELECT * FROM products WHERE id = $1\n#230 2026-11-18T01:39:05Z ERROR web-bff [t-5330] GET /search 504 11988ms: upstream search-api timed out\n#237 2026-11-18T01:39:54Z ERROR web-bff [t-5340] GET /search 504 13409ms: upstream search-api timed out\n#238 2026-11-18T01:40:04Z ERROR search-api [t-5343] query on products timed out after 5000ms (p-4427)\n#245 2026-11-18T01:40:30Z WARN catalog-db slow query 8753ms: SELECT * FROM products WHERE id = $1\n#246 2026-11-18T01:40:47Z ERROR web-bff [t-5352] GET /search 504 28179ms: upstream search-api timed out\n#254 2026-11-18T01:41:18Z WARN catalog-db slow query 4151ms: SELECT * FROM products WHERE id = $1\n#255 2026-11-18T01:41:21Z ERROR web-bff [t-5359] GET /search 504 5484ms: upstream search-api timed out\n#260 2026-11-18T01:42:08Z ERROR search-api [t-5365] query on products timed out after 5000ms (p-4438)\n#263 2026-11-18T01:42:24Z ERROR web-bff [t-5367] GET /search 504 4982ms: upstream search-api timed out\n#274 2026-11-18T01:43:20Z ERROR web-bff [t-5374] GET /search 504 12771ms: upstream search-api timed out\n#277 2026-11-18T01:43:28Z WARN catalog-db slow query 3173ms: SELECT * FROM products WHERE id = $1\n#279 2026-11-18T01:43:42Z ERROR search-api [t-5379] query on products timed out after 5000ms (p-4450)\n#280 2026-11-18T01:43:42Z ERROR web-bff [t-5383] GET /search 504 19698ms: upstream search-api timed out\n#285 2026-11-18T01:44:15Z ERROR web-bff [t-5388] GET /search 504 25006ms: upstream search-api timed out\n#289 2026-11-18T01:44:36Z WARN catalog-db slow query 5278ms: SELECT * FROM products WHERE id = $1"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 173,
+          "before": 6,
+          "after": 10
+        },
+        "output": "#167 2026-11-18T01:33:41Z INFO redis-cache stats: hits=13429 misses=524 evicted=0 connected_clients=43\n#168 2026-11-18T01:33:43Z INFO search-api [t-5288] product p-4396 accepted, calling catalog-svc GET /products/batch\n#169 2026-11-18T01:33:43Z INFO web-bff [t-5288] GET /search 200 86ms\n#170 2026-11-18T01:33:45Z DEBUG web-bff upstream health: search-api ok, catalog-svc ok\n#171 2026-11-18T01:33:50Z INFO search-api [t-5291] product p-4398 accepted, calling catalog-svc GET /products/batch\n#172 2026-11-18T01:33:50Z INFO web-bff [t-5291] GET /search 200 137ms\n#173 2026-11-18T01:34:07Z WARN redis-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#174 2026-11-18T01:34:11Z INFO index-worker processed batch of 113 messages from catalog.updates (lag 261ms)\n#175 2026-11-18T01:34:14Z DEBUG search-api GC pause 14ms (young), heap 37%\n#176 2026-11-18T01:34:36Z WARN index-worker GC pause 955ms (G1 Old Gen), heap 59% after collection\n#177 2026-11-18T01:34:36Z INFO search-api redis-cache miss ratio 92% over last 30s (baseline 3%), loading from catalog-db\n#178 2026-11-18T01:34:37Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 25\n#179 2026-11-18T01:34:46Z INFO index-worker processed batch of 47 messages from catalog.updates (lag 187ms)\n#180 2026-11-18T01:35:06Z WARN catalog-db connections 483/500 (active 439), CPU 100%\n#181 2026-11-18T01:35:09Z INFO search-api [t-5293] product p-4399 accepted, calling catalog-svc GET /products/batch\n#182 2026-11-18T01:35:09Z INFO web-bff [t-5293] GET /search 200 79ms\n#183 2026-11-18T01:35:18Z INFO search-api [t-5296] product p-4402 accepted, calling catalog-svc GET /products/batch"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "cache",
+          "limit": 40
+        },
+        "output": "2 match(es):\n#177 2026-11-18T01:34:36Z INFO search-api redis-cache miss ratio 92% over last 30s (baseline 3%), loading from catalog-db\n#188 2026-11-18T01:35:40Z INFO search-api redis-cache miss ratio 95% over last 30s (baseline 4%), loading from catalog-db"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.8,
+              "evidenceLines": [
+                173,
+                177,
+                188,
+                180,
+                191,
+                185,
+                202,
+                192,
+                212
+              ],
+              "reasoning": "At 01:34:07 redis-cache was replaced and restarted with no RDB snapshot, so it came back with 0 keys (#173). Before that, the hit rate was normal (#167). Right after, search-api reported a 92-95% cache miss ratio, against a baseline of 3%, and fell back to catalog-db for every product (#177, #188). Within 30s catalog-db hit 100% CPU and 483-498 of 500 connections (#180, #191). Simple product lookups by primary key (SELECT * FROM products WHERE id = $1) then took 3-8s (#185, #202). search-api product queries timed out at 5s (#192, #212), and web-bff returned 504s on GET /search from 01:36 onward. Red herrings: the translation API connection reset at 01:26 (#60) was a single retry well before onset, and the audit_log seq-scan slow query (#162) and the index-worker GC pause (#176) did not line up with the failures."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.15,
+              "evidenceLines": [
+                173,
+                177,
+                180,
+                192
+              ],
+              "reasoning": "The same chain, read as a cascade: the cache was lost, the miss storm overloaded catalog-db, search-api timed out, and the gateway returned 504s. Whether this counts as a cascade or as the database running out of capacity depends on how you label it."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.05,
+              "evidenceLines": [
+                60
+              ],
+              "reasoning": "A connection reset from the translation API at 01:26. It was isolated and happened before onset, so it is unlikely to matter."
+            }
+          ],
+          "recommendedAction": "Warm the redis cache: pre-load the hot product keys and restore from a snapshot if one exists. Meanwhile, protect catalog-db with request coalescing (single-flight) and rate-limited fallback when the cache misses, and if needed temporarily throttle search-api's direct DB reads or add read replicas. Longer term, turn on RDB/AOF persistence or replication so a replaced node doesn't start empty, and add stampede protection such as jittered TTLs, lock-on-miss and serving stale data."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 3,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 1411,
+      "cacheReadTokens": 7358,
+      "cacheWriteTokens": 5793
+    },
+    "durationMs": 17323,
+    "stopReason": "tool_use"
+  }
+}

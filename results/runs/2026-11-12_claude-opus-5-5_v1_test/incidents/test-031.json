@@ -1,0 +1,181 @@
+{
+  "score": {
+    "incidentId": "test-031",
+    "difficulty": "medium",
+    "scenario": "dependency_timeout/db-lock-wait",
+    "truth": "dependency_timeout",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.6,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 13,
+      "correct": 9,
+      "precision": 0.6923076923076923,
+      "recall": 1,
+      "f1": 0.8181818181818181
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0537638,
+    "durationMs": 15709,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 1308,
+      "cacheRead": 10769,
+      "cacheWrite": 5082
+    }
+  },
+  "result": {
+    "incidentId": "test-031",
+    "model": "claude-opus-5-5",
+    "prompt": "v1",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.6,
+          "evidenceLines": [
+            199,
+            205,
+            214,
+            210,
+            218,
+            221,
+            211,
+            219,
+            222,
+            223,
+            235,
+            247,
+            233
+          ],
+          "reasoning": "The first anomaly is at 20:41:33 (#199): accounts-db reports that transaction 85871 from auth-svc-reconciler is idle in transaction and holding RowExclusiveLock on accounts. Login UPDATEs on accounts then wait for a ShareLock on that transaction (#205, #214). Those auth-svc UPDATEs hit the 10s statement timeout (#210, #218, #221), so account-svc's calls to auth-svc POST /tokens time out at 15s (#211, #219, #222). The account-svc connection pool to auth-svc then fills up at 50/50 (#223, #235, #247), and edge-proxy starts returning 504s (#233 onward). Everything downstream is a timeout on the blocked database dependency."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.25,
+          "evidenceLines": [
+            199,
+            223,
+            235,
+            247
+          ],
+          "reasoning": "You could also frame this as lock exhaustion: one leaked transaction holds a row lock and starves every writer, which then saturates the HTTP pool. The pool saturation itself comes after the DB lock waits, so it is a symptom, not the trigger."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.15,
+          "evidenceLines": [
+            223,
+            233,
+            239,
+            249
+          ],
+          "reasoning": "The edge 504s are the far end of a chain: DB lock → auth-svc → account-svc pool → edge-proxy."
+        }
+      ],
+      "recommendedAction": "Kill the idle-in-transaction backend for transaction 85871 (application_name=auth-svc-reconciler) using pg_terminate_backend, and pause the reconciler job. Set idle_in_transaction_session_timeout on accounts-db, and fix the reconciler so it commits or rolls back quickly and doesn't hold locks on accounts. Watch the account-svc→auth-svc pool drain and the edge-proxy 504 rate recover."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "20 match(es):\n#72 2026-11-22T20:31:05Z WARN edge-proxy [t-7793] POST /login 400 10ms: request validation failed: field \"email\" is not a valid address\n#199 2026-11-22T20:41:33Z WARN accounts-db transaction 85871 (application_name=auth-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"accounts\"\n#205 2026-11-22T20:42:13Z WARN accounts-db process 59944 still waiting for ShareLock on transaction 85871 after 1000.000 ms (UPDATE accounts SET ...)\n#210 2026-11-22T20:42:47Z ERROR auth-svc [t-7884] query canceled: statement timeout 10000ms (UPDATE accounts WHERE id = u-4249)\n#211 2026-11-22T20:42:52Z ERROR account-svc [t-7884] AuthClient.issueToken timed out after 15000ms calling auth-svc POST /tokens (u-4249)\n#214 2026-11-22T20:43:18Z WARN accounts-db process 46355 still waiting for ShareLock on transaction 85871 after 1000.000 ms (UPDATE accounts SET ...)\n#218 2026-11-22T20:43:58Z ERROR auth-svc [t-7885] query canceled: statement timeout 10000ms (UPDATE accounts WHERE id = u-4252)\n#219 2026-11-22T20:44:03Z ERROR account-svc [t-7885] AuthClient.issueToken timed out after 15000ms calling auth-svc POST /tokens (u-4252)\n#221 2026-11-22T20:44:28Z ERROR auth-svc [t-7887] query canceled: statement timeout 10000ms (UPDATE accounts WHERE id = u-4253)\n#222 2026-11-22T20:44:33Z ERROR account-svc [t-7887] AuthClient.issueToken timed out after 15000ms calling auth-svc POST /tokens (u-4253)\n#223 2026-11-22T20:44:44Z WARN account-svc HTTP connection pool to auth-svc at capacity (50/50 in use), 41 requests queued\n#233 2026-11-22T20:45:31Z ERROR edge-proxy [t-7891] POST /login 504 29942ms: upstream account-svc timed out\n#235 2026-11-22T20:45:51Z WARN account-svc HTTP connection pool to auth-svc at capacity (50/50 in use), 57 requests queued\n#239 2026-11-22T20:46:50Z ERROR edge-proxy [t-7895] POST /login 504 21124ms: upstream account-svc timed out\n#247 2026-11-22T20:48:04Z ERROR account-svc pool checkout timeout: no connection to auth-svc available after 5000ms\n#249 2026-11-22T20:48:30Z ERROR edge-proxy [t-7900] POST /login 504 10020ms: upstream account-svc timed out\n#257 2026-11-22T20:49:28Z ERROR edge-proxy [t-7904] POST /login 504 15965ms: upstream account-svc timed out\n#264 2026-11-22T20:50:43Z ERROR edge-proxy [t-7907] POST /login 504 28359ms: upstream account-svc timed out\n#274 2026-11-22T20:52:30Z ERROR edge-proxy [t-7913] POST /login 504 24688ms: upstream account-svc timed out\n#284 2026-11-22T20:53:43Z ERROR edge-proxy [t-7917] POST /login 504 29133ms: upstream account-svc timed out"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "reconcil"
+        },
+        "output": "1 match(es):\n#199 2026-11-22T20:41:33Z WARN accounts-db transaction 85871 (application_name=auth-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"accounts\""
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 199,
+          "before": 12,
+          "after": 3
+        },
+        "output": "#187 2026-11-22T20:40:36Z INFO audit-consumer processed batch of 32 messages from audit.events (lag 389ms)\n#188 2026-11-22T20:40:44Z INFO account-svc [t-7869] user u-4237 accepted, calling auth-svc POST /tokens\n#189 2026-11-22T20:40:44Z INFO edge-proxy [t-7869] POST /login 200 163ms\n#190 2026-11-22T20:40:58Z DEBUG account-svc GC pause 19ms (young), heap 45%\n#191 2026-11-22T20:41:02Z INFO account-svc [t-7872] user u-4239 accepted, calling auth-svc POST /tokens\n#192 2026-11-22T20:41:02Z INFO edge-proxy [t-7872] POST /login 200 136ms\n#193 2026-11-22T20:41:09Z DEBUG auth-svc GC pause 15ms (young), heap 34%\n#194 2026-11-22T20:41:20Z INFO audit-consumer processed batch of 98 messages from audit.events (lag 266ms)\n#195 2026-11-22T20:41:30Z INFO account-svc [t-7876] user u-4241 accepted, calling auth-svc POST /tokens\n#196 2026-11-22T20:41:30Z INFO auth-svc [t-7876] POST /tokens u-4241 ok 57ms\n#197 2026-11-22T20:41:30Z INFO edge-proxy [t-7876] POST /login 200 92ms\n#198 2026-11-22T20:41:32Z INFO accounts-db checkpoint complete: wrote 376 buffers (6.9%)\n#199 2026-11-22T20:41:33Z WARN accounts-db transaction 85871 (application_name=auth-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"accounts\"\n#200 2026-11-22T20:41:42Z INFO session-cache stats: hits=15231 misses=629 evicted=0 connected_clients=42\n#201 2026-11-22T20:41:52Z INFO audit-consumer processed batch of 82 messages from audit.events (lag 340ms)\n#202 2026-11-22T20:41:52Z INFO account-svc [t-7877] user u-4244 accepted, calling auth-svc POST /tokens"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.6,
+              "evidenceLines": [
+                199,
+                205,
+                214,
+                210,
+                218,
+                221,
+                211,
+                219,
+                222,
+                223,
+                235,
+                247,
+                233
+              ],
+              "reasoning": "The first anomaly is at 20:41:33 (#199): accounts-db reports that transaction 85871 from auth-svc-reconciler is idle in transaction and holding RowExclusiveLock on accounts. Login UPDATEs on accounts then wait for a ShareLock on that transaction (#205, #214). Those auth-svc UPDATEs hit the 10s statement timeout (#210, #218, #221), so account-svc's calls to auth-svc POST /tokens time out at 15s (#211, #219, #222). The account-svc connection pool to auth-svc then fills up at 50/50 (#223, #235, #247), and edge-proxy starts returning 504s (#233 onward). Everything downstream is a timeout on the blocked database dependency."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.25,
+              "evidenceLines": [
+                199,
+                223,
+                235,
+                247
+              ],
+              "reasoning": "You could also frame this as lock exhaustion: one leaked transaction holds a row lock and starves every writer, which then saturates the HTTP pool. The pool saturation itself comes after the DB lock waits, so it is a symptom, not the trigger."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.15,
+              "evidenceLines": [
+                223,
+                233,
+                239,
+                249
+              ],
+              "reasoning": "The edge 504s are the far end of a chain: DB lock → auth-svc → account-svc pool → edge-proxy."
+            }
+          ],
+          "recommendedAction": "Kill the idle-in-transaction backend for transaction 85871 (application_name=auth-svc-reconciler) using pg_terminate_backend, and pause the reconciler job. Set idle_in_transaction_session_timeout on accounts-db, and fix the reconciler so it commits or rolls back quickly and doesn't hold locks on accounts. Watch the account-svc→auth-svc pool drain and the edge-proxy 504 rate recover."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1308,
+      "cacheReadTokens": 10769,
+      "cacheWriteTokens": 5082
+    },
+    "durationMs": 15709,
+    "stopReason": "tool_use"
+  }
+}

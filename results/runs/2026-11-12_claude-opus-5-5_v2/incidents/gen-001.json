@@ -1,0 +1,166 @@
+{
+  "score": {
+    "incidentId": "gen-001",
+    "difficulty": "medium",
+    "scenario": "dependency_timeout/db-lock-wait",
+    "truth": "dependency_timeout",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.88,
+    "top1": false,
+    "top1Lenient": false,
+    "top3": true,
+    "rank": 2,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 0.6666666666666666,
+      "f1": 0.8
+    },
+    "herringsCited": 1,
+    "costUsd": 0.049813,
+    "durationMs": 13242,
+    "iterations": 4,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 10,
+      "output": 1037,
+      "cacheRead": 11890,
+      "cacheWrite": 5331
+    }
+  },
+  "result": {
+    "incidentId": "gen-001",
+    "model": "claude-opus-5-5",
+    "prompt": "v2",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.88,
+          "evidenceLines": [
+            128,
+            140,
+            150,
+            146,
+            152,
+            170
+          ],
+          "reasoning": "Lock contention: at 06:00:31 the catalog-db transaction 88973 from catalog-svc-reconciler sat idle in transaction while holding RowExclusiveLock on products (#128). Other UPDATEs on products then waited on its ShareLock (#140, #150), and catalog-svc queries hit the 10s statement timeout (#146, #152, #170). That made search-api's CatalogClient calls time out at 15s, its HTTP pool to catalog-svc filled up (50/50) and checkouts timed out, and web-bff returned 504s from 06:04. The translation API reset at 05:55 was a one-off that succeeded on retry (#73), so it is a red herring. I found no deploy lines."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.08,
+          "evidenceLines": [
+            147,
+            153,
+            171
+          ],
+          "reasoning": "The same events can be read as search-api timing out on its catalog-svc dependency. But those timeouts are caused by the DB lock, so this is a symptom, not the origin."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.02,
+          "evidenceLines": [
+            72
+          ],
+          "reasoning": "There was a brief translation API connection reset, but it recovered on retry, about 7 minutes before the onset."
+        }
+      ],
+      "recommendedAction": "Kill the idle-in-transaction reconciler session on catalog-db (pg_terminate_backend for the backend running txn 88973). Set idle_in_transaction_session_timeout for the catalog-svc-reconciler role, and fix the reconciler so it commits or rolls back promptly. Watch the search-api to catalog-svc pool drain and the 504 rate recover."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "20 match(es):\n#72 2026-10-09T05:55:34Z WARN catalog-svc [t-5639] translation API call failed: connection reset by peer POST https://api.translate.example/v2/translate, retry 1/3\n#128 2026-10-09T06:00:31Z WARN catalog-db transaction 88973 (application_name=catalog-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"products\"\n#140 2026-10-09T06:01:24Z WARN catalog-db process 15530 still waiting for ShareLock on transaction 88973 after 1000.000 ms (UPDATE products SET ...)\n#146 2026-10-09T06:02:12Z ERROR catalog-svc [t-5689] query canceled: statement timeout 10000ms (UPDATE products WHERE id = p-4484)\n#147 2026-10-09T06:02:17Z ERROR search-api [t-5689] CatalogClient.getBatch timed out after 15000ms calling catalog-svc GET /products/batch (p-4484)\n#150 2026-10-09T06:02:58Z WARN catalog-db process 30182 still waiting for ShareLock on transaction 88973 after 1000.000 ms (UPDATE products SET ...)\n#152 2026-10-09T06:03:08Z ERROR catalog-svc [t-5690] query canceled: statement timeout 10000ms (UPDATE products WHERE id = p-4487)\n#153 2026-10-09T06:03:13Z ERROR search-api [t-5690] CatalogClient.getBatch timed out after 15000ms calling catalog-svc GET /products/batch (p-4487)\n#168 2026-10-09T06:04:30Z ERROR web-bff [t-5700] GET /search 504 26868ms: upstream search-api timed out\n#169 2026-10-09T06:04:36Z WARN search-api HTTP connection pool to catalog-svc at capacity (50/50 in use), 28 requests queued\n#170 2026-10-09T06:04:37Z ERROR catalog-svc [t-5701] query canceled: statement timeout 10000ms (UPDATE products WHERE id = p-4494)\n#171 2026-10-09T06:04:42Z ERROR search-api [t-5701] CatalogClient.getBatch timed out after 15000ms calling catalog-svc GET /products/batch (p-4494)\n#176 2026-10-09T06:05:30Z WARN search-api HTTP connection pool to catalog-svc at capacity (50/50 in use), 51 requests queued\n#180 2026-10-09T06:05:50Z ERROR web-bff [t-5707] GET /search 504 23838ms: upstream search-api timed out\n#183 2026-10-09T06:06:37Z ERROR search-api pool checkout timeout: no connection to catalog-svc available after 5000ms\n#187 2026-10-09T06:07:16Z ERROR web-bff [t-5708] GET /search 504 26076ms: upstream search-api timed out\n#189 2026-10-09T06:08:16Z ERROR web-bff [t-5709] GET /search 504 22648ms: upstream search-api timed out\n#198 2026-10-09T06:10:18Z ERROR web-bff [t-5710] GET /search 504 22124ms: upstream search-api timed out\n#208 2026-10-09T06:11:33Z ERROR web-bff [t-5718] GET /search 504 13024ms: upstream search-api timed out\n#212 2026-10-09T06:12:40Z ERROR web-bff [t-5722] GET /search 504 29154ms: upstream search-api timed out"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "reconcil"
+        },
+        "output": "1 match(es):\n#128 2026-10-09T06:00:31Z WARN catalog-db transaction 88973 (application_name=catalog-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"products\""
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 128,
+          "before": 8,
+          "after": 3
+        },
+        "output": "#120 2026-10-09T05:59:53Z INFO search-api [t-5677] product p-4472 accepted, calling catalog-svc GET /products/batch\n#121 2026-10-09T05:59:53Z INFO web-bff [t-5677] GET /search 200 108ms\n#122 2026-10-09T06:00:04Z INFO index-worker processed batch of 36 messages from catalog.updates (lag 68ms)\n#123 2026-10-09T06:00:12Z INFO search-api [t-5678] product p-4475 accepted, calling catalog-svc GET /products/batch\n#124 2026-10-09T06:00:12Z INFO catalog-svc [t-5678] GET /products/batch p-4475 ok 36ms\n#125 2026-10-09T06:00:12Z INFO web-bff [t-5678] GET /search 200 75ms\n#126 2026-10-09T06:00:19Z INFO redis-cache stats: hits=19840 misses=328 evicted=0 connected_clients=50\n#127 2026-10-09T06:00:27Z DEBUG catalog-svc GC pause 6ms (young), heap 29%\n#128 2026-10-09T06:00:31Z WARN catalog-db transaction 88973 (application_name=catalog-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"products\"\n#129 2026-10-09T06:00:37Z DEBUG web-bff upstream health: search-api ok, catalog-svc ok\n#130 2026-10-09T06:00:39Z INFO search-api [t-5682] product p-4476 accepted, calling catalog-svc GET /products/batch\n#131 2026-10-09T06:00:40Z INFO web-bff [t-5682] GET /search 200 74ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "translat"
+        },
+        "output": "2 match(es):\n#72 2026-10-09T05:55:34Z WARN catalog-svc [t-5639] translation API call failed: connection reset by peer POST https://api.translate.example/v2/translate, retry 1/3\n#73 2026-10-09T05:55:35Z INFO catalog-svc [t-5639] translation API call ok on retry 2/3 (191ms)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.88,
+              "evidenceLines": [
+                128,
+                140,
+                150,
+                146,
+                152,
+                170
+              ],
+              "reasoning": "Lock contention: at 06:00:31 the catalog-db transaction 88973 from catalog-svc-reconciler sat idle in transaction while holding RowExclusiveLock on products (#128). Other UPDATEs on products then waited on its ShareLock (#140, #150), and catalog-svc queries hit the 10s statement timeout (#146, #152, #170). That made search-api's CatalogClient calls time out at 15s, its HTTP pool to catalog-svc filled up (50/50) and checkouts timed out, and web-bff returned 504s from 06:04. The translation API reset at 05:55 was a one-off that succeeded on retry (#73), so it is a red herring. I found no deploy lines."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.08,
+              "evidenceLines": [
+                147,
+                153,
+                171
+              ],
+              "reasoning": "The same events can be read as search-api timing out on its catalog-svc dependency. But those timeouts are caused by the DB lock, so this is a symptom, not the origin."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.02,
+              "evidenceLines": [
+                72
+              ],
+              "reasoning": "There was a brief translation API connection reset, but it recovered on retry, about 7 minutes before the onset."
+            }
+          ],
+          "recommendedAction": "Kill the idle-in-transaction reconciler session on catalog-db (pg_terminate_backend for the backend running txn 88973). Set idle_in_transaction_session_timeout for the catalog-svc-reconciler role, and fix the reconciler so it commits or rolls back promptly. Watch the search-api to catalog-svc pool drain and the 504 rate recover."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1037,
+      "cacheReadTokens": 11890,
+      "cacheWriteTokens": 5331
+    },
+    "durationMs": 13242,
+    "stopReason": "tool_use"
+  }
+}
