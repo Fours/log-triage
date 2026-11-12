@@ -230,6 +230,8 @@ await check("API errors (after SDK retries) end as api_error with a kind, never 
     [new Anthropic.BadRequestError(400, {}, "bad", new Headers()), "bad_request"],
     [new Anthropic.AuthenticationError(401, {}, "nope", new Headers()), "auth"],
     [new Anthropic.APIConnectionError({ message: "reset" }), "connection"],
+    [new Anthropic.APIError(402, { type: "error", error: { type: "billing_error", message: "Your credit balance is too low" } }, "low credit", new Headers()), "billing"],
+    [new Anthropic.NotFoundError(404, {}, "model not found", new Headers()), "not_found"],
   ];
   for (const [err, kind] of cases) {
     const { r } = await run([{ content: [tool("list_services")] }, err]);

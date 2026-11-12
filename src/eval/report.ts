@@ -12,6 +12,10 @@ export interface RunConfig {
   git: { commit: string; dirty: boolean };
   startedAt: string;
   finishedAt: string | null;
+  /** "incomplete" while running, or if some incidents never finished. Absent on older runs (= complete). */
+  status?: "complete" | "incomplete";
+  /** Set when the run stopped early on an error every incident would hit. */
+  stoppedBy?: { kind: string; message: string };
 }
 
 const pct = (x: number) => `${(x * 100).toFixed(0)}%`;
@@ -24,12 +28,20 @@ function sliceRow(name: string, s: Slice): string {
 }
 const SLICE_HEAD = "| | n | top-1 | top-1 (lenient) | top-3 | evidence precision | evidence recall |\n|---|---:|---:|---:|---:|---:|---:|";
 
-export function renderRunReport(config: RunConfig, summary: Summary, scores: IncidentScore[]): string {
+export function renderRunReport(config: RunConfig, summary: Summary, scores: IncidentScore[], pending: string[] = []): string {
   const s = summary;
   const o = s.outcomes;
   const lines: string[] = [];
   lines.push(`# Eval run \`${config.runId}\``);
   lines.push("");
+  if (pending.length) {
+    lines.push(
+      `> **Incomplete run — not comparable to other runs.** ${pending.length} of ${s.n + pending.length} incidents didn't finish` +
+        `${config.stoppedBy ? ` (stopped early: ${config.stoppedBy.kind})` : " (API errors)"}; the numbers below cover only the ${s.n} that did. ` +
+        `Resume with \`npm run eval -- --run-id ${config.runId} --resume\`.`,
+    );
+    lines.push("");
+  }
   lines.push(
     `Model **${config.model}**${config.effort ? ` · effort **${config.effort}**` : ""} · ${s.n} incidents · ` +
       `generator v${config.dataset.generatorVersion ?? "?"} seed \`${config.dataset.seed ?? "?"}\` · commit \`${config.git.commit}\`${config.git.dirty ? " (dirty)" : ""}`,

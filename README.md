@@ -64,6 +64,11 @@ npm run eval -- --model claude-haiku-5-5 --effort low --limit 8
 npm run eval -- --run-id <id> --resume            # continue an interrupted run
 ```
 
+**Interrupted runs.** Each incident is saved the moment it finishes, so nothing paid for is lost.
+- **Errors that would hit every incident stop the run.** Out of credits (402 `billing_error`), a rejected key, an unknown model or a malformed request stop it after the incidents already in flight, with a message saying what to fix.
+- **Transient errors are retried later.** A rate limit that outlasts the SDK's retries is recorded, and the run carries on.
+- **An unfinished run is flagged.** It is marked incomplete, its report says so up top, and it stays off the leaderboard. Resuming retries only the unfinished incidents.
+
 **The baseline.** A no-LLM grep picks the root cause whose failure phrases match the most WARN/ERROR lines. Its patterns were written knowing the generator's wording, so it's a deliberately strong floor. It reaches **50% top-1 and 85% top-3**, with 43% evidence precision, and it never finds a bad deploy (deploy lines are INFO). The agent has to beat that clearly to justify its cost.
 
 ### First results

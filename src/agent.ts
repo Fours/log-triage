@@ -74,7 +74,23 @@ export type Outcome =
   | "refused" // stop_reason "refusal"
   | "api_error"; // the API failed after SDK retries, or rejected the request
 
-export type ApiErrorKind = "rate_limited" | "overloaded" | "server" | "auth" | "bad_request" | "timeout" | "connection" | "other";
+export type ApiErrorKind =
+  | "billing" // 402: out of credits or another billing problem
+  | "auth" // 401 / 403
+  | "bad_request" // 400 / 422: something wrong with the request itself
+  | "not_found" // 404: e.g. a model id this key can't use
+  | "rate_limited"
+  | "overloaded"
+  | "server"
+  | "timeout"
+  | "connection"
+  | "other";
+
+/**
+ * Errors that will fail the same way for every incident, so an eval run should
+ * stop instead of working through the rest of the queue.
+ */
+export const FATAL_API_ERRORS: ReadonlySet<ApiErrorKind> = new Set(["billing", "auth", "bad_request", "not_found"]);
 
 export interface TriageResult {
   incidentId: string;
@@ -399,11 +415,15 @@ Investigate with the tools, then call submit_triage. The raw logs are only avail
 export function classifyApiError(err: unknown): ApiErrorKind {
   if (err instanceof Anthropic.APIConnectionTimeoutError) return "timeout";
   if (err instanceof Anthropic.APIConnectionError) return "connection";
+  if (!(err instanceof Anthropic.APIError)) return "other";
+  // Prefer the API's error type; fall back to the status code.
+  if (err.type === "billing_error" || err.status === 402) return "billing";
   if (err instanceof Anthropic.RateLimitError) return "rate_limited";
   if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) return "auth";
+  if (err instanceof Anthropic.NotFoundError) return "not_found";
   if (err instanceof Anthropic.BadRequestError || err instanceof Anthropic.UnprocessableEntityError) return "bad_request";
-  if (err instanceof Anthropic.APIError && err.status === 529) return "overloaded";
-  if (err instanceof Anthropic.APIError && (err.status ?? 0) >= 500) return "server";
+  if (err.type === "overloaded_error" || err.status === 529) return "overloaded";
+  if ((err.status ?? 0) >= 500) return "server";
   return "other";
 }
 

@@ -1,10 +1,13 @@
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { strict as assert } from "node:assert";
-import type { TriageResult } from "../src/agent.js";
+import type { ApiErrorKind, TriageResult } from "../src/agent.js";
 import { baselineTriage } from "../src/eval/baseline.js";
 import { costUsd } from "../src/eval/pricing.js";
 import { renderLeaderboard, renderRunReport, type RunConfig } from "../src/eval/report.js";
+import { runEval, writeLeaderboard, type TriageFn } from "../src/eval/runner.js";
 import { calibration, percentile, scoreIncident, summarize, type IncidentScore } from "../src/eval/score.js";
 import { generateDataset } from "../src/generator/index.js";
 import { loadIncident } from "../src/tools.js";
@@ -193,5 +196,101 @@ check("the hand-built sample still loads and scores (labels from before Phase 3 
   const s = scoreIncident(sample, baselineTriage(toIncidentView(sample)));
   assert.equal(s.truth, "dependency_timeout");
 });
+
+console.log("\nRunner (fake agent, temp results dir)");
+
+async function checkAsync(name: string, fn: () => Promise<void>) {
+  await fn();
+  passed += 1;
+  console.log(`  ✓ ${name}`);
+}
+
+const root = resolve(here, "..");
+const datasetDir = resolve(root, "incidents/generated");
+const ids = ["gen-001", "gen-002", "gen-003", "gen-004", "gen-005", "gen-006", "gen-007", "gen-008"];
+
+/** A fake agent: answers like the baseline, but fails with `kind` on the calls listed in `failOn` (1-based). */
+function fakeAgent(failOn: number[] = [], kind: ApiErrorKind = "billing") {
+  let calls = 0;
+  const fn: TriageFn = async (view) => {
+    const call = ++calls;
+    await new Promise((r) => setTimeout(r, 5));
+    if (failOn.includes(call)) {
+      return { ...baselineTriage(view), model: "claude-opus-5-5", outcome: "api_error", verdict: null, apiErrorKind: kind, error: `API error (${kind})` };
+    }
+    return { ...baselineTriage(view), model: "claude-opus-5-5" };
+  };
+  return { fn, calls: () => calls };
+}
+
+const tmp = mkdtempSync(join(tmpdir(), "log-triage-eval-"));
+const base = { root, resultsDir: tmp, datasetDir, model: "claude-opus-5-5", effort: null, ids, log: () => {} };
+const readJson = (p: string) => JSON.parse(readFileSync(p, "utf8"));
+
+try {
+  await checkAsync("out of credits: stops pulling incidents, marks the run incomplete, keeps it off the leaderboard", async () => {
+    const agent = fakeAgent([3]);
+    const out = await runEval({ ...base, runId: "billing", concurrency: 1, triageFn: agent.fn });
+    assert.equal(agent.calls(), 3, "no incidents started after the fatal error");
+    assert.equal(out.complete, false);
+    assert.equal(out.stoppedBy?.kind, "billing");
+    assert.equal(out.pending.length, 6);
+    assert.equal(out.summary.n, 2, "summary covers only finished incidents");
+    assert.equal(readJson(join(out.runDir, "config.json")).status, "incomplete");
+    assert.match(readFileSync(join(out.runDir, "report.md"), "utf8"), /Incomplete run/);
+    assert.ok(!readFileSync(join(tmp, "README.md"), "utf8").includes("billing"));
+  });
+
+  await checkAsync("resume after topping up: finished incidents are kept, the failed one is retried, run completes", async () => {
+    const agent = fakeAgent();
+    const out = await runEval({ ...base, runId: "billing", concurrency: 1, resume: true, triageFn: agent.fn });
+    assert.equal(agent.calls(), 6);
+    assert.equal(out.complete, true);
+    assert.equal(out.summary.n, 8);
+    const config = readJson(join(out.runDir, "config.json"));
+    assert.equal(config.status, "complete");
+    assert.equal(config.stoppedBy, undefined);
+    assert.ok(!readFileSync(join(out.runDir, "report.md"), "utf8").includes("Incomplete"));
+    assert.ok(readFileSync(join(tmp, "README.md"), "utf8").includes("[billing]"));
+  });
+
+  await checkAsync("with concurrency, in-flight incidents finish but nothing new starts after a fatal error", async () => {
+    const agent = fakeAgent([1]);
+    const out = await runEval({ ...base, runId: "parallel", concurrency: 4, triageFn: agent.fn });
+    assert.ok(agent.calls() <= 4, `${agent.calls()} calls`);
+    assert.equal(out.stoppedBy?.kind, "billing");
+    assert.equal(out.pending.length, 8 - (agent.calls() - 1));
+  });
+
+  await checkAsync("a transient error (rate limited after retries) doesn't stop the run, but leaves it incomplete", async () => {
+    const agent = fakeAgent([2], "rate_limited");
+    const out = await runEval({ ...base, runId: "transient", concurrency: 1, triageFn: agent.fn });
+    assert.equal(agent.calls(), 8);
+    assert.equal(out.stoppedBy, undefined);
+    assert.equal(out.complete, false);
+    assert.deepEqual(out.pending, ["gen-002"]);
+  });
+
+  await checkAsync("auth, bad-request and unknown-model errors also stop the run", async () => {
+    for (const kind of ["auth", "bad_request", "not_found"] as const) {
+      const agent = fakeAgent([1], kind);
+      const out = await runEval({ ...base, runId: `fatal-${kind}`, concurrency: 1, triageFn: agent.fn });
+      assert.equal(agent.calls(), 1, kind);
+      assert.equal(out.stoppedBy?.kind, kind);
+    }
+  });
+
+  await checkAsync("an existing run needs --resume; runs from before `status` existed count as complete", async () => {
+    await assert.rejects(runEval({ ...base, runId: "billing", concurrency: 1, triageFn: fakeAgent().fn }), /already exists/);
+    const legacy = join(tmp, "runs", "transient", "config.json");
+    const cfg = readJson(legacy);
+    delete cfg.status;
+    writeFileSync(legacy, JSON.stringify(cfg));
+    writeLeaderboard(tmp);
+    assert.ok(readFileSync(join(tmp, "README.md"), "utf8").includes("[transient]"));
+  });
+} finally {
+  if (existsSync(tmp)) rmSync(tmp, { recursive: true, force: true });
+}
 
 console.log(`\n${passed} checks passed.`);
