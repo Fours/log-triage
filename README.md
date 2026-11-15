@@ -219,4 +219,5 @@ Default model is `claude-opus-5-5`, with prompt `v3`. `TRIAGE_PROMPT=v1` picks a
 - [x] **Phase 3** — **eval harness**: scorer (root-cause top-1/top-3, evidence precision/recall, calibration, cost/latency), committed run results.
 - [x] **Phase 4** — iterate prompt + retrieval strategy against the eval, with a held-out test set and a before/after history ([ITERATIONS.md](results/ITERATIONS.md)).
 - [x] **Phase 5** — model matrix (Haiku / Sonnet / Opus × effort): accuracy vs. cost, with bootstrap intervals and paired comparisons.
-- [x] **Phase 6** — showcase page (metrics, model comparison, recorded investigation replays, the iteration story), deployed to S3 + CloudFront.
+- [x] **Phase 6** — showcase page (metrics, model comparison, recorded investigation replays, the iteration story), with an S3 + CloudFront deploy (not yet live).
+- [ ] **Phase 7** — harder incident set (generator v2: quiet causes, loud decoys, concurrent incidents, long haystacks) and the model comparison re-run on it. Planned in [docs/milestone-7.md](docs/milestone-7.md).
