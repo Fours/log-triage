@@ -1,5 +1,6 @@
 import { ROOT_CAUSE_CATEGORIES, Incident, type RootCauseCategory } from "../types.js";
 import { IncidentBuilder, type BuildInfo } from "./builder.js";
+import { plantDecoys, type PlantedDecoys } from "./decoys.js";
 import { createHardness } from "./hardness.js";
 import type { Ctx, Difficulty, GeneratorVersion, Scenario } from "./context.js";
 import { backgroundTraffic, plantHerrings } from "./noise.js";
@@ -93,6 +94,9 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
 
   const result = spec.scenario.run(c);
   const herrings = plantHerrings({ ...c, rng: rng.fork("herrings") }, spec.scenario.rootCause, spec.scenario.confusableWith);
+  // Generator v2: loud decoys sized to out-shout the real path, plus a healthy auxiliary service.
+  const decoys: PlantedDecoys | null =
+    spec.version >= 2 ? plantDecoys(c, spec.scenario.rootCause, spec.scenario.confusableWith, b.maxErrorsPerService()) : null;
   backgroundTraffic(
     { ...c, rng: rng.fork("noise") },
     {
@@ -101,19 +105,22 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
     },
   );
 
-  const { logs, evidence, roles, info } = b.build();
+  const built = b.build();
+  const { logs, evidence, roles } = built;
+  const info = { ...built.info, decoyServices: decoys?.decoyServices ?? [] };
+  const services = decoys ? hard.rng.shuffle([...servicesOf(spec.topology), ...decoys.services]) : servicesOf(spec.topology);
   const errorIdx = logs.findIndex((l) => l.level === "ERROR" || l.level === "FATAL");
 
   const incident = Incident.parse({
     id: spec.id,
     title: result.title,
     alert: result.alert,
-    services: servicesOf(spec.topology),
+    services,
     logs,
     label: {
       rootCause: spec.scenario.rootCause,
       evidenceLines: evidence,
-      explanation: b.resolve(result.explain() + herrings.note()),
+      explanation: b.resolve(result.explain() + herrings.note() + (decoys?.note() ?? "")),
       difficulty: spec.difficulty,
       acceptableCauses: result.acceptableCauses ?? [],
       herringLines: logs.filter((_, i) => roles[i] === "herring").map((l) => l.n),

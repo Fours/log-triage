@@ -116,8 +116,8 @@ Do these in order. Each one ends with `npm test` and `npm run typecheck` passing
 | Task | Status | Commit |
 | --- | --- | --- |
 | T1. Dataset plumbing for generator v2 | Done | 53ca8b7 |
-| T2. Quiet causes and paraphrased evidence | Done | |
-| T3. Loud decoys | Not started | |
+| T2. Quiet causes and paraphrased evidence | Done | 60e1f8a |
+| T3. Loud decoys | Done | |
 | T4. Concurrent incidents and the `secondary` role | Not started | |
 | T5. Long haystacks, fairness checks, baseline ceiling | Not started | |
 | T6. Pilot and calibrate on the v2 dev set | Not started | |
@@ -155,6 +155,13 @@ Decisions made while building it:
 - Placement: not on the paged request's path, starts before onset, outnumbers the path's error count in `listServices`.
 
 **Done when:** in every v2 incident with a decoy, the overview's top service by error count is not the cause service, and decoy lines carry the `herring` role and appear in `label.herringLines`.
+
+Done: `src/generator/decoys.ts`, with 8 decoy kinds, one mimicking each category, each on its own auxiliary service (`status-poller`, `metrics-agent`, `report-cron`, `flag-sync`, `audit-archiver`, `billing-reconciler`, `analytics-forwarder`, `webhook-dispatcher`). A decoy starts 10–30% into the window, repeats to the end, and logs the real path's highest per-service error count plus 3–8, so it tops the overview. Like hard-mode herrings, decoys mimic the scenario's confusable categories first and never the true one. Every v2 incident also gets one healthy auxiliary service (a decoy's name and routine, no errors), and the v2 services list is shuffled, so an extra service isn't a giveaway. All randomness is on the v2 stream; v1 is byte-identical. Tests in `test:generator`: no name collisions with topology services, 1/1/2 decoys plus one healthy auxiliary, the top service by errors is a decoy and strictly out-shouts the path, decoys are off the path and labeled herrings, they start before the fault's first direct failure and continue after it, services are shuffled, and "the first ERROR line is evidence" is rare.
+
+Result: the first ERROR line is evidence in 0 of 48 incidents in both v2 sets (31 in v1, 33–35 after T2). Decisions made while building it:
+
+- **Decoys live on auxiliary services, not off-path topology services:** every topology service is on some scenario's path. `audit-consumer` was renamed `audit-archiver`, because it's a real consumer in one topology.
+- **"Starts before onset" is checked against the fault's first direct failure**, since onset isn't in the log and some evidence deliberately predates it. Retry storms have no ERROR-level evidence, so they use the first non-origin evidence line.
 
 ### T4. Concurrent incidents and the `secondary` role
 

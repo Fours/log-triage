@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { strict as assert } from "node:assert";
 import { DATASETS, DEFAULT_SEED, QUIETABLE, SCENARIOS, TEST_SET, generateDataset, generateDatasetFor, type GeneratedIncident } from "../src/generator/index.js";
 import { quietAtMedium } from "../src/generator/hardness.js";
+import { DECOYS } from "../src/generator/decoys.js";
+import { TOPOLOGIES, servicesOf } from "../src/generator/topologies.js";
 import { buildManifest } from "../src/generator/manifest.js";
 import { ROOT_CAUSE_CATEGORIES } from "../src/types.js";
 import { loadIncident } from "../src/tools.js";
@@ -300,6 +302,82 @@ check("v2 incidents stay valid: evidence present, explanations cite real lines",
     assert.ok(cited.length > 0, `${g.incident.id}: explanation cites nothing`);
     for (const n of cited) assert.ok(n >= 1 && n <= logs.length, `${g.incident.id}: cites line ${n} of ${logs.length}`);
   }
+});
+
+console.log("\nGenerator v2: loud decoys (T3)");
+
+const isErr = (level: string) => level === "ERROR" || level === "FATAL";
+const errorsBy = (g: GeneratedIncident) => {
+  const m = new Map<string, number>();
+  for (const l of g.incident.logs) if (isErr(l.level)) m.set(l.service, (m.get(l.service) ?? 0) + 1);
+  return m;
+};
+const decoyService = new Map(DECOYS.map((d) => [d.service, d]));
+
+check("decoy services are never topology services, and v1 has none", () => {
+  const topo = new Set(TOPOLOGIES.flatMap(servicesOf));
+  for (const d of DECOYS) assert.ok(!topo.has(d.service), `${d.service} collides with a topology service`);
+  assert.equal(new Set(DECOYS.map((d) => d.service)).size, DECOYS.length);
+  for (const g of dataset) {
+    assert.deepEqual(g.info.decoyServices, []);
+    assert.deepEqual(g.incident.services, servicesOf(TOPOLOGIES.find((t) => t.key === g.meta.topology)!));
+  }
+});
+
+check("easy and medium get one decoy, hard two, plus one healthy auxiliary service; none mimics the root cause", () => {
+  for (const g of v2All) {
+    const want = g.incident.label.difficulty === "hard" ? 2 : 1;
+    assert.equal(g.info.decoyServices.length, want, g.incident.id);
+    const aux = g.incident.services.filter((svc) => decoyService.has(svc));
+    assert.equal(aux.length, want + 1, `${g.incident.id}: aux services ${aux}`);
+    const healthy = aux.filter((svc) => !g.info.decoyServices.includes(svc));
+    assert.equal(healthy.length, 1);
+    assert.equal(errorsBy(g).get(healthy[0]) ?? 0, 0, `${g.incident.id}: healthy aux ${healthy[0]} logs errors`);
+    for (const svc of g.info.decoyServices) assert.notEqual(decoyService.get(svc)!.mimics, g.incident.label.rootCause, g.incident.id);
+  }
+});
+
+check("the overview misleads: the top service by errors is a decoy, never a service with cause lines", () => {
+  for (const g of v2All) {
+    const causeServices = new Set(g.incident.label.evidenceLines.map((n) => g.incident.logs[n - 1].service));
+    const [top] = [...errorsBy(g).entries()].sort((x, y) => y[1] - x[1]);
+    assert.ok(g.info.decoyServices.includes(top[0]), `${g.incident.id}: top by errors is ${top[0]} (${top[1]})`);
+    assert.ok(!causeServices.has(top[0]));
+    // Strictly more errors than any service on the real path, so it isn't a tie the ordering happens to break.
+    const pathMax = Math.max(0, ...[...errorsBy(g).entries()].filter(([svc]) => !decoyService.has(svc)).map(([, n]) => n));
+    for (const svc of g.info.decoyServices) assert.ok((errorsBy(g).get(svc) ?? 0) > pathMax, `${g.incident.id}: ${svc} doesn't out-shout the path`);
+  }
+});
+
+check("decoys stay off the path, are labeled herrings, and start before onset and keep going after", () => {
+  for (const g of v2All) {
+    const { logs, label } = g.incident;
+    const herrings = new Set(label.herringLines);
+    const onPath = new Set([...label.evidenceLines].map((n) => logs[n - 1].service));
+    // Onset isn't in the log, so use the fault's first direct failure: the first ERROR/FATAL evidence line,
+    // or (retry storms log no errors) the first evidence line that isn't an originating one. Some
+    // evidence, like disk usage creeping up, deliberately predates onset.
+    const direct = label.evidenceLines.filter((n) => isErr(logs[n - 1].level));
+    const firstFailure = direct.length ? Math.min(...direct) : Math.min(...label.evidenceLines.filter((n) => !g.info.origins.includes(n)));
+    for (const svc of g.info.decoyServices) {
+      assert.ok(!onPath.has(svc), `${g.incident.id}: ${svc} has cause lines`);
+      const errs = logs.filter((l) => l.service === svc && isErr(l.level));
+      for (const l of errs) assert.ok(herrings.has(l.n), `${g.incident.id}: decoy line ${l.n} isn't a labeled herring`);
+      assert.ok(errs[0].n < firstFailure, `${g.incident.id}: ${svc} starts after the fault's first failure`);
+      assert.ok(errs.at(-1)!.n > firstFailure, `${g.incident.id}: ${svc} stops before the incident`);
+    }
+    assert.match(label.explanation, /Loud decoy: /);
+  }
+});
+
+check("auxiliary services aren't a giveaway: the services list is shuffled", () => {
+  const lastIsAux = v2All.filter((g) => decoyService.has(g.incident.services.at(-1)!)).length;
+  assert.ok(lastIsAux < v2All.length * 0.6, `${lastIsAux}/${v2All.length} incidents list an auxiliary service last`);
+});
+
+check("'the first ERROR line is evidence' is now rarely true", () => {
+  const firstErrorIsEvidence = v2All.filter((g) => g.meta.firstErrorIsEvidence).length;
+  assert.ok(firstErrorIsEvidence <= v2All.length * 0.1, `${firstErrorIsEvidence}/${v2All.length}`);
 });
 
 console.log(`\n${passed} checks passed.`);

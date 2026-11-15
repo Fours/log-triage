@@ -49,6 +49,8 @@ export interface BuildInfo {
   origins: number[];
   /** Paraphrased message families: line number and variant of each line. */
   families: Record<string, { n: number; variant: number }[]>;
+  /** Generator v2: auxiliary services carrying a loud decoy (set by the generator after build). */
+  decoyServices: string[];
 }
 
 const QUIET: Partial<Record<LogLevel, LogLevel>> = { WARN: "INFO", ERROR: "INFO", FATAL: "INFO" };
@@ -108,6 +110,13 @@ export class IncidentBuilder {
     return draft;
   }
 
+  /** The highest ERROR/FATAL line count of any one service emitted so far. */
+  maxErrorsPerService(): number {
+    const counts = new Map<string, number>();
+    for (const d of this.drafts) if (d.level === "ERROR" || d.level === "FATAL") counts.set(d.service, (counts.get(d.service) ?? 0) + 1);
+    return Math.max(0, ...counts.values());
+  }
+
   /** Sort by time (stable by emission order), assign 1-indexed line numbers. */
   build(): { logs: LogLine[]; evidence: number[]; roles: Role[]; info: BuildInfo } {
     const sorted = [...this.drafts].sort((a, b) => {
@@ -148,7 +157,7 @@ export class IncidentBuilder {
     const evidence = sorted.filter((d) => d.role === "cause").map((d) => d.n);
     const families: BuildInfo["families"] = {};
     for (const d of sorted) if (d.family !== undefined) (families[d.family] ??= []).push({ n: d.n, variant: d.variant ?? 0 });
-    const info: BuildInfo = { origins: sorted.filter((d) => d.origin).map((d) => d.n), families };
+    const info: BuildInfo = { origins: sorted.filter((d) => d.origin).map((d) => d.n), families, decoyServices: [] };
     return { logs, evidence, roles: sorted.map((d) => d.role), info };
   }
 
