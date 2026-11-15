@@ -1,0 +1,265 @@
+{
+  "score": {
+    "incidentId": "ht-009",
+    "difficulty": "easy",
+    "scenario": "bad_deploy/new-version-exception",
+    "truth": "bad_deploy",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "bad_deploy",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 4,
+      "correct": 4,
+      "precision": 1,
+      "recall": 0.8,
+      "f1": 0.888888888888889
+    },
+    "herringsCited": 4,
+    "costUsd": 0.00479514,
+    "durationMs": 16963,
+    "iterations": 7,
+    "toolCalls": 10,
+    "tokens": {
+      "input": 16,
+      "output": 3748,
+      "cacheRead": 69579,
+      "cacheWrite": 17790
+    }
+  },
+  "result": {
+    "incidentId": "ht-009",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.88,
+          "evidenceLines": [
+            1080,
+            1198,
+            1262,
+            1323
+          ],
+          "reasoning": "order-service v1.12.0 (build 257b338) rolled out at 00:40:44 (#1080), replacing v1.11.8. The first checkout failure appears at 00:42:30 (#1198): TypeError 'Cannot read properties of undefined (reading region)' at order-formatter.ts:180, tagged [v1.12.0]. The same TypeError recurs at #1262 and #1323. Each surfaces at the gateway as a 500 (#1264, api-gateway upstream order-service 500), which I treat as downstream impact. Before the deploy, checkout returned 200 (#1195). Upstream services (payment-svc, postgres, redis, flag-sync, order-consumer) show no errors. The v1.12.0 code path dereferences a missing object, most likely a formatter path hitting orders without a region field."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.1,
+          "evidenceLines": [
+            585,
+            766,
+            1179,
+            1773
+          ],
+          "reasoning": "billing-reconciler repeatedly logs invoice_archive rows violating a checksum constraint in 2019 archive partitions. It skips those rows, and current-period reconciliation stays at 0 discrepancies. This is a real data-integrity problem but runs on a separate path from POST /checkout and does not explain the checkout 500s. Secondary finding."
+        }
+      ],
+      "recommendedAction": "Roll back order-service to v1.11.8 now to stop the checkout 500s. Then fix order-formatter.ts:180 in v1.12.0 to handle a missing region, add a test for orders without region, and redeploy after verification. Separately, billing-reconciler's invoice_archive checksum violations (#585, #766, #1179, #1773) in 2019 archive partitions are an unrelated data-integrity issue that does not touch checkout. Track it as a separate ticket."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "18 match(es):\n#127 2026-11-24T00:27:39Z WARN payment-svc [t-4741] card processor call failed: connection reset by peer POST https://api.cardproc.example/v1/charges, retry 1/3\n#585 2026-11-24T00:33:54Z ERROR billing-reconciler invoice_archive row inv-962313 violates checksum constraint, skipping (archive partition 2019-Q3)\n#766 2026-11-24T00:36:26Z ERROR billing-reconciler invoice_archive row inv-172913 violates checksum constraint, skipping (archive partition 2019-Q2)\n#812 2026-11-24T00:37:05Z ERROR billing-reconciler invoice_archive row inv-325263 violates checksum constraint, skipping (archive partition 2019-Q4)\n#991 2026-11-24T00:39:30Z ERROR billing-reconciler invoice_archive row inv-903715 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1179 2026-11-24T00:42:08Z ERROR billing-reconciler invoice_archive row inv-517310 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1198 2026-11-24T00:42:30Z ERROR order-service [t-5244] unhandled error in POST /checkout (o-7421): TypeError: Cannot read properties of undefined (reading 'region') at format (order-formatter.ts:180) [v1.12.0]\n#1262 2026-11-24T00:43:45Z ERROR order-service [t-5261] [v1.12.0] POST /checkout o-7434 -> 500: TypeError: undefined has no property 'region'\n#1264 2026-11-24T00:43:48Z ERROR api-gateway [t-5262] POST /checkout 500 15828ms: upstream order-service returned 500 Internal Server Error\n#1307 2026-11-24T00:44:29Z ERROR billing-reconciler invoice_archive row inv-163168 violates checksum constraint, skipping (archive partition 2019-Q1)\n#1321 2026-11-24T00:44:49Z ERROR api-gateway [t-5283] POST /checkout 500 9515ms: upstream order-service returned 500 Internal Server Error\n#1323 2026-11-24T00:44:49Z ERROR order-service [t-5284] unhandled error in POST /checkout (o-7447): TypeError: Cannot read properties of undefined (reading 'region') at format (order-formatter.ts:180) [v1.12.0]\n#1387 2026-11-24T00:45:52Z ERROR billing-reconciler invoice_archive row inv-640499 violates checksum constraint, skipping (archive partition 2019-Q1)\n#1563 2026-11-24T00:49:06Z ERROR billing-reconciler invoice_archive row inv-765418 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1631 2026-11-24T00:50:21Z ERROR api-gateway [t-5389] POST /checkout 500 15109ms: upstream order-service returned 500 Internal Server Error\n#1681 2026-11-24T00:51:13Z ERROR billing-reconciler invoice_archive row inv-625410 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1706 2026-11-24T00:51:44Z ERROR api-gateway [t-5410] POST /checkout 500 20653ms: upstream order-service returned 500 Internal Server Error\n#1773 2026-11-24T00:52:54Z ERROR billing-reconciler invoice_archive row inv-234032 violates checksum constraint, skipping (archive partition 2019-Q1)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "billing-reconciler",
+          "limit": 60
+        },
+        "output": "141 match(es), showing first 60:\n#11 2026-11-24T00:26:08Z INFO billing-reconciler reconciled 931 current-period invoices, 0 discrepancies\n#36 2026-11-24T00:26:26Z INFO billing-reconciler reconciled 1092 current-period invoices, 0 discrepancies\n#46 2026-11-24T00:26:36Z INFO billing-reconciler reconciled 711 current-period invoices, 0 discrepancies\n#61 2026-11-24T00:26:49Z INFO billing-reconciler reconciled 657 current-period invoices, 0 discrepancies\n#79 2026-11-24T00:27:04Z INFO billing-reconciler reconciled 972 current-period invoices, 0 discrepancies\n#96 2026-11-24T00:27:19Z INFO billing-reconciler reconciled 552 current-period invoices, 0 discrepancies\n#121 2026-11-24T00:27:35Z INFO billing-reconciler reconciled 922 current-period invoices, 0 discrepancies\n#133 2026-11-24T00:27:44Z INFO billing-reconciler reconciled 804 current-period invoices, 0 discrepancies\n#148 2026-11-24T00:27:55Z INFO billing-reconciler reconciled 485 current-period invoices, 0 discrepancies\n#162 2026-11-24T00:28:06Z INFO billing-reconciler reconciled 521 current-period invoices, 0 discrepancies\n#174 2026-11-24T00:28:14Z INFO billing-reconciler reconciled 861 current-period invoices, 0 discrepancies\n#190 2026-11-24T00:28:26Z INFO billing-reconciler reconciled 950 current-period invoices, 0 discrepancies\n#209 2026-11-24T00:28:41Z INFO billing-reconciler reconciled 1027 current-period invoices, 0 discrepancies\n#226 2026-11-24T00:28:53Z INFO billing-reconciler reconciled 612 current-period invoices, 0 discrepancies\n#246 2026-11-24T00:29:10Z INFO billing-reconciler reconciled 502 current-period invoices, 0 discrepancies\n#263 2026-11-24T00:29:24Z INFO billing-reconciler reconciled 1170 current-period invoices, 0 discrepancies\n#275 2026-11-24T00:29:34Z INFO billing-reconciler reconciled 1177 current-period invoices, 0 discrepancies\n#284 2026-11-24T00:29:42Z INFO billing-reconciler reconciled 1009 current-period invoices, 0 discrepancies\n#298 2026-11-24T00:29:52Z INFO billing-reconciler reconciled 665 current-period invoices, 0 discrepancies\n#308 2026-11-24T00:30:03Z INFO billing-reconciler reconciled 574 current-period invoices, 0 discrepancies\n#324 2026-11-24T00:30:21Z INFO billing-reconciler reconciled 739 current-period invoices, 0 discrepancies\n#342 2026-11-24T00:30:34Z INFO billing-reconciler reconciled 335 current-period invoices, 0 discrepancies\n#363 2026-11-24T00:30:52Z INFO billing-reconciler reconciled 978 current-period invoices, 0 discrepancies\n#381 2026-11-24T00:31:09Z INFO billing-reconciler reconciled 387 current-period invoices, 0 discrepancies\n#395 2026-11-24T00:31:18Z INFO billing-reconciler reconciled 864 current-period invoices, 0 discrepancies\n#409 2026-11-24T00:31:33Z INFO billing-reconciler reconciled 978 current-period invoices, 0 discrepancies\n#428 2026-11-24T00:31:47Z INFO billing-reconciler reconciled 746 current-period invoices, 0 discrepancies\n#437 2026-11-24T00:31:55Z INFO billing-reconciler reconciled 510 current-period invoices, 0 discrepancies\n#456 2026-11-24T00:32:12Z INFO billing-reconciler reconciled 593 current-period invoices, 0 discrepancies\n#464 2026-11-24T00:32:21Z INFO billing-reconciler reconciled 383 current-period invoices, 0 discrepancies\n#485 2026-11-24T00:32:35Z INFO billing-reconciler reconciled 664 current-period invoices, 0 discrepancies\n#501 2026-11-24T00:32:46Z INFO billing-reconciler reconciled 566 current-period invoices, 0 discrepancies\n#511 2026-11-24T00:32:55Z INFO billing-reconciler reconciled 741 current-period invoices, 0 discrepancies\n#528 2026-11-24T00:33:09Z INFO billing-reconciler reconciled 1044 current-period invoices, 0 discrepancies\n#543 2026-11-24T00:33:22Z INFO billing-reconciler reconciled 823 current-period invoices, 0 discrepancies\n#559 2026-11-24T00:33:35Z INFO billing-reconciler reconciled 772 current-period invoices, 0 discrepancies\n#572 2026-11-24T00:33:43Z INFO billing-reconciler reconciled 1043 current-period invoices, 0 discrepancies\n#585 2026-11-24T00:33:54Z ERROR billing-reconciler invoice_archive row inv-962313 violates checksum constraint, skipping (archive partition 2019-Q3)\n#593 2026-11-24T00:34:01Z INFO billing-reconciler reconciled 1126 current-period invoices, 0 discrepancies\n#603 2026-11-24T00:34:10Z INFO billing-reconciler reconciled 710 current-period invoices, 0 discrepancies\n#619 2026-11-24T00:34:23Z INFO billing-reconciler reconciled 503 current-period invoices, 0 discrepancies\n#636 2026-11-24T00:34:37Z INFO billing-reconciler reconciled 677 current-period invoices, 0 discrepancies\n#657 2026-11-24T00:34:56Z INFO billing-reconciler reconciled 703 current-period invoices, 0 discrepancies\n#670 2026-11-24T00:35:06Z INFO billing-reconciler reconciled 915 current-period invoices, 0 discrepancies\n#683 2026-11-24T00:35:17Z INFO billing-reconciler reconciled 552 current-period invoices, 0 discrepancies\n#698 2026-11-24T00:35:32Z INFO billing-reconciler reconciled 1031 current-period invoices, 0 discrepancies\n#713 2026-11-24T00:35:45Z INFO billing-reconciler reconciled 771 current-period invoices, 0 discrepancies\n#726 2026-11-24T00:35:53Z INFO billing-reconciler reconciled 877 current-period invoices, 0 discrepancies\n#743 2026-11-24T00:36:08Z INFO billing-reconciler reconciled 756 current-period invoices, 0 discrepancies\n#765 2026-11-24T00:36:25Z INFO billing-reconciler reconciled 1016 current-period invoices, 0 discrepancies\n#766 2026-11-24T00:36:26Z ERROR billing-reconciler invoice_archive row inv-172913 violates checksum constraint, skipping (archive partition 2019-Q2)\n#775 2026-11-24T00:36:34Z INFO billing-reconciler reconciled 490 current-period invoices, 0 discrepancies\n#789 2026-11-24T00:36:45Z INFO billing-reconciler reconciled 700 current-period invoices, 0 discrepancies\n#803 2026-11-24T00:37:01Z INFO billing-reconciler reconciled 549 current-period invoices, 0 discrepancies\n#812 2026-11-24T00:37:05Z ERROR billing-reconciler invoice_archive row inv-325263 violates checksum constraint, skipping (archive partition 2019-Q4)\n#824 2026-11-24T00:37:16Z INFO billing-reconciler reconciled 1064 current-period invoices, 0 discrepancies\n#837 2026-11-24T00:37:26Z INFO billing-reconciler reconciled 387 current-period invoices, 0 discrepancies\n#850 2026-11-24T00:37:37Z INFO billing-reconciler reconciled 871 current-period invoices, 0 discrepancies\n#864 2026-11-24T00:37:45Z INFO billing-reconciler reconciled 669 current-period invoices, 0 discrepancies\n#873 2026-11-24T00:37:54Z INFO billing-reconciler reconciled 1122 current-period invoices, 0 discrepancies"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "region",
+          "limit": 15
+        },
+        "output": "3 match(es):\n#1198 2026-11-24T00:42:30Z ERROR order-service [t-5244] unhandled error in POST /checkout (o-7421): TypeError: Cannot read properties of undefined (reading 'region') at format (order-formatter.ts:180) [v1.12.0]\n#1262 2026-11-24T00:43:45Z ERROR order-service [t-5261] [v1.12.0] POST /checkout o-7434 -> 500: TypeError: undefined has no property 'region'\n#1323 2026-11-24T00:44:49Z ERROR order-service [t-5284] unhandled error in POST /checkout (o-7447): TypeError: Cannot read properties of undefined (reading 'region') at format (order-formatter.ts:180) [v1.12.0]"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "flag-sync",
+          "limit": 40
+        },
+        "output": "126 match(es), showing first 40:\n#16 2026-11-24T00:26:12Z INFO flag-sync synced 67 feature flags from flag service (etag 9329413)\n#34 2026-11-24T00:26:25Z INFO flag-sync synced 108 feature flags from flag service (etag f643166)\n#53 2026-11-24T00:26:39Z INFO flag-sync synced 91 feature flags from flag service (etag c57a8bd)\n#60 2026-11-24T00:26:48Z INFO flag-sync synced 134 feature flags from flag service (etag e390a41)\n#83 2026-11-24T00:27:05Z INFO flag-sync synced 77 feature flags from flag service (etag 9ff052d)\n#100 2026-11-24T00:27:20Z INFO flag-sync synced 60 feature flags from flag service (etag 004902b)\n#120 2026-11-24T00:27:34Z INFO flag-sync synced 112 feature flags from flag service (etag 4b71189)\n#137 2026-11-24T00:27:49Z INFO flag-sync synced 61 feature flags from flag service (etag d67d8b5)\n#153 2026-11-24T00:28:00Z INFO flag-sync synced 131 feature flags from flag service (etag 64584dc)\n#170 2026-11-24T00:28:14Z INFO flag-sync synced 97 feature flags from flag service (etag 0750cee)\n#189 2026-11-24T00:28:26Z INFO flag-sync synced 104 feature flags from flag service (etag d3932d3)\n#207 2026-11-24T00:28:40Z INFO flag-sync synced 62 feature flags from flag service (etag 556008c)\n#227 2026-11-24T00:28:53Z INFO flag-sync synced 106 feature flags from flag service (etag bb4b862)\n#233 2026-11-24T00:29:01Z INFO flag-sync synced 69 feature flags from flag service (etag d613867)\n#254 2026-11-24T00:29:16Z INFO flag-sync synced 60 feature flags from flag service (etag b0d48e0)\n#268 2026-11-24T00:29:26Z INFO flag-sync synced 81 feature flags from flag service (etag 8771abd)\n#285 2026-11-24T00:29:43Z INFO flag-sync synced 134 feature flags from flag service (etag 52b61a9)\n#296 2026-11-24T00:29:51Z INFO flag-sync synced 80 feature flags from flag service (etag 2b14703)\n#313 2026-11-24T00:30:07Z INFO flag-sync synced 68 feature flags from flag service (etag bf37d92)\n#326 2026-11-24T00:30:22Z INFO flag-sync synced 62 feature flags from flag service (etag 42e73eb)\n#350 2026-11-24T00:30:40Z INFO flag-sync synced 113 feature flags from flag service (etag 889a625)\n#362 2026-11-24T00:30:51Z INFO flag-sync synced 108 feature flags from flag service (etag 78657fc)\n#379 2026-11-24T00:31:06Z INFO flag-sync synced 90 feature flags from flag service (etag 95c4ace)\n#389 2026-11-24T00:31:15Z INFO flag-sync synced 122 feature flags from flag service (etag 0fa527e)\n#401 2026-11-24T00:31:25Z INFO flag-sync synced 66 feature flags from flag service (etag d10ecb8)\n#423 2026-11-24T00:31:42Z INFO flag-sync synced 64 feature flags from flag service (etag 9c06921)\n#432 2026-11-24T00:31:51Z INFO flag-sync synced 74 feature flags from flag service (etag d0cec93)\n#449 2026-11-24T00:32:05Z INFO flag-sync synced 132 feature flags from flag service (etag 44a4f88)\n#467 2026-11-24T00:32:22Z INFO flag-sync synced 136 feature flags from flag service (etag cd2bb94)\n#483 2026-11-24T00:32:35Z INFO flag-sync synced 131 feature flags from flag service (etag dc748c3)\n#503 2026-11-24T00:32:47Z INFO flag-sync synced 125 feature flags from flag service (etag ce4d0ed)\n#512 2026-11-24T00:32:56Z INFO flag-sync synced 82 feature flags from flag service (etag 79b07fc)\n#525 2026-11-24T00:33:07Z INFO flag-sync synced 86 feature flags from flag service (etag 77498e8)\n#547 2026-11-24T00:33:24Z INFO flag-sync synced 136 feature flags from flag service (etag adc94e9)\n#565 2026-11-24T00:33:38Z INFO flag-sync synced 122 feature flags from flag service (etag 2a12e7c)\n#579 2026-11-24T00:33:50Z INFO flag-sync synced 72 feature flags from flag service (etag e26b185)\n#598 2026-11-24T00:34:06Z INFO flag-sync synced 111 feature flags from flag service (etag e0b612a)\n#620 2026-11-24T00:34:23Z INFO flag-sync synced 114 feature flags from flag service (etag 9068eb4)\n#631 2026-11-24T00:34:32Z INFO flag-sync synced 98 feature flags from flag service (etag aaefca8)\n#648 2026-11-24T00:34:47Z INFO flag-sync synced 135 feature flags from flag service (etag 6115bdf)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "order-service",
+          "since": "00:26:01Z",
+          "until": "00:42:30Z",
+          "limit": 40
+        },
+        "output": "tool error: can't read time \"00:26:01Z\": use an ISO timestamp like 2026-11-24T00:26:01Z or HH:MM:SS",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "order-service",
+          "since": "2026-11-24T00:26:01Z",
+          "until": "2026-11-24T00:42:30Z",
+          "limit": 40
+        },
+        "output": "273 match(es), showing first 40:\n#1 2026-11-24T00:26:01Z INFO order-service [t-4687] order o-6969 accepted, calling payment-svc POST /charge\n#5 2026-11-24T00:26:04Z DEBUG order-service GC pause 16ms (young), heap 38%\n#8 2026-11-24T00:26:07Z INFO order-service [t-4689] order o-6971 accepted, calling payment-svc POST /charge\n#13 2026-11-24T00:26:10Z INFO order-service [t-4691] order o-6972 accepted, calling payment-svc POST /charge\n#19 2026-11-24T00:26:16Z INFO order-service [t-4692] order o-6973 accepted, calling payment-svc POST /charge\n#24 2026-11-24T00:26:19Z INFO order-service [t-4693] order o-6976 accepted, calling payment-svc POST /charge\n#28 2026-11-24T00:26:21Z INFO order-service [t-4696] order o-6977 accepted, calling payment-svc POST /charge\n#32 2026-11-24T00:26:24Z INFO order-service [t-4700] order o-6978 accepted, calling payment-svc POST /charge\n#38 2026-11-24T00:26:28Z DEBUG order-service GC pause 22ms (young), heap 40%\n#39 2026-11-24T00:26:29Z INFO order-service [t-4703] order o-6980 accepted, calling payment-svc POST /charge\n#41 2026-11-24T00:26:31Z INFO order-service [t-4705] order o-6983 accepted, calling payment-svc POST /charge\n#49 2026-11-24T00:26:37Z INFO order-service [t-4707] order o-6984 accepted, calling payment-svc POST /charge\n#55 2026-11-24T00:26:44Z INFO order-service [t-4709] order o-6986 accepted, calling payment-svc POST /charge\n#62 2026-11-24T00:26:50Z INFO order-service [t-4710] order o-6987 accepted, calling payment-svc POST /charge\n#66 2026-11-24T00:26:52Z DEBUG order-service GC pause 25ms (young), heap 46%\n#69 2026-11-24T00:26:55Z INFO order-service [t-4711] order o-6988 accepted, calling payment-svc POST /charge\n#74 2026-11-24T00:27:01Z INFO order-service [t-4715] order o-6991 accepted, calling payment-svc POST /charge\n#80 2026-11-24T00:27:05Z INFO order-service [t-4718] order o-6994 accepted, calling payment-svc POST /charge\n#84 2026-11-24T00:27:07Z DEBUG order-service GC pause 5ms (young), heap 39%\n#85 2026-11-24T00:27:08Z INFO order-service [t-4721] order o-6996 accepted, calling payment-svc POST /charge\n#91 2026-11-24T00:27:14Z INFO order-service [t-4723] order o-6999 accepted, calling payment-svc POST /charge\n#97 2026-11-24T00:27:19Z INFO order-service [t-4726] order o-7001 accepted, calling payment-svc POST /charge\n#102 2026-11-24T00:27:24Z INFO order-service [t-4730] order o-7002 accepted, calling payment-svc POST /charge\n#103 2026-11-24T00:27:24Z DEBUG order-service GC pause 22ms (young), heap 48%\n#107 2026-11-24T00:27:26Z INFO order-service [t-4731] order o-7003 accepted, calling payment-svc POST /charge\n#113 2026-11-24T00:27:31Z INFO order-service [t-4735] order o-7005 accepted, calling payment-svc POST /charge\n#118 2026-11-24T00:27:34Z INFO order-service [t-4738] order o-7008 accepted, calling payment-svc POST /charge\n#123 2026-11-24T00:27:38Z INFO order-service [t-4739] order o-7011 accepted, calling payment-svc POST /charge\n#130 2026-11-24T00:27:42Z DEBUG order-service GC pause 25ms (young), heap 35%\n#134 2026-11-24T00:27:44Z INFO order-service [t-4742] order o-7012 accepted, calling payment-svc POST /charge\n#138 2026-11-24T00:27:50Z INFO order-service [t-4744] order o-7014 accepted, calling payment-svc POST /charge\n#141 2026-11-24T00:27:53Z INFO order-service [t-4745] order o-7015 accepted, calling payment-svc POST /charge\n#150 2026-11-24T00:27:57Z INFO order-service [t-4746] order o-7016 accepted, calling payment-svc POST /charge\n#155 2026-11-24T00:28:01Z INFO order-service [t-4747] order o-7019 accepted, calling payment-svc POST /charge\n#156 2026-11-24T00:28:01Z DEBUG order-service GC pause 8ms (young), heap 32%\n#160 2026-11-24T00:28:06Z INFO order-service [t-4749] order o-7020 accepted, calling payment-svc POST /charge\n#167 2026-11-24T00:28:11Z INFO order-service [t-4752] order o-7023 accepted, calling payment-svc POST /charge\n#171 2026-11-24T00:28:14Z INFO order-service [t-4756] order o-7025 accepted, calling payment-svc POST /charge\n#176 2026-11-24T00:28:17Z INFO order-service [t-4758] order o-7027 accepted, calling payment-svc POST /charge\n#180 2026-11-24T00:28:19Z INFO order-service [t-4761] order o-7029 accepted, calling payment-svc POST /charge"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1198,
+          "before": 12,
+          "after": 3
+        },
+        "output": "#1186 2026-11-24T00:42:14Z INFO billing-reconciler reconciled 886 current-period invoices, 0 discrepancies\n#1187 2026-11-24T00:42:18Z DEBUG order-service GC pause 17ms (young), heap 47%\n#1188 2026-11-24T00:42:18Z INFO order-consumer processed batch of 24 messages from orders.events (lag 199ms)\n#1189 2026-11-24T00:42:19Z INFO flag-sync synced 93 feature flags from flag service (etag 286f815)\n#1190 2026-11-24T00:42:22Z INFO postgres checkpoint complete: wrote 451 buffers (3.5%)\n#1191 2026-11-24T00:42:22Z INFO redis stats: hits=8141 misses=239 evicted=0 connected_clients=46\n#1192 2026-11-24T00:42:23Z INFO order-consumer processed batch of 57 messages from orders.events (lag 100ms)\n#1193 2026-11-24T00:42:25Z INFO order-service [t-5240] order o-7418 accepted, calling payment-svc POST /charge\n#1194 2026-11-24T00:42:25Z INFO payment-svc [t-5240] POST /charge o-7418 ok 55ms\n#1195 2026-11-24T00:42:26Z INFO api-gateway [t-5240] POST /checkout 200 105ms\n#1196 2026-11-24T00:42:27Z INFO billing-reconciler reconciled 515 current-period invoices, 0 discrepancies\n#1197 2026-11-24T00:42:30Z INFO order-consumer processed batch of 108 messages from orders.events (lag 142ms)\n#1198 2026-11-24T00:42:30Z ERROR order-service [t-5244] unhandled error in POST /checkout (o-7421): TypeError: Cannot read properties of undefined (reading 'region') at format (order-formatter.ts:180) [v1.12.0]\n#1199 2026-11-24T00:42:31Z DEBUG payment-svc GC pause 19ms (young), heap 37%\n#1200 2026-11-24T00:42:32Z INFO redis stats: hits=9381 misses=592 evicted=0 connected_clients=47\n#1201 2026-11-24T00:42:33Z INFO flag-sync synced 65 feature flags from flag service (etag 3b94a9c)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "order-formatter",
+          "limit": 20
+        },
+        "output": "2 match(es):\n#1198 2026-11-24T00:42:30Z ERROR order-service [t-5244] unhandled error in POST /checkout (o-7421): TypeError: Cannot read properties of undefined (reading 'region') at format (order-formatter.ts:180) [v1.12.0]\n#1323 2026-11-24T00:44:49Z ERROR order-service [t-5284] unhandled error in POST /checkout (o-7447): TypeError: Cannot read properties of undefined (reading 'region') at format (order-formatter.ts:180) [v1.12.0]"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 20
+        },
+        "output": "1 match(es):\n#1080 2026-11-24T00:40:44Z INFO order-service deploy: rolling out order-service v1.12.0 (build 257b338), replacing v1.11.8"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "order-consumer",
+          "level": "INFO",
+          "since": "2026-11-24T00:41:00Z",
+          "until": "2026-11-24T00:43:00Z",
+          "limit": 30
+        },
+        "output": "23 match(es):\n#1101 2026-11-24T00:41:02Z INFO order-consumer processed batch of 43 messages from orders.events (lag 286ms)\n#1106 2026-11-24T00:41:08Z INFO order-consumer processed batch of 57 messages from orders.events (lag 248ms)\n#1116 2026-11-24T00:41:13Z INFO order-consumer processed batch of 69 messages from orders.events (lag 277ms)\n#1121 2026-11-24T00:41:17Z INFO order-consumer processed batch of 89 messages from orders.events (lag 263ms)\n#1126 2026-11-24T00:41:21Z INFO order-consumer processed batch of 52 messages from orders.events (lag 261ms)\n#1131 2026-11-24T00:41:26Z INFO order-consumer processed batch of 59 messages from orders.events (lag 325ms)\n#1138 2026-11-24T00:41:31Z INFO order-consumer processed batch of 52 messages from orders.events (lag 279ms)\n#1146 2026-11-24T00:41:36Z INFO order-consumer processed batch of 106 messages from orders.events (lag 192ms)\n#1151 2026-11-24T00:41:41Z INFO order-consumer processed batch of 95 messages from orders.events (lag 208ms)\n#1159 2026-11-24T00:41:48Z INFO order-consumer processed batch of 75 messages from orders.events (lag 44ms)\n#1162 2026-11-24T00:41:53Z INFO order-consumer processed batch of 90 messages from orders.events (lag 61ms)\n#1169 2026-11-24T00:41:58Z INFO order-consumer processed batch of 102 messages from orders.events (lag 83ms)\n#1173 2026-11-24T00:42:03Z INFO order-consumer processed batch of 62 messages from orders.events (lag 85ms)\n#1178 2026-11-24T00:42:07Z INFO order-consumer processed batch of 106 messages from orders.events (lag 360ms)\n#1185 2026-11-24T00:42:14Z INFO order-consumer processed batch of 120 messages from orders.events (lag 44ms)\n#1188 2026-11-24T00:42:18Z INFO order-consumer processed batch of 24 messages from orders.events (lag 199ms)\n#1192 2026-11-24T00:42:23Z INFO order-consumer processed batch of 57 messages from orders.events (lag 100ms)\n#1197 2026-11-24T00:42:30Z INFO order-consumer processed batch of 108 messages from orders.events (lag 142ms)\n#1203 2026-11-24T00:42:36Z INFO order-consumer processed batch of 75 messages from orders.events (lag 118ms)\n#1206 2026-11-24T00:42:41Z INFO order-consumer processed batch of 52 messages from orders.events (lag 152ms)\n#1210 2026-11-24T00:42:47Z INFO order-consumer processed batch of 64 messages from orders.events (lag 252ms)\n#1215 2026-11-24T00:42:52Z INFO order-consumer processed batch of 103 messages from orders.events (lag 302ms)\n#1217 2026-11-24T00:42:57Z INFO order-consumer processed batch of 70 messages from orders.events (lag 59ms)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.88,
+              "evidenceLines": [
+                1080,
+                1198,
+                1262,
+                1323,
+                1264
+              ],
+              "reasoning": "order-service v1.12.0 (build 257b338) rolled out at 00:40:44 (#1080), replacing v1.11.8. The first checkout failure appears at 00:42:30 (#1198): TypeError 'Cannot read properties of undefined (reading region)' at order-formatter.ts:180, tagged [v1.12.0]. The same TypeError recurs at #1262 and #1323, and each one surfaces at the gateway as a 500 (#1264, api-gateway upstream order-service 500). Before the deploy, checkout returned 200 (#1195). The gateway 5xx and its latency are downstream of the order-service crash and are not cited as root cause. Earlier 00:26-00:40 checkouts were healthy, and the errors line up with the rollout timing. Upstream services (payment-svc, postgres, redis, flag-sync, order-consumer) show no errors. The 'region' failure is a v1.12.0 code path that dereferences a missing object, most likely a new formatter path hitting orders without a region field.",
+              "recommendedAction": "Roll back order-service to v1.11.8 now to stop the checkout 500s. Then fix order-formatter.ts:180 in v1.12.0 to handle a missing region, add a test for orders without region, and redeploy after verification. Separately, billing-reconciler's invoice_archive checksum violations (#585, #766, #812, etc., 2019 partitions) are an unrelated data-integrity issue that does not touch checkout. Track it as a separate ticket."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.1,
+              "evidenceLines": [
+                585,
+                766,
+                1179,
+                1773
+              ],
+              "reasoning": "billing-reconciler repeatedly logs invoice_archive rows violating a checksum constraint in 2019 archive partitions. It skips those rows, and the current-period reconciliation stays at 0 discrepancies. This is a real data-integrity problem, but it runs on a separate path from POST /checkout and starts around 00:33, after the 500s would have begun in principle. It does not explain the checkout failures, so it is a secondary finding."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.88,
+              "evidenceLines": [
+                1080,
+                1198,
+                1262,
+                1323,
+                1264
+              ],
+              "reasoning": "order-service v1.12.0 (build 257b338) rolled out at 00:40:44 (#1080), replacing v1.11.8. The first checkout failure appears at 00:42:30 (#1198): TypeError 'Cannot read properties of undefined (reading region)' at order-formatter.ts:180, tagged [v1.12.0]. The same TypeError recurs at #1262 and #1323, and each surfaces at the gateway as a 500 (#1264). Before the deploy, checkout returned 200 (#1195). The gateway 5xx and latency are downstream symptoms. Upstream services (payment-svc, postgres, redis, flag-sync, order-consumer) show no errors. The v1.12.0 code path dereferences a missing object, most likely a formatter path hitting orders without a region field.",
+              "recommendedAction": "Roll back order-service to v1.11.8 now to stop the checkout 500s. Then fix order-formatter.ts:180 in v1.12.0 to handle a missing region, add a test for orders without region, and redeploy after verification. Separately, billing-reconciler's invoice_archive checksum violations (#585, #766, #1179, #1773) in 2019 archive partitions are an unrelated data-integrity issue that does not touch checkout. Track it as a separate ticket."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.1,
+              "evidenceLines": [
+                585,
+                766,
+                1179,
+                1773
+              ],
+              "reasoning": "billing-reconciler repeatedly logs invoice_archive rows violating a checksum constraint in 2019 archive partitions. It skips those rows, and current-period reconciliation stays at 0 discrepancies. This is a real data-integrity problem but runs on a separate path from POST /checkout and does not explain the checkout 500s. Secondary finding."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "recommendedAction": "Roll back order-service to v1.11.8 now to stop the checkout 500s. Then fix order-formatter.ts:180 in v1.12.0 to handle a missing region, add a test for orders without region, and redeploy after verification. Separately, billing-reconciler's invoice_archive checksum violations (#585, #766, #1179, #1773) in 2019 archive partitions are an unrelated data-integrity issue that does not touch checkout. Track it as a separate ticket.",
+          "hypotheses": [
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.88,
+              "evidenceLines": [
+                1080,
+                1198,
+                1262,
+                1323
+              ],
+              "reasoning": "order-service v1.12.0 (build 257b338) rolled out at 00:40:44 (#1080), replacing v1.11.8. The first checkout failure appears at 00:42:30 (#1198): TypeError 'Cannot read properties of undefined (reading region)' at order-formatter.ts:180, tagged [v1.12.0]. The same TypeError recurs at #1262 and #1323. Each surfaces at the gateway as a 500 (#1264, api-gateway upstream order-service 500), which I treat as downstream impact. Before the deploy, checkout returned 200 (#1195). Upstream services (payment-svc, postgres, redis, flag-sync, order-consumer) show no errors. The v1.12.0 code path dereferences a missing object, most likely a formatter path hitting orders without a region field."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.1,
+              "evidenceLines": [
+                585,
+                766,
+                1179,
+                1773
+              ],
+              "reasoning": "billing-reconciler repeatedly logs invoice_archive rows violating a checksum constraint in 2019 archive partitions. It skips those rows, and current-period reconciliation stays at 0 discrepancies. This is a real data-integrity problem but runs on a separate path from POST /checkout and does not explain the checkout 500s. Secondary finding."
+            }
+          ]
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 7,
+    "toolCalls": 10,
+    "usage": {
+      "inputTokens": 16,
+      "outputTokens": 3748,
+      "cacheReadTokens": 69579,
+      "cacheWriteTokens": 17790
+    },
+    "durationMs": 16963,
+    "stopReason": "tool_use"
+  }
+}

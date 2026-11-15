@@ -1,0 +1,154 @@
+{
+  "score": {
+    "incidentId": "ht-027",
+    "difficulty": "hard",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 4,
+      "correct": 3,
+      "precision": 0.75,
+      "recall": 0.3,
+      "f1": 0.4285714285714285
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.026422099999999997,
+    "durationMs": 7930,
+    "iterations": 4,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 10,
+      "output": 909,
+      "cacheRead": 14771,
+      "cacheWrite": 6334
+    }
+  },
+  "result": {
+    "incidentId": "ht-027",
+    "model": "claude-sonnet-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.85,
+          "evidenceLines": [
+            2752,
+            2811,
+            2867,
+            3025
+          ],
+          "reasoning": "order-service retries payment-svc immediately with no jitter or backoff (max 4). That amplified the load to 3–5x baseline, so payment-svc shed load with 503 (queue full). order-service then returned 503 to the gateway after retries were exhausted, and the checkout 503s did not recover. The gateway errors are symptoms."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.08,
+          "evidenceLines": [
+            2867
+          ],
+          "reasoning": "payment-svc may be slow, but the logs show it rejecting fast, not hanging."
+        }
+      ],
+      "recommendedAction": "Add exponential backoff with jitter and a retry budget to order-service's payment-svc client. Scale payment-svc, or throttle checkout traffic, until the load shedding stops."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "service": "payment-svc",
+          "limit": 15
+        },
+        "output": "11 match(es):\n#2811 2026-10-08T00:26:15Z WARN payment-svc load shedder active, inflight=843, rate=3.2x of expected\n#2867 2026-10-08T00:26:43Z ERROR payment-svc [t-6417] load shed: rejected POST /charge with 503 (queue full)\n#3025 2026-10-08T00:28:01Z WARN payment-svc inbound request rate 4.1x baseline (inflight 725), shedding load with 503\n#3088 2026-10-08T00:28:28Z ERROR payment-svc [t-6508] load shed: rejected POST /charge with 503 (queue full)\n#3221 2026-10-08T00:29:34Z WARN payment-svc admission control: 428 requests in flight (5.0x normal), rejecting new work\n#3286 2026-10-08T00:30:10Z ERROR payment-svc [t-6568] load shed: rejected POST /charge with 503 (queue full)\n#3416 2026-10-08T00:31:17Z ERROR payment-svc [t-6624] load shed: rejected POST /charge with 503 (queue full)\n#3536 2026-10-08T00:32:24Z ERROR payment-svc [t-6665] load shed: rejected POST /charge with 503 (queue full)\n#3645 2026-10-08T00:33:22Z ERROR payment-svc [t-6708] load shed: rejected POST /charge with 503 (queue full)\n#3774 2026-10-08T00:34:30Z ERROR payment-svc [t-6765] load shed: rejected POST /charge with 503 (queue full)\n#3966 2026-10-08T00:36:08Z ERROR payment-svc [t-6838] load shed: rejected POST /charge with 503 (queue full)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "service": "api-gateway",
+          "limit": 6
+        },
+        "output": "12 match(es), showing first 6:\n#2833 2026-10-08T00:26:25Z ERROR api-gateway [t-6396] POST /checkout 503 21791ms: upstream order-service returned 503 (retries exhausted)\n#2982 2026-10-08T00:27:37Z ERROR api-gateway [t-6462] POST /checkout 503 11679ms: upstream order-service returned 503 (retries exhausted)\n#3040 2026-10-08T00:28:06Z ERROR api-gateway [t-6481] POST /checkout 503 7331ms: upstream order-service returned 503 (retries exhausted)\n#3167 2026-10-08T00:29:11Z ERROR api-gateway [t-6533] POST /checkout 503 18623ms: upstream order-service returned 503 (retries exhausted)\n#3299 2026-10-08T00:30:17Z ERROR api-gateway [t-6575] POST /checkout 503 10552ms: upstream order-service returned 503 (retries exhausted)\n#3404 2026-10-08T00:31:10Z ERROR api-gateway [t-6623] POST /checkout 503 16650ms: upstream order-service returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "retry",
+          "since": "00:22:00",
+          "until": "00:26:20",
+          "limit": 10
+        },
+        "output": "1 match(es):\n#2752 2026-10-08T00:25:41Z WARN order-service [t-6372] RetryPolicy(payment-svc): immediate retry #2, max 4, jitter and backoff off"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "since": "00:24:00",
+          "until": "00:26:15",
+          "level": "WARN"
+        },
+        "output": "1 match(es):\n#2811 2026-10-08T00:26:15Z WARN payment-svc load shedder active, inflight=843, rate=3.2x of expected"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 2752,
+          "before": 8,
+          "after": 3
+        },
+        "output": "#2744 2026-10-08T00:25:37Z INFO api-gateway [t-6369] POST /checkout 200 189ms\n#2745 2026-10-08T00:25:39Z INFO metrics-agent flushed 4229 series to remote-write in 68ms\n#2746 2026-10-08T00:25:39Z INFO search-api [t-6370] product p-2552 accepted, calling catalog-svc GET /products/batch\n#2747 2026-10-08T00:25:39Z INFO web-bff [t-6370] GET /search 200 124ms\n#2748 2026-10-08T00:25:40Z INFO order-service [t-6371] order o-2553 accepted, calling payment-svc POST /charge\n#2749 2026-10-08T00:25:40Z INFO api-gateway [t-6371] POST /checkout 200 164ms\n#2750 2026-10-08T00:25:40Z INFO order-consumer processed batch of 108 messages from orders.events (lag 359ms)\n#2751 2026-10-08T00:25:41Z INFO index-worker processed batch of 55 messages from catalog.updates (lag 296ms)\n#2752 2026-10-08T00:25:41Z WARN order-service [t-6372] RetryPolicy(payment-svc): immediate retry #2, max 4, jitter and backoff off\n#2753 2026-10-08T00:25:41Z INFO order-service [t-6374] order o-2555 accepted, calling payment-svc POST /charge\n#2754 2026-10-08T00:25:42Z INFO payment-svc [t-6374] POST /charge o-2555 ok 23ms\n#2755 2026-10-08T00:25:42Z INFO api-gateway [t-6374] POST /checkout 200 195ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.85,
+              "evidenceLines": [
+                2752,
+                2811,
+                2867,
+                3025
+              ],
+              "reasoning": "order-service retries payment-svc immediately with no jitter or backoff (max 4). That amplified the load to 3–5x baseline, so payment-svc shed load with 503 (queue full). order-service then returned 503 to the gateway after retries were exhausted, and the checkout 503s did not recover. The gateway errors are symptoms."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.08,
+              "evidenceLines": [
+                2867
+              ],
+              "reasoning": "payment-svc may be slow, but the logs show it rejecting fast, not hanging."
+            }
+          ],
+          "recommendedAction": "Add exponential backoff with jitter and a retry budget to order-service's payment-svc client. Scale payment-svc, or throttle checkout traffic, until the load shedding stops."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 909,
+      "cacheReadTokens": 14771,
+      "cacheWriteTokens": 6334
+    },
+    "durationMs": 7930,
+    "stopReason": "tool_use"
+  }
+}

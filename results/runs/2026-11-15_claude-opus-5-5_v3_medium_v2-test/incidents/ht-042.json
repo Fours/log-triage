@@ -1,0 +1,187 @@
+{
+  "score": {
+    "incidentId": "ht-042",
+    "difficulty": "easy",
+    "scenario": "dependency_timeout/db-lock-wait",
+    "truth": "dependency_timeout",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 7,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0884476,
+    "durationMs": 18671,
+    "iterations": 7,
+    "toolCalls": 9,
+    "tokens": {
+      "input": 16,
+      "output": 1578,
+      "cacheRead": 39393,
+      "cacheWrite": 9789
+    }
+  },
+  "result": {
+    "incidentId": "ht-042",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.88,
+          "evidenceLines": [
+            1141,
+            1237,
+            1255,
+            1267,
+            1310,
+            1270,
+            1314
+          ],
+          "reasoning": "A long-running transaction 93036 from template-svc-reconciler had been active 82s at 12:41:09 (so it started about 12:39:47) and was holding a row lock on notifications (#1141). After that, template-svc's UPDATEs on notifications in the /render path waited on the lock. notif-db reported lock wait timeouts (#1237, #1255) and template-svc cancelled statements on statement_timeout (#1267, #1310). notification-svc's calls to template-svc then timed out after 15s (#1270, #1314). The hung calls filled notification-svc's 50-connection pool to template-svc and produced pool checkout timeouts. Those caused the gateway 504s and the >10s p95. These are downstream symptoms. metrics-agent's remote-write drops started at 12:30, before the onset, and the TLS expiry warning is unrelated; both are red herrings. I found no deploy in the logs."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.07,
+          "evidenceLines": [
+            1340,
+            1428
+          ],
+          "reasoning": "Another reading is that the notification-svc pool to template-svc is too small. But it only saturated once template-svc calls began hanging on the lock, so the pool limit is a symptom."
+        }
+      ],
+      "recommendedAction": "Find and kill the long-running transaction 93036 that template-svc-reconciler opened on notif-db.notifications, using SHOW ENGINE INNODB STATUS / KILL. Pause the reconciler and fix it so it commits in short transactions and never leaves a transaction open. Add a transaction or idle-in-transaction timeout. Once the lock clears, confirm that notification-svc's pool to template-svc drains."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "22 match(es):\n#347 2026-10-20T12:30:32Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 338 samples\n#470 2026-10-20T12:32:08Z WARN api-gateway TLS certificate for *.internal.example expires in 15 days\n#599 2026-10-20T12:33:50Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2054 samples\n#889 2026-10-20T12:37:43Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1188 samples\n#1141 2026-10-20T12:41:09Z WARN notif-db TRANSACTION 93036, ACTIVE 82 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#1200 2026-10-20T12:42:03Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 314 samples\n#1237 2026-10-20T12:42:49Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1255 2026-10-20T12:43:11Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1267 2026-10-20T12:43:21Z ERROR template-svc [t-6557] canceling UPDATE on notifications for m-6031 due to statement_timeout\n#1270 2026-10-20T12:43:26Z ERROR notification-svc [t-6557] upstream request to template-svc failed: ReadTimeout (read timeout=15s) [m-6031]\n#1310 2026-10-20T12:44:16Z ERROR template-svc [t-6567] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-6044)\n#1314 2026-10-20T12:44:21Z ERROR notification-svc [t-6567] TemplateClient.render timed out after 15000ms calling template-svc POST /render (m-6044)\n#1340 2026-10-20T12:44:55Z WARN notification-svc HTTP connection pool to template-svc at capacity (50/50 in use), 40 requests queued\n#1362 2026-10-20T12:45:21Z ERROR api-gateway [t-6582] POST /v1/notify 504 19313ms: upstream notification-svc timed out\n#1379 2026-10-20T12:45:37Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2201 samples\n#1405 2026-10-20T12:46:17Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 212 samples\n#1428 2026-10-20T12:46:45Z ERROR notification-svc pool checkout timeout: no connection to template-svc available after 5000ms\n#1503 2026-10-20T12:48:29Z ERROR api-gateway [t-6615] POST /v1/notify 504 6705ms: upstream notification-svc timed out\n#1598 2026-10-20T12:50:12Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 815 samples\n#1607 2026-10-20T12:50:24Z ERROR api-gateway [t-6657] POST /v1/notify 504 23337ms: upstream notification-svc timed out\n#1743 2026-10-20T12:53:14Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1906 samples\n#1795 2026-10-20T12:54:20Z ERROR api-gateway [t-6704] POST /v1/notify 504 18638ms: upstream notification-svc timed out"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "93036"
+        },
+        "output": "1 match(es):\n#1141 2026-10-20T12:41:09Z WARN notif-db TRANSACTION 93036, ACTIVE 82 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "reconciler",
+          "since": "12:38:00",
+          "until": "12:42:00"
+        },
+        "output": "1 match(es):\n#1141 2026-10-20T12:41:09Z WARN notif-db TRANSACTION 93036, ACTIVE 82 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "12:39:30",
+          "until": "12:40:10",
+          "limit": 60
+        },
+        "output": "51 match(es):\n#1017 2026-10-20T12:39:30Z INFO notif-worker processed batch of 103 messages from notifications.outbound (lag 133ms)\n#1018 2026-10-20T12:39:31Z INFO notification-svc [t-6459] message m-5958 accepted, calling template-svc POST /render\n#1019 2026-10-20T12:39:31Z INFO api-gateway [t-6459] POST /v1/notify 200 91ms\n#1020 2026-10-20T12:39:31Z DEBUG template-svc GC pause 25ms (young), heap 32%\n#1021 2026-10-20T12:39:32Z INFO billing-reconciler reconciled 311 current-period invoices, 0 discrepancies\n#1022 2026-10-20T12:39:32Z INFO redis stats: hits=16325 misses=787 evicted=0 connected_clients=56\n#1023 2026-10-20T12:39:32Z INFO notif-db InnoDB: page cleaner flushed 892 pages, buffer pool hit rate 98.5%\n#1024 2026-10-20T12:39:35Z INFO metrics-agent flushed 4382 series to remote-write in 129ms\n#1025 2026-10-20T12:39:36Z INFO notification-svc [t-6463] message m-5959 accepted, calling template-svc POST /render\n#1026 2026-10-20T12:39:36Z INFO notif-worker processed batch of 66 messages from notifications.outbound (lag 107ms)\n#1027 2026-10-20T12:39:36Z INFO api-gateway [t-6463] POST /v1/notify 200 169ms\n#1028 2026-10-20T12:39:40Z INFO notif-worker processed batch of 36 messages from notifications.outbound (lag 330ms)\n#1029 2026-10-20T12:39:41Z INFO notification-svc [t-6467] message m-5960 accepted, calling template-svc POST /render\n#1030 2026-10-20T12:39:41Z INFO redis stats: hits=10095 misses=382 evicted=0 connected_clients=50\n#1031 2026-10-20T12:39:41Z INFO api-gateway [t-6467] POST /v1/notify 200 106ms\n#1032 2026-10-20T12:39:42Z INFO billing-reconciler reconciled 871 current-period invoices, 0 discrepancies\n#1033 2026-10-20T12:39:43Z DEBUG notification-svc GC pause 5ms (young), heap 44%\n#1034 2026-10-20T12:39:44Z INFO notif-worker processed batch of 78 messages from notifications.outbound (lag 347ms)\n#1035 2026-10-20T12:39:44Z INFO notification-svc [t-6470] message m-5961 accepted, calling template-svc POST /render\n#1036 2026-10-20T12:39:44Z INFO api-gateway [t-6470] POST /v1/notify 200 117ms\n#1037 2026-10-20T12:39:46Z DEBUG template-svc GC pause 23ms (young), heap 34%\n#1038 2026-10-20T12:39:48Z INFO metrics-agent flushed 8592 series to remote-write in 121ms\n#1039 2026-10-20T12:39:48Z INFO notif-db InnoDB: page cleaner flushed 584 pages, buffer pool hit rate 99.6%\n#1040 2026-10-20T12:39:49Z INFO notif-worker processed batch of 68 messages from notifications.outbound (lag 335ms)\n#1041 2026-10-20T12:39:50Z INFO notification-svc [t-6474] message m-5964 accepted, calling template-svc POST /render\n#1042 2026-10-20T12:39:50Z INFO template-svc [t-6474] POST /render m-5964 ok 51ms\n#1043 2026-10-20T12:39:50Z INFO api-gateway [t-6474] POST /v1/notify 200 114ms\n#1044 2026-10-20T12:39:51Z INFO redis stats: hits=14094 misses=202 evicted=0 connected_clients=52\n#1045 2026-10-20T12:39:52Z INFO notif-worker processed batch of 54 messages from notifications.outbound (lag 190ms)\n#1046 2026-10-20T12:39:54Z DEBUG api-gateway upstream health: notification-svc ok, template-svc ok\n#1047 2026-10-20T12:39:56Z INFO notification-svc [t-6478] message m-5965 accepted, calling template-svc POST /render\n#1048 2026-10-20T12:39:56Z INFO template-svc [t-6478] POST /render m-5965 ok 81ms\n#1049 2026-10-20T12:39:56Z INFO api-gateway [t-6478] POST /v1/notify 200 118ms\n#1050 2026-10-20T12:39:56Z INFO billing-reconciler reconciled 559 current-period invoices, 0 discrepancies\n#1051 2026-10-20T12:39:57Z INFO notif-worker processed batch of 27 messages from notifications.outbound (lag 230ms)\n#1052 2026-10-20T12:40:02Z INFO notification-svc [t-6481] message m-5966 accepted, calling template-svc POST /render\n#1053 2026-10-20T12:40:02Z INFO template-svc [t-6481] POST /render m-5966 ok 34ms\n#1054 2026-10-20T12:40:02Z INFO api-gateway [t-6481] POST /v1/notify 200 100ms\n#1055 2026-10-20T12:40:02Z INFO notif-worker processed batch of 117 messages from notifications.outbound (lag 101ms)\n#1056 2026-10-20T12:40:03Z INFO redis stats: hits=14224 misses=517 evicted=0 connected_clients=36\n#1057 2026-10-20T12:40:04Z INFO metrics-agent flushed 4755 series to remote-write in 69ms\n#1058 2026-10-20T12:40:05Z DEBUG notification-svc GC pause 21ms (young), heap 41%\n#1059 2026-10-20T12:40:05Z INFO notification-svc [t-6483] message m-5969 accepted, calling template-svc POST /render\n#1060 2026-10-20T12:40:05Z INFO template-svc [t-6483] POST /render m-5969 ok 83ms\n#1061 2026-10-20T12:40:05Z INFO api-gateway [t-6483] POST /v1/notify 200 177ms\n#1062 2026-10-20T12:40:06Z INFO notif-worker processed batch of 89 messages from notifications.outbound (lag 157ms)\n#1063 2026-10-20T12:40:07Z INFO notif-db InnoDB: page cleaner flushed 233 pages, buffer pool hit rate 99.8%\n#1064 2026-10-20T12:40:07Z INFO billing-reconciler reconciled 1144 current-period invoices, 0 discrepancies\n#1065 2026-10-20T12:40:07Z DEBUG template-svc GC pause 13ms (young), heap 34%\n#1066 2026-10-20T12:40:09Z INFO notification-svc [t-6486] message m-5971 accepted, calling template-svc POST /render\n#1067 2026-10-20T12:40:09Z INFO api-gateway [t-6486] POST /v1/notify 200 120ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "lock",
+          "limit": 40
+        },
+        "output": "3 match(es):\n#1141 2026-10-20T12:41:09Z WARN notif-db TRANSACTION 93036, ACTIVE 82 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#1237 2026-10-20T12:42:49Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1255 2026-10-20T12:43:11Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-6557"
+        },
+        "output": "2 line(s) for t-6557:\n#1267 2026-10-20T12:43:21Z ERROR template-svc [t-6557] canceling UPDATE on notifications for m-6031 due to statement_timeout\n#1270 2026-10-20T12:43:26Z ERROR notification-svc [t-6557] upstream request to template-svc failed: ReadTimeout (read timeout=15s) [m-6031]"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "since": "12:36:00",
+          "until": "12:43:30",
+          "query": "notifications"
+        },
+        "output": "1 match(es):\n#1267 2026-10-20T12:43:21Z ERROR template-svc [t-6557] canceling UPDATE on notifications for m-6031 due to statement_timeout"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "since": "12:40:30",
+          "until": "12:43:00",
+          "limit": 40
+        },
+        "output": "15 match(es):\n#1091 2026-10-20T12:40:30Z DEBUG template-svc GC pause 12ms (young), heap 30%\n#1104 2026-10-20T12:40:39Z INFO template-svc [t-6504] POST /render m-5988 ok 41ms\n#1114 2026-10-20T12:40:48Z DEBUG template-svc GC pause 19ms (young), heap 40%\n#1123 2026-10-20T12:40:55Z INFO template-svc [t-6513] POST /render m-5992 ok 84ms\n#1130 2026-10-20T12:41:01Z INFO template-svc [t-6517] POST /render m-5993 ok 70ms\n#1133 2026-10-20T12:41:04Z DEBUG template-svc GC pause 13ms (young), heap 44%\n#1136 2026-10-20T12:41:06Z INFO template-svc [t-6520] POST /render m-5994 ok 74ms\n#1145 2026-10-20T12:41:11Z INFO template-svc [t-6521] POST /render m-5997 ok 42ms\n#1155 2026-10-20T12:41:20Z INFO template-svc [t-6527] POST /render m-6002 ok 48ms\n#1162 2026-10-20T12:41:27Z DEBUG template-svc GC pause 8ms (young), heap 45%\n#1186 2026-10-20T12:41:46Z DEBUG template-svc GC pause 20ms (young), heap 35%\n#1205 2026-10-20T12:42:08Z DEBUG template-svc GC pause 13ms (young), heap 30%\n#1212 2026-10-20T12:42:18Z INFO template-svc [t-6546] POST /render m-6019 ok 85ms\n#1220 2026-10-20T12:42:26Z DEBUG template-svc GC pause 18ms (young), heap 31%\n#1235 2026-10-20T12:42:47Z DEBUG template-svc GC pause 20ms (young), heap 38%"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.88,
+              "evidenceLines": [
+                1141,
+                1237,
+                1255,
+                1267,
+                1310,
+                1270,
+                1314
+              ],
+              "reasoning": "A long-running transaction 93036 from template-svc-reconciler had been active 82s at 12:41:09 (so it started about 12:39:47) and was holding a row lock on notifications (#1141). After that, template-svc's UPDATEs on notifications in the /render path waited on the lock. notif-db reported lock wait timeouts (#1237, #1255) and template-svc cancelled statements on statement_timeout (#1267, #1310). notification-svc's calls to template-svc then timed out after 15s (#1270, #1314). The hung calls filled notification-svc's 50-connection pool to template-svc and produced pool checkout timeouts. Those caused the gateway 504s and the >10s p95. These are downstream symptoms. metrics-agent's remote-write drops started at 12:30, before the onset, and the TLS expiry warning is unrelated; both are red herrings. I found no deploy in the logs."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.07,
+              "evidenceLines": [
+                1340,
+                1428
+              ],
+              "reasoning": "Another reading is that the notification-svc pool to template-svc is too small. But it only saturated once template-svc calls began hanging on the lock, so the pool limit is a symptom."
+            }
+          ],
+          "recommendedAction": "Find and kill the long-running transaction 93036 that template-svc-reconciler opened on notif-db.notifications, using SHOW ENGINE INNODB STATUS / KILL. Pause the reconciler and fix it so it commits in short transactions and never leaves a transaction open. Add a transaction or idle-in-transaction timeout. Once the lock clears, confirm that notification-svc's pool to template-svc drains."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 7,
+    "toolCalls": 9,
+    "usage": {
+      "inputTokens": 16,
+      "outputTokens": 1578,
+      "cacheReadTokens": 39393,
+      "cacheWriteTokens": 9789
+    },
+    "durationMs": 18671,
+    "stopReason": "tool_use"
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "score": {
+    "incidentId": "ht-020",
+    "difficulty": "medium",
+    "scenario": "resource_exhaustion/db-disk-full",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.92,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 7,
+      "precision": 1,
+      "recall": 0.875,
+      "f1": 0.9333333333333333
+    },
+    "herringsCited": 2,
+    "secondaryCited": 3,
+    "costUsd": 0.058436,
+    "durationMs": 10392,
+    "iterations": 3,
+    "toolCalls": 2,
+    "tokens": {
+      "input": 8,
+      "output": 988,
+      "cacheRead": 10220,
+      "cacheWrite": 7320
+    }
+  },
+  "result": {
+    "incidentId": "ht-020",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.92,
+          "evidenceLines": [
+            760,
+            1127,
+            1362,
+            1392,
+            1484,
+            1532,
+            1598
+          ],
+          "reasoning": "The postgres data volume filled up: disk at 95% at 20:11:39 (#760), 99% at 20:14:28 (#1127), then 'No space left on device' from 20:16:18 (#1362, #1532). Order-service inserts into orders fail with 'could not extend file' and DiskFullError (#1392, #1484, #1598), so POST /checkout returns 500s at the gateway (#1368 and later). Reads still work because only writes need new space, which matches 'reads look healthy'. The audit-consumer poison message (msg-478689) only affects audit lag. The billing-reconciler checksum errors are on old 2019 archive partitions. The one card-processor connection reset (#761) is a single retried call. None of these are on the checkout write path."
+        },
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.04,
+          "evidenceLines": [
+            1220,
+            1251,
+            1307
+          ],
+          "reasoning": "audit-consumer crash-loops on msg-478689, so audit.events lag grows. Account-svc publishes slowly but does not fail, and this doesn't explain the order insert failures."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.02,
+          "evidenceLines": [
+            1246,
+            1372
+          ],
+          "reasoning": "Checksum violations in billing-reconciler's invoice_archive rows. These are old partitions that the checkout path doesn't touch."
+        }
+      ],
+      "recommendedAction": "Free or add space on the postgres data volume now: expand the volume, or clear WAL by finding stale replication slots or a failing WAL archive_command. Then confirm order inserts succeed. Look into why WAL is growing at about 860MB/h and add a disk-usage alert that fires earlier. Separately, park poison message msg-478689 in a DLQ so audit-consumer recovers."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "39 match(es):\n#760 2026-10-26T20:11:39Z WARN postgres disk usage 95% on /var/lib/postgresql/data (WAL/binlog growth 858MB/h)\n#761 2026-10-26T20:11:40Z WARN payment-svc [t-4191] card processor call failed: connection reset by peer POST https://api.cardproc.example/v1/charges, retry 1/3\n#1127 2026-10-26T20:14:28Z WARN postgres disk usage 99% on /var/lib/postgresql/data (WAL/binlog growth 884MB/h)\n#1220 2026-10-26T20:15:08Z FATAL audit-consumer uncaught RangeError (stack size exceeded) while handling offset 729875 (msg-478689)\n#1221 2026-10-26T20:15:08Z ERROR audit-consumer process exited with code 1, restarting (restart 1, backoff 10s)\n#1246 2026-10-26T20:15:19Z ERROR billing-reconciler invoice_archive row inv-593472 violates checksum constraint, skipping (archive partition 2019-Q1)\n#1251 2026-10-26T20:15:22Z FATAL audit-consumer unhandled exception processing msg-478689 (offset 729875): RangeError: Maximum call stack size exceeded at expandReferences\n#1252 2026-10-26T20:15:22Z ERROR audit-consumer process exited with code 1, restarting (restart 2, backoff 20s)\n#1307 2026-10-26T20:15:48Z FATAL audit-consumer process crashed on msg-478689@729875: RangeError: call stack overflow in expandReferences\n#1308 2026-10-26T20:15:49Z ERROR audit-consumer process exited with code 1, restarting (restart 3, backoff 40s)\n#1362 2026-10-26T20:16:18Z ERROR postgres could not extend file \"base/16384/35359\": No space left on device\n#1365 2026-10-26T20:16:19Z WARN account-svc publish to audit.events slow: broker reports consumer group audit-consumer lag 1495\n#1368 2026-10-26T20:16:19Z ERROR api-gateway [t-4565] POST /checkout 500 5733ms: upstream order-service returned 500 Internal Server Error\n#1372 2026-10-26T20:16:21Z ERROR billing-reconciler invoice_archive row inv-839567 violates checksum constraint, skipping (archive partition 2019-Q1)\n#1392 2026-10-26T20:16:30Z ERROR order-service [t-4584] insert into orders failed for o-8276: could not extend file\n#1484 2026-10-26T20:17:35Z ERROR order-service [t-4645] could not save order o-8326: database rejected the write (disk full)\n#1494 2026-10-26T20:17:42Z ERROR api-gateway [t-4655] POST /checkout 500 9129ms: upstream order-service returned 500 Internal Server Error\n#1499 2026-10-26T20:17:43Z ERROR billing-reconciler invoice_archive row inv-534525 violates checksum constraint, skipping (archive partition 2019-Q1)\n#1532 2026-10-26T20:18:06Z ERROR postgres could not extend file \"base/16384/28687\": No space left on device\n#1557 2026-10-26T20:18:25Z ERROR postgres could not extend file \"base/16384/30589\": No space left on device\n#1589 2026-10-26T20:18:41Z WARN account-svc publish to audit.events slow: broker reports consumer group audit-consumer lag 2608\n#1598 2026-10-26T20:18:46Z ERROR order-service [t-4717] orders.insert(o-8373) -> DiskFullError\n#1614 2026-10-26T20:18:55Z ERROR billing-reconciler invoice_archive row inv-531201 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1674 2026-10-26T20:19:33Z ERROR api-gateway [t-4753] POST /checkout 500 10484ms: upstream order-service returned 500 Internal Server Error\n#1704 2026-10-26T20:19:50Z WARN account-svc publish to audit.events slow: broker reports consumer group audit-consumer lag 3834\n#1716 2026-10-26T20:19:57Z ERROR billing-reconciler invoice_archive row inv-573387 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1762 2026-10-26T20:20:25Z WARN account-svc publish to audit.events slow: broker reports consumer group audit-consumer lag 7604\n#1827 2026-10-26T20:21:05Z ERROR billing-reconciler invoice_archive row inv-565130 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1867 2026-10-26T20:21:34Z ERROR api-gateway [t-4878] POST /checkout 500 16282ms: upstream order-service returned 500 Internal Server Error\n#1924 2026-10-26T20:22:07Z WARN account-svc publish to audit.events slow: broker reports consumer group audit-consumer lag 7090\n#1962 2026-10-26T20:22:31Z ERROR billing-reconciler invoice_archive row inv-270899 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1968 2026-10-26T20:22:33Z ERROR api-gateway [t-4934] POST /checkout 500 20515ms: upstream order-service returned 500 Internal Server Error\n#2048 2026-10-26T20:23:19Z ERROR billing-reconciler invoice_archive row inv-560746 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2055 2026-10-26T20:23:22Z ERROR api-gateway [t-4996] POST /checkout 500 11973ms: upstream order-service returned 500 Internal Server Error\n#2074 2026-10-26T20:23:35Z WARN account-svc publish to audit.events slow: broker reports consumer group audit-consumer lag 5574\n#2162 2026-10-26T20:24:33Z ERROR billing-reconciler invoice_archive row inv-328697 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2175 2026-10-26T20:24:39Z WARN account-svc publish to audit.events slow: broker reports consumer group audit-consumer lag 5957\n#2195 2026-10-26T20:24:55Z ERROR billing-reconciler invoice_archive row inv-137326 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2275 2026-10-26T20:25:47Z ERROR api-gateway [t-5118] POST /checkout 500 23898ms: upstream order-service returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "postgres",
+          "until": "20:12:00",
+          "limit": 40
+        },
+        "output": "17 match(es):\n#2 2026-10-26T20:06:01Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 23\n#64 2026-10-26T20:06:28Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 8\n#117 2026-10-26T20:06:52Z INFO postgres checkpoint complete: wrote 429 buffers (7.6%)\n#168 2026-10-26T20:07:17Z INFO postgres checkpoint complete: wrote 808 buffers (2.6%)\n#216 2026-10-26T20:07:40Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 23\n#258 2026-10-26T20:07:58Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 12\n#317 2026-10-26T20:08:26Z INFO postgres checkpoint complete: wrote 1353 buffers (5.5%)\n#355 2026-10-26T20:08:45Z INFO postgres checkpoint complete: wrote 849 buffers (2.0%)\n#423 2026-10-26T20:09:14Z INFO postgres checkpoint complete: wrote 1018 buffers (4.1%)\n#479 2026-10-26T20:09:37Z INFO postgres checkpoint complete: wrote 205 buffers (4.3%)\n#530 2026-10-26T20:09:59Z INFO postgres checkpoint complete: wrote 316 buffers (5.1%)\n#600 2026-10-26T20:10:26Z INFO postgres checkpoint complete: wrote 278 buffers (4.2%)\n#651 2026-10-26T20:10:49Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 12\n#707 2026-10-26T20:11:15Z INFO postgres checkpoint complete: wrote 791 buffers (3.8%)\n#749 2026-10-26T20:11:34Z INFO postgres checkpoint complete: wrote 1181 buffers (5.3%)\n#760 2026-10-26T20:11:39Z WARN postgres disk usage 95% on /var/lib/postgresql/data (WAL/binlog growth 858MB/h)\n#804 2026-10-26T20:11:59Z INFO postgres checkpoint complete: wrote 1321 buffers (2.2%)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.92,
+              "evidenceLines": [
+                760,
+                1127,
+                1362,
+                1392,
+                1484,
+                1532,
+                1598
+              ],
+              "reasoning": "The postgres data volume filled up: disk at 95% at 20:11:39 (#760), 99% at 20:14:28 (#1127), then 'No space left on device' from 20:16:18 (#1362, #1532). Order-service inserts into orders fail with 'could not extend file' and DiskFullError (#1392, #1484, #1598), so POST /checkout returns 500s at the gateway (#1368 and later). Reads still work because only writes need new space, which matches 'reads look healthy'. The audit-consumer poison message (msg-478689) only affects audit lag. The billing-reconciler checksum errors are on old 2019 archive partitions. The one card-processor connection reset (#761) is a single retried call. None of these are on the checkout write path."
+            },
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.04,
+              "evidenceLines": [
+                1220,
+                1251,
+                1307
+              ],
+              "reasoning": "audit-consumer crash-loops on msg-478689, so audit.events lag grows. Account-svc publishes slowly but does not fail, and this doesn't explain the order insert failures."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.02,
+              "evidenceLines": [
+                1246,
+                1372
+              ],
+              "reasoning": "Checksum violations in billing-reconciler's invoice_archive rows. These are old partitions that the checkout path doesn't touch."
+            }
+          ],
+          "recommendedAction": "Free or add space on the postgres data volume now: expand the volume, or clear WAL by finding stale replication slots or a failing WAL archive_command. Then confirm order inserts succeed. Look into why WAL is growing at about 860MB/h and add a disk-usage alert that fires earlier. Separately, park poison message msg-478689 in a DLQ so audit-consumer recovers."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 2,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 988,
+      "cacheReadTokens": 10220,
+      "cacheWriteTokens": 7320
+    },
+    "durationMs": 10392,
+    "stopReason": "tool_use"
+  }
+}

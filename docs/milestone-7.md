@@ -122,8 +122,8 @@ Do these in order. Each one ends with `npm test` and `npm run typecheck` passing
 | T3. Loud decoys | Done | c3e7876 |
 | T4. Concurrent incidents and the `secondary` role | Done | 91630ba |
 | T5. Long haystacks, fairness checks, baseline ceiling | Done | 6a25997 |
-| T6. Pilot and calibrate on the v2 dev set | Done (band missed) | |
-| T7. Model matrix and repeats on the v2 test set | Not started | |
+| T6. Pilot and calibrate on the v2 dev set | Done (band missed) | 9e5db7a |
+| T7. Model matrix and repeats on the v2 test set | Done | |
 | T8. Write-up, site update, deploy | Not started | |
 
 ### T1. Dataset plumbing for generator v2
@@ -246,6 +246,19 @@ What this means for T7 and T8: v2 is unlikely to separate models on top-1. What 
 
 **Done when:** all runs are complete (no `incomplete` status) and on the leaderboard, and the paired comparisons and the variance numbers are recorded in `results/DATASET-V2.md`.
 
+Done. Eight cold runs, all `complete`, $9.19: Haiku low ×3, Haiku medium, Sonnet low and medium, Opus low and medium. The full tables are in [`results/DATASET-V2.md`](../results/DATASET-V2.md#model-matrix-on-the-v2-test-set-t7).
+
+- **Every model is at 92–100% top-1.** No model-vs-model gap (largest: Sonnet low, −6 pts against Opus low) exceeds the 8-point spread between three identical Haiku low runs (100%, 92%, 98%).
+- **The paired bootstrap is not enough on its own.** Comparing Haiku low run 1 with run 2 gives top-1 −8.3 pts, 95% [−16.7, −2.1]: "significant" between identical configurations. It resamples incidents, not reruns. Claims in T8 need a gap larger than the measured run-to-run spread, not just an interval that excludes 0.
+- **What separates the models beyond noise:** cost (Haiku 1/13 of Opus low), latency (Sonnet fastest), and evidence recall (Sonnet low −10 pts and Opus medium +9 pts against Opus low).
+- **The T6 bait was almost never taken on the test set:** a lookalike's category was picked once in 192 chances, and no top hypothesis cited a lookalike, decoy or second-fault line.
+- **Budgets never bound:** 0 of 384 investigations ran out.
+
+Decisions made while building it:
+
+- **`npm run compare` reports `herringsCited`** (labeled herring lines cited in any hypothesis, per incident), since on v2 that's how a model would show it took the bait. `secondaryCited` isn't added: it was 0 in every top hypothesis.
+- **Haiku and Sonnet at medium were run** (the optional pair). Opus high was not (open question 4): with Opus low at 100%, there's no headroom for it to show.
+
 ### T8. Write-up, site update, deploy
 
 - README: a "Harder incidents (Phase 7)" section with the v2 matrix, what the models fell for, and whether the cheapest model is still the right one.
@@ -259,7 +272,7 @@ What this means for T7 and T8: v2 is unlikely to separate models on top-1. What 
 - [ ] T1 to T8 are complete.
 - [ ] `npm test` and `npm run typecheck` pass; the site builds.
 - [ ] v1 datasets and all pre-Phase-7 run records are unchanged.
-- [ ] On the v2 test set, at least two models differ on top-1 by more than the paired 95% interval, or the write-up explains why not.
+- [ ] On the v2 test set, at least two models differ on top-1 by more than the paired 95% interval, or the write-up explains why not. *(T7: they don't, beyond run-to-run noise. T8's write-up must explain why.)*
 - [ ] Every claim in the write-up has a paired interval behind it.
 
 ## Open questions
@@ -267,5 +280,5 @@ What this means for T7 and T8: v2 is unlikely to separate models on top-1. What 
 1. **Calibration band.** 65–85% for Opus medium leaves room both ways. Is a harder target, like 50–70%, more useful for separating models, at the risk of a set that mostly measures budget exhaustion? *Answered at T6: even 65–85% was out of reach. Two rounds of features left Opus medium at 94% on the hard tier, with no budget exhaustion. Fair synthetic bait doesn't defeat these models on diagnosis.*
 2. **Budgets.** Keeping v1's budgets makes v1 and v2 comparable, but long haystacks may make budget the binding constraint. Alternative: raise budgets for v2 and report both. *Answered at T6: keep v1's budgets. They never bound in any pilot (median 6 tool calls, maximum 19, out of 40).*
 3. **Concurrent incidents and scoring.** This spec only reports `secondaryCited`. Should citing the secondary fault's cause lines in the top hypothesis count against the agent the way a herring does?
-4. **Effort levels.** The matrix keeps `low` and `medium`. On harder incidents, `high` may now matter for Opus and Sonnet. Add Opus high (~$5+) if the budget allows?
+4. **Effort levels.** The matrix keeps `low` and `medium`. On harder incidents, `high` may now matter for Opus and Sonnet. Add Opus high (~$5+) if the budget allows? *Answered at T7: no. Opus low is already at 100% top-1 on v2 test, and medium adds only recall.*
 5. **Prompt v4.** If v3 does badly on v2, is tuning a v4 on the v2 dev set the next phase, or should the comparison stay "one fixed prompt, many models"?

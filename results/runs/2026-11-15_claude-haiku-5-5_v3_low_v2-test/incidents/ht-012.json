@@ -1,0 +1,171 @@
+{
+  "score": {
+    "incidentId": "ht-012",
+    "difficulty": "hard",
+    "scenario": "poison_message/consumer-crash-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "poison_message",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 4,
+      "precision": 0.6666666666666666,
+      "recall": 0.5,
+      "f1": 0.5714285714285715
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.00287361,
+    "durationMs": 10456,
+    "iterations": 6,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 14,
+      "output": 2134,
+      "cacheRead": 40646,
+      "cacheWrite": 11190
+    }
+  },
+  "result": {
+    "incidentId": "ht-012",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.9,
+          "evidenceLines": [
+            2908,
+            2968,
+            3062,
+            3240,
+            2910,
+            2970
+          ],
+          "reasoning": "event-processor crash-loops on a single message, msg-476560 at events.raw offset 720765. Each time it reads that offset, expandReferences overflows the call stack (RangeError: Maximum call stack size exceeded), the process exits with code 1, and Kubernetes restarts it with growing backoff (10s, 20s, 40s, 80s). Because the consumer never commits past the message, it cannot advance, so events.raw lag keeps rising. The message appears only in the crash lines, which fits a malformed or deeply self-referencing payload rather than a load problem. The GC warning at #2547 (782ms pause, heap 56%) is not a memory fault. The payment-svc card-processor timeouts (#3542, #3766, #3921) and the api-gateway 503s are a separate, downstream problem and do not explain the event-processor crash. The report-cron pandas ModuleNotFoundError (#3019) and the metrics-agent queue drops are also unrelated."
+        }
+      ],
+      "recommendedAction": "Quarantine or skip msg-476560 (offset 720765 on events.raw) by moving it to a dead-letter topic or advancing the consumer offset past it, then confirm event-processor stays up and lag drains. Add a recursion-depth guard or cycle detection to expandReferences, and find the producer that emitted the self-referencing payload. Separately, investigate the payment-svc to card-processor timeouts, and fix the report-cron image missing pandas."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "event-processor",
+          "level": "WARN",
+          "limit": 50
+        },
+        "output": "9 match(es):\n#2547 2026-11-20T14:54:44Z WARN event-processor GC pause 782ms (G1 Old Gen), heap 56% after collection\n#2908 2026-11-20T14:56:14Z FATAL event-processor consumer aborted: recursion limit hit in expandReferences for msg-476560 at offset 720765\n#2910 2026-11-20T14:56:14Z ERROR event-processor process exited with code 1, restarting (restart 1, backoff 10s)\n#2968 2026-11-20T14:56:30Z FATAL event-processor unhandled exception processing msg-476560 (offset 720765): RangeError: Maximum call stack size exceeded at expandReferences\n#2970 2026-11-20T14:56:30Z ERROR event-processor process exited with code 1, restarting (restart 2, backoff 20s)\n#3062 2026-11-20T14:56:56Z FATAL event-processor process crashed on msg-476560@720765: RangeError: call stack overflow in expandReferences\n#3067 2026-11-20T14:56:56Z ERROR event-processor process exited with code 1, restarting (restart 3, backoff 40s)\n#3240 2026-11-20T14:57:44Z FATAL event-processor uncaught RangeError (stack size exceeded) while handling offset 720765 (msg-476560)\n#3241 2026-11-20T14:57:44Z ERROR event-processor process exited with code 1, restarting (restart 4, backoff 80s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 50
+        },
+        "output": "47 match(es):\n#1716 2026-11-20T14:51:18Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 458 samples\n#2044 2026-11-20T14:52:37Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 473 samples\n#2374 2026-11-20T14:54:01Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 904 samples\n#2709 2026-11-20T14:55:24Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2313 samples\n#2901 2026-11-20T14:56:11Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1685 samples\n#2908 2026-11-20T14:56:14Z FATAL event-processor consumer aborted: recursion limit hit in expandReferences for msg-476560 at offset 720765\n#2910 2026-11-20T14:56:14Z ERROR event-processor process exited with code 1, restarting (restart 1, backoff 10s)\n#2968 2026-11-20T14:56:30Z FATAL event-processor unhandled exception processing msg-476560 (offset 720765): RangeError: Maximum call stack size exceeded at expandReferences\n#2970 2026-11-20T14:56:30Z ERROR event-processor process exited with code 1, restarting (restart 2, backoff 20s)\n#3019 2026-11-20T14:56:43Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3062 2026-11-20T14:56:56Z FATAL event-processor process crashed on msg-476560@720765: RangeError: call stack overflow in expandReferences\n#3067 2026-11-20T14:56:56Z ERROR event-processor process exited with code 1, restarting (restart 3, backoff 40s)\n#3114 2026-11-20T14:57:09Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2227 samples\n#3240 2026-11-20T14:57:44Z FATAL event-processor uncaught RangeError (stack size exceeded) while handling offset 720765 (msg-476560)\n#3241 2026-11-20T14:57:44Z ERROR event-processor process exited with code 1, restarting (restart 4, backoff 80s)\n#3257 2026-11-20T14:57:48Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3391 2026-11-20T14:58:30Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 700 samples\n#3542 2026-11-20T14:59:20Z ERROR payment-svc [t-10045] call to the card processor aborted: no response within 30s\n#3545 2026-11-20T14:59:20Z ERROR order-service [t-10045] POST /charge -> payment-svc: context deadline exceeded after 30.0s (o-9849)\n#3588 2026-11-20T14:59:33Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3608 2026-11-20T14:59:37Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2305 samples\n#3737 2026-11-20T15:00:14Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3766 2026-11-20T15:00:25Z ERROR payment-svc [t-10202] HTTP client: read timed out after 30000 ms waiting for api.cardproc.example\n#3768 2026-11-20T15:00:25Z ERROR order-service [t-10202] PaymentClient.charge timed out after 30000ms calling payment-svc POST /charge (o-9984)\n#3903 2026-11-20T15:01:03Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3921 2026-11-20T15:01:09Z ERROR payment-svc [t-10297] card processor call FAILED: upstream timeout after 30000ms POST https://api.cardproc.example/v1/charges\n#3923 2026-11-20T15:01:09Z ERROR order-service [t-10297] upstream request to payment-svc failed: ReadTimeout (read timeout=30s) [o-10073]\n#3975 2026-11-20T15:01:26Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2021 samples\n#3994 2026-11-20T15:01:31Z ERROR api-gateway [t-10356] POST /checkout 503 13430ms: upstream order-service returned 503 Service Unavailable\n#4127 2026-11-20T15:02:08Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4210 2026-11-20T15:02:33Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1404 samples\n#4254 2026-11-20T15:02:48Z ERROR api-gateway [t-10534] POST /checkout 503 17959ms: upstream order-service returned 503 Service Unavailable\n#4393 2026-11-20T15:03:31Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4507 2026-11-20T15:04:06Z ERROR api-gateway [t-10713] POST /checkout 503 21626ms: upstream order-service returned 503 Service Unavailable\n#4530 2026-11-20T15:04:14Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 759 samples\n#4619 2026-11-20T15:04:40Z ERROR order-service pool checkout timeout: no connection to payment-svc available after 5000ms\n#4707 2026-11-20T15:05:04Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4721 2026-11-20T15:05:08Z ERROR api-gateway [t-10864] POST /checkout 503 5580ms: upstream order-service returned 503 Service Unavailable\n#4794 2026-11-20T15:05:32Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 970 samples\n#4821 2026-11-20T15:05:41Z ERROR api-gateway [t-10925] POST /checkout 503 15472ms: upstream order-service returned 503 Service Unavailable\n#4842 2026-11-20T15:05:46Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4987 2026-11-20T15:06:35Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1895 samples\n#5127 2026-11-20T15:07:20Z ERROR api-gateway [t-11131] POST /checkout 503 5920ms: upstream order-service returned 503 Service Unavailable\n#5143 2026-11-20T15:07:24Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#5194 2026-11-20T15:07:41Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 636 samples\n#5278 2026-11-20T15:08:06Z ERROR api-gateway [t-11231] POST /checkout 503 8415ms: upstream order-service returned 503 Service Unavailable\n#5322 2026-11-20T15:08:21Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "msg-476560",
+          "limit": 30
+        },
+        "output": "4 match(es):\n#2908 2026-11-20T14:56:14Z FATAL event-processor consumer aborted: recursion limit hit in expandReferences for msg-476560 at offset 720765\n#2968 2026-11-20T14:56:30Z FATAL event-processor unhandled exception processing msg-476560 (offset 720765): RangeError: Maximum call stack size exceeded at expandReferences\n#3062 2026-11-20T14:56:56Z FATAL event-processor process crashed on msg-476560@720765: RangeError: call stack overflow in expandReferences\n#3240 2026-11-20T14:57:44Z FATAL event-processor uncaught RangeError (stack size exceeded) while handling offset 720765 (msg-476560)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 2908,
+          "before": 12,
+          "after": 2
+        },
+        "output": "#2896 2026-11-20T14:56:11Z INFO order-service [t-9601] order o-9489 accepted, calling payment-svc POST /charge\n#2897 2026-11-20T14:56:11Z INFO payment-svc [t-9601] POST /charge o-9489 ok 26ms\n#2898 2026-11-20T14:56:11Z INFO api-gateway [t-9601] POST /checkout 200 116ms\n#2899 2026-11-20T14:56:11Z DEBUG enrichment-svc GC pause 21ms (young), heap 37%\n#2900 2026-11-20T14:56:11Z INFO geo-cache stats: hits=11110 misses=780 evicted=0 connected_clients=36\n#2901 2026-11-20T14:56:11Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1685 samples\n#2902 2026-11-20T14:56:12Z INFO order-consumer processed batch of 66 messages from orders.events (lag 292ms)\n#2903 2026-11-20T14:56:12Z INFO ingest-api [t-9603] event e-9491 accepted, calling enrichment-svc POST /enrich\n#2904 2026-11-20T14:56:12Z INFO ingest-gateway [t-9603] POST /v1/events 200 46ms\n#2905 2026-11-20T14:56:13Z INFO redis stats: hits=18604 misses=403 evicted=0 connected_clients=58\n#2906 2026-11-20T14:56:13Z INFO ingest-api [t-9607] event e-9493 accepted, calling enrichment-svc POST /enrich\n#2907 2026-11-20T14:56:13Z INFO ingest-gateway [t-9607] POST /v1/events 200 69ms\n#2908 2026-11-20T14:56:14Z FATAL event-processor consumer aborted: recursion limit hit in expandReferences for msg-476560 at offset 720765\n#2909 2026-11-20T14:56:14Z INFO postgres checkpoint complete: wrote 795 buffers (2.2%)\n#2910 2026-11-20T14:56:14Z ERROR event-processor process exited with code 1, restarting (restart 1, backoff 10s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "event-processor",
+          "since": "14:44:00",
+          "until": "14:56:13",
+          "limit": 15,
+          "query": "offset"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "event-processor",
+          "until": "14:56:13",
+          "limit": 20,
+          "level": "INFO"
+        },
+        "output": "180 match(es), showing first 20:\n#9 2026-11-20T14:44:02Z INFO event-processor processed batch of 28 messages from events.raw (lag 234ms)\n#18 2026-11-20T14:44:05Z INFO event-processor processed batch of 109 messages from events.raw (lag 394ms)\n#39 2026-11-20T14:44:09Z INFO event-processor processed batch of 109 messages from events.raw (lag 357ms)\n#55 2026-11-20T14:44:13Z INFO event-processor processed batch of 86 messages from events.raw (lag 246ms)\n#66 2026-11-20T14:44:16Z INFO event-processor processed batch of 108 messages from events.raw (lag 353ms)\n#75 2026-11-20T14:44:19Z INFO event-processor processed batch of 69 messages from events.raw (lag 221ms)\n#93 2026-11-20T14:44:23Z INFO event-processor processed batch of 78 messages from events.raw (lag 258ms)\n#106 2026-11-20T14:44:26Z INFO event-processor processed batch of 77 messages from events.raw (lag 264ms)\n#120 2026-11-20T14:44:29Z INFO event-processor processed batch of 90 messages from events.raw (lag 297ms)\n#131 2026-11-20T14:44:32Z INFO event-processor processed batch of 88 messages from events.raw (lag 334ms)\n#152 2026-11-20T14:44:37Z INFO event-processor processed batch of 53 messages from events.raw (lag 230ms)\n#168 2026-11-20T14:44:41Z INFO event-processor processed batch of 63 messages from events.raw (lag 307ms)\n#187 2026-11-20T14:44:45Z INFO event-processor processed batch of 32 messages from events.raw (lag 71ms)\n#205 2026-11-20T14:44:50Z INFO event-processor processed batch of 87 messages from events.raw (lag 265ms)\n#213 2026-11-20T14:44:53Z INFO event-processor processed batch of 98 messages from events.raw (lag 323ms)\n#230 2026-11-20T14:44:57Z INFO event-processor processed batch of 67 messages from events.raw (lag 237ms)\n#247 2026-11-20T14:45:01Z INFO event-processor processed batch of 67 messages from events.raw (lag 393ms)\n#260 2026-11-20T14:45:05Z INFO event-processor processed batch of 51 messages from events.raw (lag 243ms)\n#283 2026-11-20T14:45:10Z INFO event-processor processed batch of 37 messages from events.raw (lag 250ms)\n#294 2026-11-20T14:45:13Z INFO event-processor processed batch of 95 messages from events.raw (lag 284ms)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.9,
+              "evidenceLines": [
+                2908,
+                2968,
+                3062,
+                3240,
+                2910,
+                2970
+              ],
+              "reasoning": "event-processor crash-loops on a single message, msg-476560 at events.raw offset 720765. Each time it reads that offset, expandReferences overflows the call stack (RangeError: Maximum call stack size exceeded), the process exits with code 1, and Kubernetes restarts it with growing backoff (10s, 20s, 40s, 80s). Because the consumer never commits past the message, it cannot advance, so events.raw lag keeps rising. The message appears only in the crash lines, which fits a malformed or deeply self-referencing payload rather than a load problem. The GC warning at #2547 (782ms pause, heap 56%) is not a memory fault. The payment-svc card-processor timeouts (#3542, #3766, #3921) and the api-gateway 503s are a separate, downstream problem and do not explain the event-processor crash. The report-cron pandas ModuleNotFoundError (#3019) and the metrics-agent queue drops are also unrelated.",
+              "recommendedAction": "Quarantine or skip msg-476560 (offset 720765 on events.raw) by moving it to a dead-letter topic or advancing the consumer offset past it, then confirm event-processor stays up and lag drains. Add a recursion-depth guard or cycle detection to expandReferences, and find the producer that emitted the self-referencing payload. Separately, investigate the payment-svc to card-processor timeouts, and fix the report-cron image missing pandas."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.9,
+              "evidenceLines": [
+                2908,
+                2968,
+                3062,
+                3240,
+                2910,
+                2970
+              ],
+              "reasoning": "event-processor crash-loops on a single message, msg-476560 at events.raw offset 720765. Each time it reads that offset, expandReferences overflows the call stack (RangeError: Maximum call stack size exceeded), the process exits with code 1, and Kubernetes restarts it with growing backoff (10s, 20s, 40s, 80s). Because the consumer never commits past the message, it cannot advance, so events.raw lag keeps rising. The message appears only in the crash lines, which fits a malformed or deeply self-referencing payload rather than a load problem. The GC warning at #2547 (782ms pause, heap 56%) is not a memory fault. The payment-svc card-processor timeouts (#3542, #3766, #3921) and the api-gateway 503s are a separate, downstream problem and do not explain the event-processor crash. The report-cron pandas ModuleNotFoundError (#3019) and the metrics-agent queue drops are also unrelated."
+            }
+          ],
+          "recommendedAction": "Quarantine or skip msg-476560 (offset 720765 on events.raw) by moving it to a dead-letter topic or advancing the consumer offset past it, then confirm event-processor stays up and lag drains. Add a recursion-depth guard or cycle detection to expandReferences, and find the producer that emitted the self-referencing payload. Separately, investigate the payment-svc to card-processor timeouts, and fix the report-cron image missing pandas."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 2134,
+      "cacheReadTokens": 40646,
+      "cacheWriteTokens": 11190
+    },
+    "durationMs": 10456,
+    "stopReason": "tool_use"
+  }
+}

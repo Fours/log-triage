@@ -1,0 +1,245 @@
+{
+  "score": {
+    "incidentId": "ht-036",
+    "difficulty": "medium",
+    "scenario": "dependency_timeout/external-hang",
+    "truth": "dependency_timeout",
+    "acceptable": [
+      "external_outage"
+    ],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 8,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "secondaryCited": 4,
+    "costUsd": 0.004046255,
+    "durationMs": 14274,
+    "iterations": 6,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 14,
+      "output": 3438,
+      "cacheRead": 50698,
+      "cacheWrite": 14551
+    }
+  },
+  "result": {
+    "incidentId": "ht-036",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.85,
+          "evidenceLines": [
+            1465,
+            1501,
+            1545,
+            1546,
+            1616,
+            1617,
+            1706,
+            1708
+          ],
+          "reasoning": "The earliest anomaly on the /search path is catalog-svc's calls to the external translation API (api.translate.example) getting slow: 4127ms at #1465 (01:22:19), then 10304ms at #1501, against a 2000ms soft threshold. From there the calls hang: read timeouts after 30s at #1545, and 'upstream timeout'/'no response within 30s' at #1616 and #1706. catalog-svc's /products/batch calls are then held for up to 30s, so search-api's connection pool to catalog-svc saturates (50/50, queued requests, pool checkout timeouts; #1698, #1844, #1867 are symptoms only). search-api fails with ReadTimeout/deadline exceeded (#1546, #1617, #1708), and web-bff returns 503s on GET /search (#1718, #1964). The web-bff 5xx and pool saturation are downstream amplification, not the origin. Separately, enrichment-svc has 401 invalid_api_key errors for the geo-IP provider (#1583, #1661) that break the ingest path. That is a real but separate fault outside the /search call chain. Search-api heap warnings (#1043) are at 83% and are not the trigger."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.3,
+          "evidenceLines": [
+            1511,
+            1583,
+            1661,
+            1758
+          ],
+          "reasoning": "Alternative for the secondary fault: enrichment-svc's geo-IP provider credentials were rejected with 401 invalid_api_key from about 01:22:53 onward, consistent with a rotated or expired credential. This explains the ingest-path 502s but not the /search 5xx spike, so it is a contributing issue rather than the primary cause of this alert."
+        }
+      ],
+      "recommendedAction": "Mitigate the search outage by lowering the catalog-svc timeout on the translation API call (or bypassing translation for /products/batch) so requests fail fast instead of holding pooled connections, and engage the translation vendor about the hang. Add a circuit breaker on the translation call. Separately, rotate the geo-IP API key used by enrichment-svc (401 invalid_api_key) to restore ingest, which is a separate path."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "48 match(es):\n#1043 2026-10-01T01:18:56Z WARN search-api heap usage 83% of 4096MiB (threshold 80%), starting concurrent mark cycle\n#1465 2026-10-01T01:22:19Z WARN catalog-svc [t-3860] translation API call slow: 4127ms (soft threshold 2000ms) POST https://api.translate.example/v2/translate\n#1501 2026-10-01T01:22:44Z WARN catalog-svc [t-3879] translation API call slow: 10304ms (soft threshold 2000ms) POST https://api.translate.example/v2/translate\n#1511 2026-10-01T01:22:53Z ERROR enrichment-svc [t-3884] POST /v1/lookup -> 401 {\"error\":\"invalid_api_key\"}\n#1520 2026-10-01T01:22:58Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 945 samples\n#1522 2026-10-01T01:23:01Z ERROR ingest-api [t-3889] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#1545 2026-10-01T01:23:19Z ERROR catalog-svc [t-3897] HTTP client: read timed out after 30000 ms waiting for api.translate.example\n#1546 2026-10-01T01:23:19Z ERROR search-api [t-3897] upstream request to catalog-svc failed: ReadTimeout (read timeout=30s) [p-6100]\n#1553 2026-10-01T01:23:24Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 846 samples\n#1570 2026-10-01T01:23:37Z ERROR ingest-gateway [t-3911] POST /v1/events 502 24453ms: upstream ingest-api returned 502 Bad Gateway\n#1583 2026-10-01T01:23:49Z ERROR enrichment-svc [t-3913] geo-IP provider auth failed: HTTP 401, credentials not accepted by api.geoip.example\n#1587 2026-10-01T01:23:52Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1976 samples\n#1608 2026-10-01T01:24:09Z ERROR ingest-gateway [t-3925] POST /v1/events 502 19066ms: upstream ingest-api returned 502 Bad Gateway\n#1616 2026-10-01T01:24:17Z ERROR catalog-svc [t-3930] translation API call FAILED: upstream timeout after 30000ms POST https://api.translate.example/v2/translate\n#1617 2026-10-01T01:24:18Z ERROR search-api [t-3930] GET /products/batch -> catalog-svc: context deadline exceeded after 30.0s (p-6117)\n#1640 2026-10-01T01:24:37Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 614 samples\n#1655 2026-10-01T01:24:54Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 810 samples\n#1661 2026-10-01T01:25:01Z ERROR enrichment-svc [t-3942] geo-IP provider rejected request: 401 Unauthorized (invalid API key) POST https://api.geoip.example/v1/lookup\n#1668 2026-10-01T01:25:07Z ERROR ingest-gateway [t-3944] POST /v1/events 502 15060ms: upstream ingest-api returned 502 Bad Gateway\n#1686 2026-10-01T01:25:25Z ERROR ingest-api [t-3950] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#1691 2026-10-01T01:25:30Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 709 samples\n#1698 2026-10-01T01:25:36Z WARN search-api HTTP connection pool to catalog-svc at capacity (50/50 in use), 37 requests queued\n#1706 2026-10-01T01:25:40Z ERROR catalog-svc [t-3953] call to the translation API aborted: no response within 30s\n#1708 2026-10-01T01:25:40Z ERROR search-api [t-3953] CatalogClient.getBatch timed out after 30000ms calling catalog-svc GET /products/batch (p-6133)\n#1718 2026-10-01T01:25:51Z ERROR web-bff [t-3961] GET /search 503 5857ms: upstream search-api returned 503 Service Unavailable\n#1735 2026-10-01T01:26:08Z ERROR ingest-gateway [t-3969] POST /v1/events 502 24681ms: upstream ingest-api returned 502 Bad Gateway\n#1737 2026-10-01T01:26:08Z ERROR web-bff [t-3973] GET /search 503 17972ms: upstream search-api returned 503 Service Unavailable\n#1738 2026-10-01T01:26:08Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2158 samples\n#1758 2026-10-01T01:26:22Z ERROR enrichment-svc [t-3987] POST /v1/lookup -> 401 {\"error\":\"invalid_api_key\"}\n#1770 2026-10-01T01:26:36Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 541 samples\n#1781 2026-10-01T01:26:44Z ERROR web-bff [t-3997] GET /search 503 5340ms: upstream search-api returned 503 Service Unavailable\n#1797 2026-10-01T01:27:00Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 702 samples\n#1810 2026-10-01T01:27:10Z ERROR ingest-gateway [t-4007] POST /v1/events 502 13555ms: upstream ingest-api returned 502 Bad Gateway\n#1831 2026-10-01T01:27:35Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 293 samples\n#1832 2026-10-01T01:27:36Z ERROR web-bff [t-4016] GET /search 503 17295ms: upstream search-api returned 503 Service Unavailable\n#1844 2026-10-01T01:27:41Z WARN search-api HTTP connection pool to catalog-svc at capacity (50/50 in use), 61 requests queued\n#1858 2026-10-01T01:27:54Z ERROR ingest-api [t-4025] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#1867 2026-10-01T01:28:00Z ERROR search-api pool checkout timeout: no connection to catalog-svc available after 5000ms\n#1870 2026-10-01T01:28:03Z ERROR ingest-gateway [t-4030] POST /v1/events 502 12565ms: upstream ingest-api returned 502 Bad Gateway\n#1872 2026-10-01T01:28:06Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 437 samples\n#1887 2026-10-01T01:28:22Z ERROR web-bff [t-4033] GET /search 503 16178ms: upstream search-api returned 503 Service Unavailable\n#1892 2026-10-01T01:28:30Z ERROR ingest-api [t-4036] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#1899 2026-10-01T01:28:33Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1848 samples\n#1928 2026-10-01T01:29:05Z ERROR ingest-gateway [t-4047] POST /v1/events 502 23109ms: upstream ingest-api returned 502 Bad Gateway\n#1929 2026-10-01T01:29:05Z ERROR web-bff [t-4048] GET /search 503 11470ms: upstream search-api returned 503 Service Unavailable\n#1948 2026-10-01T01:29:21Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2318 samples\n#1963 2026-10-01T01:29:38Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2373 samples\n#1964 2026-10-01T01:29:39Z ERROR web-bff [t-4061] GET /search 503 27887ms: upstream search-api returned 503 Service Unavailable"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "search-api",
+          "limit": 30
+        },
+        "output": "274 match(es), showing first 30:\n#1 2026-10-01T01:11:01Z INFO search-api [t-2898] product p-5350 accepted, calling catalog-svc GET /products/batch\n#12 2026-10-01T01:11:06Z INFO search-api [t-2905] product p-5355 accepted, calling catalog-svc GET /products/batch\n#15 2026-10-01T01:11:08Z INFO search-api [t-2908] product p-5358 accepted, calling catalog-svc GET /products/batch\n#20 2026-10-01T01:11:10Z INFO search-api [t-2915] product p-5362 accepted, calling catalog-svc GET /products/batch\n#32 2026-10-01T01:11:14Z INFO search-api [t-2918] product p-5367 accepted, calling catalog-svc GET /products/batch\n#40 2026-10-01T01:11:19Z INFO search-api [t-2922] product p-5372 accepted, calling catalog-svc GET /products/batch\n#45 2026-10-01T01:11:22Z INFO search-api [t-2926] product p-5376 accepted, calling catalog-svc GET /products/batch\n#55 2026-10-01T01:11:26Z INFO search-api [t-2929] product p-5380 accepted, calling catalog-svc GET /products/batch\n#62 2026-10-01T01:11:28Z INFO search-api [t-2934] product p-5383 accepted, calling catalog-svc GET /products/batch\n#70 2026-10-01T01:11:31Z INFO search-api [t-2936] product p-5388 accepted, calling catalog-svc GET /products/batch\n#75 2026-10-01T01:11:32Z DEBUG search-api GC pause 5ms (young), heap 34%\n#78 2026-10-01T01:11:36Z INFO search-api [t-2940] product p-5390 accepted, calling catalog-svc GET /products/batch\n#86 2026-10-01T01:11:39Z INFO search-api [t-2944] product p-5394 accepted, calling catalog-svc GET /products/batch\n#98 2026-10-01T01:11:44Z INFO search-api [t-2954] product p-5399 accepted, calling catalog-svc GET /products/batch\n#105 2026-10-01T01:11:48Z INFO search-api [t-2962] product p-5403 accepted, calling catalog-svc GET /products/batch\n#109 2026-10-01T01:11:50Z INFO search-api [t-2966] product p-5405 accepted, calling catalog-svc GET /products/batch\n#116 2026-10-01T01:11:53Z INFO search-api [t-2969] product p-5408 accepted, calling catalog-svc GET /products/batch\n#127 2026-10-01T01:11:58Z INFO search-api [t-2977] product p-5412 accepted, calling catalog-svc GET /products/batch\n#133 2026-10-01T01:12:00Z INFO search-api [t-2979] product p-5415 accepted, calling catalog-svc GET /products/batch\n#141 2026-10-01T01:12:04Z INFO search-api [t-2983] product p-5417 accepted, calling catalog-svc GET /products/batch\n#150 2026-10-01T01:12:08Z DEBUG search-api GC pause 17ms (young), heap 33%\n#151 2026-10-01T01:12:08Z INFO search-api [t-2986] product p-5421 accepted, calling catalog-svc GET /products/batch\n#160 2026-10-01T01:12:13Z INFO search-api [t-2993] product p-5426 accepted, calling catalog-svc GET /products/batch\n#171 2026-10-01T01:12:18Z INFO search-api [t-2997] product p-5430 accepted, calling catalog-svc GET /products/batch\n#175 2026-10-01T01:12:20Z INFO search-api [t-3001] product p-5432 accepted, calling catalog-svc GET /products/batch\n#186 2026-10-01T01:12:26Z INFO search-api [t-3009] product p-5437 accepted, calling catalog-svc GET /products/batch\n#195 2026-10-01T01:12:29Z INFO search-api [t-3014] product p-5440 accepted, calling catalog-svc GET /products/batch\n#200 2026-10-01T01:12:31Z DEBUG search-api GC pause 6ms (young), heap 40%\n#201 2026-10-01T01:12:31Z INFO search-api [t-3018] product p-5442 accepted, calling catalog-svc GET /products/batch\n#206 2026-10-01T01:12:34Z INFO search-api [t-3021] product p-5443 accepted, calling catalog-svc GET /products/batch"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-svc",
+          "since": "01:15:00",
+          "until": "01:23:30",
+          "limit": 40
+        },
+        "output": "80 match(es), showing first 40:\n#542 2026-10-01T01:15:05Z INFO catalog-svc [t-3238] GET /products/batch p-5611 ok 38ms\n#551 2026-10-01T01:15:12Z INFO catalog-svc config reloaded from config-service (revision 773): 0 keys changed\n#566 2026-10-01T01:15:17Z INFO catalog-svc [t-3255] GET /products/batch p-5622 ok 56ms\n#574 2026-10-01T01:15:20Z INFO catalog-svc [t-3263] GET /products/batch p-5627 ok 81ms\n#585 2026-10-01T01:15:24Z INFO catalog-svc [t-3266] GET /products/batch p-5633 ok 78ms\n#589 2026-10-01T01:15:28Z DEBUG catalog-svc GC pause 15ms (young), heap 29%\n#591 2026-10-01T01:15:29Z INFO catalog-svc [t-3272] GET /products/batch p-5637 ok 70ms\n#622 2026-10-01T01:15:43Z INFO catalog-svc [t-3295] GET /products/batch p-5652 ok 71ms\n#644 2026-10-01T01:15:55Z INFO catalog-svc [t-3310] GET /products/batch p-5665 ok 84ms\n#651 2026-10-01T01:15:57Z INFO catalog-svc [t-3317] GET /products/batch p-5671 ok 81ms\n#654 2026-10-01T01:15:59Z DEBUG catalog-svc GC pause 25ms (young), heap 40%\n#660 2026-10-01T01:16:02Z INFO catalog-svc [t-3323] GET /products/batch p-5675 ok 81ms\n#665 2026-10-01T01:16:05Z INFO catalog-svc [t-3326] GET /products/batch p-5676 ok 64ms\n#687 2026-10-01T01:16:14Z INFO catalog-svc [t-3342] GET /products/batch p-5684 ok 90ms\n#712 2026-10-01T01:16:27Z DEBUG catalog-svc GC pause 12ms (young), heap 40%\n#714 2026-10-01T01:16:29Z INFO catalog-svc [t-3362] GET /products/batch p-5699 ok 77ms\n#736 2026-10-01T01:16:40Z INFO catalog-svc [t-3374] GET /products/batch p-5715 ok 71ms\n#742 2026-10-01T01:16:43Z INFO catalog-svc [t-3375] GET /products/batch p-5716 ok 29ms\n#752 2026-10-01T01:16:46Z INFO catalog-svc [t-3383] GET /products/batch p-5723 ok 71ms\n#758 2026-10-01T01:16:48Z INFO catalog-svc [t-3387] GET /products/batch p-5724 ok 33ms\n#778 2026-10-01T01:16:57Z INFO catalog-svc [t-3403] GET /products/batch p-5730 ok 36ms\n#786 2026-10-01T01:17:02Z INFO catalog-svc [t-3413] GET /products/batch p-5733 ok 34ms\n#791 2026-10-01T01:17:03Z DEBUG catalog-svc GC pause 16ms (young), heap 41%\n#794 2026-10-01T01:17:05Z INFO catalog-svc [t-3417] GET /products/batch p-5735 ok 36ms\n#841 2026-10-01T01:17:27Z DEBUG catalog-svc GC pause 22ms (young), heap 36%\n#852 2026-10-01T01:17:30Z INFO catalog-svc [t-3451] GET /products/batch p-5765 ok 90ms\n#872 2026-10-01T01:17:39Z INFO catalog-svc [t-3464] GET /products/batch p-5773 ok 84ms\n#881 2026-10-01T01:17:43Z INFO catalog-svc [t-3471] GET /products/batch p-5778 ok 31ms\n#891 2026-10-01T01:17:48Z INFO catalog-svc [t-3473] GET /products/batch p-5780 ok 73ms\n#895 2026-10-01T01:17:49Z DEBUG catalog-svc GC pause 6ms (young), heap 31%\n#902 2026-10-01T01:17:53Z INFO catalog-svc [t-3481] GET /products/batch p-5787 ok 66ms\n#911 2026-10-01T01:17:57Z INFO catalog-svc [t-3484] GET /products/batch p-5790 ok 90ms\n#922 2026-10-01T01:18:02Z INFO catalog-svc [t-3492] GET /products/batch p-5794 ok 86ms\n#937 2026-10-01T01:18:09Z DEBUG catalog-svc GC pause 7ms (young), heap 33%\n#966 2026-10-01T01:18:22Z INFO catalog-svc [t-3525] GET /products/batch p-5819 ok 65ms\n#972 2026-10-01T01:18:25Z INFO catalog-svc [t-3529] GET /products/batch p-5821 ok 85ms\n#984 2026-10-01T01:18:29Z INFO catalog-svc [t-3536] GET /products/batch p-5828 ok 84ms\n#994 2026-10-01T01:18:35Z INFO catalog-svc [t-3543] GET /products/batch p-5833 ok 64ms\n#1002 2026-10-01T01:18:37Z INFO catalog-svc [t-3548] GET /products/batch p-5839 ok 71ms\n#1009 2026-10-01T01:18:41Z INFO catalog-svc [t-3551] GET /products/batch p-5844 ok 58ms"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1465,
+          "before": 6,
+          "after": 4
+        },
+        "output": "#1459 2026-10-01T01:22:17Z INFO events-db InnoDB: page cleaner flushed 487 pages, buffer pool hit rate 99%\n#1460 2026-10-01T01:22:17Z INFO event-processor processed batch of 110 messages from events.raw (lag 190ms)\n#1461 2026-10-01T01:22:18Z INFO ingest-api [t-3857] event e-6074 accepted, calling enrichment-svc POST /enrich\n#1462 2026-10-01T01:22:18Z INFO enrichment-svc [t-3857] POST /enrich e-6074 ok 79ms\n#1463 2026-10-01T01:22:19Z INFO ingest-gateway [t-3857] POST /v1/events 200 74ms\n#1464 2026-10-01T01:22:19Z INFO geo-cache stats: hits=18894 misses=547 evicted=0 connected_clients=49\n#1465 2026-10-01T01:22:19Z WARN catalog-svc [t-3860] translation API call slow: 4127ms (soft threshold 2000ms) POST https://api.translate.example/v2/translate\n#1466 2026-10-01T01:22:19Z INFO metrics-agent flushed 7871 series to remote-write in 137ms\n#1467 2026-10-01T01:22:19Z INFO redis-cache stats: hits=19786 misses=383 evicted=0 connected_clients=39\n#1468 2026-10-01T01:22:21Z INFO index-worker processed batch of 43 messages from catalog.updates (lag 200ms)\n#1469 2026-10-01T01:22:22Z INFO search-api [t-3863] product p-6076 accepted, calling catalog-svc GET /products/batch"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "translat",
+          "limit": 15
+        },
+        "output": "5 match(es):\n#1465 2026-10-01T01:22:19Z WARN catalog-svc [t-3860] translation API call slow: 4127ms (soft threshold 2000ms) POST https://api.translate.example/v2/translate\n#1501 2026-10-01T01:22:44Z WARN catalog-svc [t-3879] translation API call slow: 10304ms (soft threshold 2000ms) POST https://api.translate.example/v2/translate\n#1545 2026-10-01T01:23:19Z ERROR catalog-svc [t-3897] HTTP client: read timed out after 30000 ms waiting for api.translate.example\n#1616 2026-10-01T01:24:17Z ERROR catalog-svc [t-3930] translation API call FAILED: upstream timeout after 30000ms POST https://api.translate.example/v2/translate\n#1706 2026-10-01T01:25:40Z ERROR catalog-svc [t-3953] call to the translation API aborted: no response within 30s"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-3897"
+        },
+        "output": "2 line(s) for t-3897:\n#1545 2026-10-01T01:23:19Z ERROR catalog-svc [t-3897] HTTP client: read timed out after 30000 ms waiting for api.translate.example\n#1546 2026-10-01T01:23:19Z ERROR search-api [t-3897] upstream request to catalog-svc failed: ReadTimeout (read timeout=30s) [p-6100]"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.85,
+              "evidenceLines": [
+                1465,
+                1501,
+                1545,
+                1546,
+                1616,
+                1617,
+                1706,
+                1708
+              ],
+              "reasoning": "The earliest anomaly on the /search path is catalog-svc's calls to the external translation API (api.translate.example) getting slow: 4127ms at #1465 (01:22:19), then 10304ms at #1501, against a 2000ms soft threshold. From there the calls hang: read timeouts after 30s at #1545, and 'upstream timeout'/'no response within 30s' at #1616 and #1706. catalog-svc's /products/batch calls are then held for up to 30s, so search-api's connection pool to catalog-svc saturates (50/50, queued requests, pool checkout timeouts; #1698, #1844, #1867 — symptoms only). search-api fails with ReadTimeout/deadline exceeded (#1546, #1617, #1708), and web-bff returns 503s on GET /search (#1718, #1964). The 5xx at web-bff and the pool saturation are downstream amplification, not the origin. Separately, enrichment-svc has 401 invalid_api_key errors for the geo-IP provider (#1583, #1661) that break the ingest path (ingest-api 502s, ingest-gateway 502s). That is a real but separate fault that does not sit in the /search call chain. Search-api heap warnings (#1043) are at 83% and are not the trigger.",
+              "recommendedAction": "Mitigate the search outage by lowering the catalog-svc timeout to the translation API (or bypassing/disabling translation for /products/batch) so requests fail fast instead of holding pooled connections, and engage the translation vendor about the hang. Add a circuit breaker on the translation call. Separately, rotate the geo-IP API key used by enrichment-svc (401 invalid_api_key) to restore ingest, which is a different incident path."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.3,
+              "evidenceLines": [
+                1511,
+                1583,
+                1661,
+                1758
+              ],
+              "reasoning": "Alternative for the secondary fault: enrichment-svc's credentials for the geo-IP provider were rejected with 401 invalid_api_key from about 01:22:53 onward, which is consistent with a rotated or expired credential. This explains the ingest-path 502s but not the /search 5xx spike, so it is a contributing issue rather than the primary cause of this alert.",
+              "recommendedAction": "Verify and reload the geo-IP API key in enrichment-svc config; confirm with the provider whether the key was rotated."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.85,
+              "evidenceLines": [
+                1465,
+                1501,
+                1545,
+                1546,
+                1616,
+                1617,
+                1706,
+                1708
+              ],
+              "reasoning": "The earliest anomaly on the /search path is catalog-svc's calls to the external translation API (api.translate.example) getting slow: 4127ms at #1465 (01:22:19), then 10304ms at #1501, against a 2000ms soft threshold. From there the calls hang: read timeouts after 30s at #1545, and 'upstream timeout'/'no response within 30s' at #1616 and #1706. catalog-svc's /products/batch calls are then held for up to 30s, so search-api's connection pool to catalog-svc saturates (50/50, queued requests, pool checkout timeouts; #1698, #1844, #1867 are symptoms only). search-api fails with ReadTimeout/deadline exceeded (#1546, #1617, #1708), and web-bff returns 503s on GET /search (#1718, #1964). The web-bff 5xx and pool saturation are downstream amplification, not the origin. Separately, enrichment-svc has 401 invalid_api_key errors for the geo-IP provider (#1583, #1661) that break the ingest path (ingest-api and ingest-gateway 502s). That is a real but separate fault outside the /search call chain. Search-api heap warnings (#1043) are at 83% and are not the trigger.",
+              "recommendedAction": "Mitigate the search outage by lowering the catalog-svc timeout on the translation API call (or bypassing translation for /products/batch) so requests fail fast instead of holding pooled connections, and engage the translation vendor about the hang. Add a circuit breaker on the translation call. Separately, rotate the geo-IP API key used by enrichment-svc (401 invalid_api_key) to restore ingest, which is a different path."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.3,
+              "evidenceLines": [
+                1511,
+                1583,
+                1661,
+                1758
+              ],
+              "reasoning": "Alternative for the secondary fault: enrichment-svc's geo-IP provider credentials were rejected with 401 invalid_api_key from about 01:22:53 onward, consistent with a rotated or expired credential. This explains the ingest-path 502s but not the /search 5xx spike, so it is a contributing issue rather than the primary cause of this alert.",
+              "recommendedAction": "Verify and reload the geo-IP API key in enrichment-svc config; confirm with the provider whether the key was rotated."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "recommendedAction": "Mitigate the search outage by lowering the catalog-svc timeout on the translation API call (or bypassing translation for /products/batch) so requests fail fast instead of holding pooled connections, and engage the translation vendor about the hang. Add a circuit breaker on the translation call. Separately, rotate the geo-IP API key used by enrichment-svc (401 invalid_api_key) to restore ingest, which is a separate path.",
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.85,
+              "evidenceLines": [
+                1465,
+                1501,
+                1545,
+                1546,
+                1616,
+                1617,
+                1706,
+                1708
+              ],
+              "reasoning": "The earliest anomaly on the /search path is catalog-svc's calls to the external translation API (api.translate.example) getting slow: 4127ms at #1465 (01:22:19), then 10304ms at #1501, against a 2000ms soft threshold. From there the calls hang: read timeouts after 30s at #1545, and 'upstream timeout'/'no response within 30s' at #1616 and #1706. catalog-svc's /products/batch calls are then held for up to 30s, so search-api's connection pool to catalog-svc saturates (50/50, queued requests, pool checkout timeouts; #1698, #1844, #1867 are symptoms only). search-api fails with ReadTimeout/deadline exceeded (#1546, #1617, #1708), and web-bff returns 503s on GET /search (#1718, #1964). The web-bff 5xx and pool saturation are downstream amplification, not the origin. Separately, enrichment-svc has 401 invalid_api_key errors for the geo-IP provider (#1583, #1661) that break the ingest path. That is a real but separate fault outside the /search call chain. Search-api heap warnings (#1043) are at 83% and are not the trigger."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.3,
+              "evidenceLines": [
+                1511,
+                1583,
+                1661,
+                1758
+              ],
+              "reasoning": "Alternative for the secondary fault: enrichment-svc's geo-IP provider credentials were rejected with 401 invalid_api_key from about 01:22:53 onward, consistent with a rotated or expired credential. This explains the ingest-path 502s but not the /search 5xx spike, so it is a contributing issue rather than the primary cause of this alert."
+            }
+          ]
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 3438,
+      "cacheReadTokens": 50698,
+      "cacheWriteTokens": 14551
+    },
+    "durationMs": 14274,
+    "stopReason": "tool_use"
+  }
+}

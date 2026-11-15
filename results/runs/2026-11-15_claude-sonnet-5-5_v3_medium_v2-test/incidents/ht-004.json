@@ -1,0 +1,178 @@
+{
+  "score": {
+    "incidentId": "ht-004",
+    "difficulty": "hard",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [
+      "resource_exhaustion"
+    ],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.7,
+    "top1": false,
+    "top1Lenient": true,
+    "top3": false,
+    "rank": null,
+    "evidence": {
+      "cited": 6,
+      "correct": 3,
+      "precision": 0.5,
+      "recall": 0.5,
+      "f1": 0.5
+    },
+    "herringsCited": 1,
+    "secondaryCited": 0,
+    "costUsd": 0.0549095,
+    "durationMs": 14381,
+    "iterations": 5,
+    "toolCalls": 7,
+    "tokens": {
+      "input": 12,
+      "output": 1530,
+      "cacheRead": 35830,
+      "cacheWrite": 14401
+    }
+  },
+  "result": {
+    "incidentId": "ht-004",
+    "model": "claude-sonnet-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.7,
+          "evidenceLines": [
+            2921,
+            3016,
+            3140,
+            3138,
+            3526,
+            3045
+          ],
+          "reasoning": "accounts-db ran out of CPU and connection slots. It hit 98-100% CPU and 490/500 connections at 22:05:00 (#2921, #3016, #3140). Simple PK lookups on accounts then slowed to 4-7s (#3138, #3526). account-svc queries timed out after 5000ms (#3045), which produced the 504s on POST /login at edge-proxy. I found no deploy, lock holder or config change that would explain the saturation. The only DB-side anomaly I saw beforehand was a seq-scan audit_log query (#2897), and I didn't establish it as the cause. The other errors are unrelated red herrings: the template-svc mailer 502s and open circuit breaker, the status-poller timeouts against the deprecated legacy-inventory endpoint, and the metrics-agent exporter queue being full."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.2,
+          "evidenceLines": [
+            3045,
+            3138,
+            2897
+          ],
+          "reasoning": "An accounts-db query path that is slow, perhaps the audit_log seq scan competing with the login lookups, could also be read as a hung dependency."
+        }
+      ],
+      "recommendedAction": "Treat accounts-db as saturated. Find what is consuming its CPU and connections, such as the audit_log seq scan or other heavy clients. Throttle or kill those queries, add an index on audit_log.created_at, and raise capacity or put a connection pooler in front of the database. Check account-svc connection pool sizing and the login request rate."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "85 match(es), showing first 60:\n#885 2026-11-04T21:55:38Z WARN edge-proxy disk usage 84% on /var/log (threshold 75%)\n#1175 2026-11-04T21:56:51Z WARN edge-proxy TLS certificate for *.internal.example expires in 22 days\n#1896 2026-11-04T21:59:48Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1069 samples\n#2087 2026-11-04T22:00:36Z ERROR template-svc [t-3942] email provider -> HTTP 502 (request 66112e3)\n#2188 2026-11-04T22:01:07Z ERROR template-svc [t-4001] email provider error response: status=502 body=\"Bad Gateway\" id=a564486\n#2230 2026-11-04T22:01:19Z ERROR template-svc [t-4030] email provider returned 503 Service Unavailable POST https://api.mailer.example/v3/send (x-request-id 51aee2e)\n#2235 2026-11-04T22:01:20Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 326 samples\n#2299 2026-11-04T22:01:39Z ERROR template-svc [t-4065] email provider -> HTTP 502 (request fa1d155)\n#2368 2026-11-04T22:02:00Z WARN account-svc [t-4108] AuthClient.issueToken slow: 2417ms calling auth-svc POST /tokens (soft threshold 2000ms)\n#2453 2026-11-04T22:02:24Z ERROR api-gateway [t-4178] POST /v1/notify 503 21527ms: upstream notification-svc returned 503 Service Unavailable\n#2470 2026-11-04T22:02:28Z WARN template-svc circuit breaker OPEN for api.mailer.example (failure rate 98% over 20 calls), failing fast for 30s\n#2484 2026-11-04T22:02:32Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 985 samples\n#2565 2026-11-04T22:02:56Z WARN audit-consumer GC pause 960ms (G1 Old Gen), heap 55% after collection\n#2698 2026-11-04T22:03:37Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1279 samples\n#2878 2026-11-04T22:04:41Z ERROR notification-svc [t-4432] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#2897 2026-11-04T22:04:48Z WARN accounts-db slow query 2087ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#2921 2026-11-04T22:05:00Z WARN accounts-db too many clients: 490 of 500 connection slots used, CPU at 98%\n#2935 2026-11-04T22:05:07Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2950 2026-11-04T22:05:12Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1722 samples\n#2957 2026-11-04T22:05:15Z ERROR api-gateway [t-4468] POST /v1/notify 503 8768ms: upstream notification-svc returned 503 Service Unavailable\n#3016 2026-11-04T22:05:44Z WARN accounts-db resource monitor: cpu=99% conns=471/500\n#3019 2026-11-04T22:05:45Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3036 2026-11-04T22:05:53Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 502, re-opening\n#3045 2026-11-04T22:05:59Z ERROR account-svc [t-4506] query on accounts timed out after 5000ms (u-8942)\n#3049 2026-11-04T22:06:00Z ERROR edge-proxy [t-4511] POST /login 504 14285ms: upstream account-svc timed out\n#3111 2026-11-04T22:06:29Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 745 samples\n#3122 2026-11-04T22:06:35Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3138 2026-11-04T22:06:43Z WARN accounts-db slow query 4489ms: SELECT * FROM accounts WHERE id = $1\n#3140 2026-11-04T22:06:44Z WARN accounts-db accounts-db near its connection limit (484/500), load climbing (CPU 100%)\n#3152 2026-11-04T22:06:51Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3166 2026-11-04T22:06:58Z ERROR edge-proxy [t-4550] POST /login 504 13027ms: upstream account-svc timed out\n#3178 2026-11-04T22:07:03Z ERROR api-gateway [t-4554] POST /v1/notify 503 14150ms: upstream notification-svc returned 503 Service Unavailable\n#3212 2026-11-04T22:07:19Z ERROR notification-svc [t-4571] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#3226 2026-11-04T22:07:26Z WARN accounts-db slow query 2529ms: SELECT * FROM accounts WHERE id = $1\n#3297 2026-11-04T22:08:03Z ERROR edge-proxy [t-4613] POST /login 504 29995ms: upstream account-svc timed out\n#3313 2026-11-04T22:08:12Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1954 samples\n#3314 2026-11-04T22:08:12Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3377 2026-11-04T22:08:45Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1132 samples\n#3378 2026-11-04T22:08:45Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3407 2026-11-04T22:09:02Z ERROR account-svc [t-4661] query on accounts timed out after 5000ms (u-9061)\n#3459 2026-11-04T22:09:29Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3479 2026-11-04T22:09:38Z ERROR edge-proxy [t-4692] POST /login 504 19375ms: upstream account-svc timed out\n#3523 2026-11-04T22:10:03Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3526 2026-11-04T22:10:03Z WARN accounts-db slow query 7445ms: SELECT * FROM accounts WHERE id = $1\n#3575 2026-11-04T22:10:32Z ERROR api-gateway [t-4735] POST /v1/notify 503 22759ms: upstream notification-svc returned 503 Service Unavailable\n#3587 2026-11-04T22:10:38Z ERROR edge-proxy [t-4741] POST /login 504 16783ms: upstream account-svc timed out\n#3597 2026-11-04T22:10:44Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1637 samples\n#3664 2026-11-04T22:11:15Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3685 2026-11-04T22:11:24Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 721 samples\n#3687 2026-11-04T22:11:24Z ERROR edge-proxy [t-4793] POST /login 504 24454ms: upstream account-svc timed out\n#3705 2026-11-04T22:11:31Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 502, re-opening\n#3712 2026-11-04T22:11:34Z WARN accounts-db slow query 5439ms: SELECT * FROM accounts WHERE id = $1\n#3751 2026-11-04T22:11:53Z ERROR api-gateway [t-4817] POST /v1/notify 503 9635ms: upstream notification-svc returned 503 Service Unavailable\n#3759 2026-11-04T22:11:55Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3834 2026-11-04T22:12:31Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3847 2026-11-04T22:12:36Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 616 samples\n#3869 2026-11-04T22:12:47Z ERROR edge-proxy [t-4885] POST /login 504 18849ms: upstream account-svc timed out\n#3930 2026-11-04T22:13:14Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3948 2026-11-04T22:13:24Z ERROR account-svc [t-4919] query on accounts timed out after 5000ms (u-9251)\n#3990 2026-11-04T22:13:39Z WARN accounts-db slow query 5483ms: SELECT * FROM accounts WHERE id = $1"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "accounts-db",
+          "since": "22:02:00",
+          "until": "22:05:00"
+        },
+        "output": "18 match(es):\n#2399 2026-11-04T22:02:08Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 18\n#2437 2026-11-04T22:02:19Z INFO accounts-db checkpoint complete: wrote 631 buffers (1.3%)\n#2485 2026-11-04T22:02:33Z INFO accounts-db checkpoint complete: wrote 379 buffers (3.2%)\n#2516 2026-11-04T22:02:42Z INFO accounts-db checkpoint complete: wrote 1332 buffers (7.0%)\n#2562 2026-11-04T22:02:55Z INFO accounts-db checkpoint complete: wrote 328 buffers (6.5%)\n#2596 2026-11-04T22:03:06Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 28\n#2632 2026-11-04T22:03:17Z INFO accounts-db checkpoint complete: wrote 1265 buffers (1.5%)\n#2673 2026-11-04T22:03:31Z INFO accounts-db checkpoint complete: wrote 1043 buffers (7.5%)\n#2720 2026-11-04T22:03:43Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 19\n#2745 2026-11-04T22:03:52Z INFO accounts-db checkpoint complete: wrote 827 buffers (3.5%)\n#2784 2026-11-04T22:04:01Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 2\n#2814 2026-11-04T22:04:11Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 33\n#2847 2026-11-04T22:04:23Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 24\n#2863 2026-11-04T22:04:32Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 7\n#2885 2026-11-04T22:04:45Z INFO accounts-db checkpoint complete: wrote 1295 buffers (4.3%)\n#2897 2026-11-04T22:04:48Z WARN accounts-db slow query 2087ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#2917 2026-11-04T22:04:57Z INFO accounts-db checkpoint complete: wrote 886 buffers (7.5%)\n#2921 2026-11-04T22:05:00Z WARN accounts-db too many clients: 490 of 500 connection slots used, CPU at 98%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "billing-reconciler",
+          "since": "22:00:00",
+          "until": "22:06:00"
+        },
+        "output": "33 match(es), showing first 25:\n#1982 2026-11-04T22:00:10Z INFO billing-reconciler reconciled 992 current-period invoices, 0 discrepancies\n#2006 2026-11-04T22:00:16Z INFO billing-reconciler reconciled 1193 current-period invoices, 0 discrepancies\n#2044 2026-11-04T22:00:26Z INFO billing-reconciler reconciled 934 current-period invoices, 0 discrepancies\n#2093 2026-11-04T22:00:37Z INFO billing-reconciler reconciled 781 current-period invoices, 0 discrepancies\n#2125 2026-11-04T22:00:48Z INFO billing-reconciler reconciled 847 current-period invoices, 0 discrepancies\n#2151 2026-11-04T22:00:57Z INFO billing-reconciler reconciled 1029 current-period invoices, 0 discrepancies\n#2184 2026-11-04T22:01:07Z INFO billing-reconciler reconciled 866 current-period invoices, 0 discrepancies\n#2224 2026-11-04T22:01:17Z INFO billing-reconciler reconciled 911 current-period invoices, 0 discrepancies\n#2267 2026-11-04T22:01:29Z INFO billing-reconciler reconciled 462 current-period invoices, 0 discrepancies\n#2306 2026-11-04T22:01:41Z INFO billing-reconciler reconciled 762 current-period invoices, 0 discrepancies\n#2348 2026-11-04T22:01:54Z INFO billing-reconciler reconciled 945 current-period invoices, 0 discrepancies\n#2376 2026-11-04T22:02:03Z INFO billing-reconciler reconciled 525 current-period invoices, 0 discrepancies\n#2420 2026-11-04T22:02:14Z INFO billing-reconciler reconciled 844 current-period invoices, 0 discrepancies\n#2462 2026-11-04T22:02:26Z INFO billing-reconciler reconciled 1100 current-period invoices, 0 discrepancies\n#2502 2026-11-04T22:02:37Z INFO billing-reconciler reconciled 672 current-period invoices, 0 discrepancies\n#2540 2026-11-04T22:02:49Z INFO billing-reconciler reconciled 788 current-period invoices, 0 discrepancies\n#2582 2026-11-04T22:03:02Z INFO billing-reconciler reconciled 645 current-period invoices, 0 discrepancies\n#2616 2026-11-04T22:03:12Z INFO billing-reconciler reconciled 838 current-period invoices, 0 discrepancies\n#2648 2026-11-04T22:03:22Z INFO billing-reconciler reconciled 1151 current-period invoices, 0 discrepancies\n#2667 2026-11-04T22:03:29Z INFO billing-reconciler reconciled 1109 current-period invoices, 0 discrepancies\n#2691 2026-11-04T22:03:35Z INFO billing-reconciler reconciled 1134 current-period invoices, 0 discrepancies\n#2737 2026-11-04T22:03:49Z INFO billing-reconciler reconciled 914 current-period invoices, 0 discrepancies\n#2785 2026-11-04T22:04:01Z INFO billing-reconciler reconciled 788 current-period invoices, 0 discrepancies\n#2812 2026-11-04T22:04:10Z INFO billing-reconciler reconciled 1171 current-period invoices, 0 discrepancies\n#2840 2026-11-04T22:04:21Z INFO billing-reconciler reconciled 1120 current-period invoices, 0 discrepancies"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "account-svc",
+          "since": "22:03:00",
+          "until": "22:05:10",
+          "limit": 40
+        },
+        "output": "90 match(es), showing first 40:\n#2578 2026-11-04T22:03:01Z INFO account-svc [t-4251] user u-8731 accepted, calling auth-svc POST /tokens\n#2583 2026-11-04T22:03:02Z INFO account-svc [t-4254] user u-8734 accepted, calling auth-svc POST /tokens\n#2585 2026-11-04T22:03:04Z INFO account-svc [t-4257] user u-8736 accepted, calling auth-svc POST /tokens\n#2591 2026-11-04T22:03:06Z INFO account-svc [t-4258] user u-8738 accepted, calling auth-svc POST /tokens\n#2597 2026-11-04T22:03:07Z INFO account-svc [t-4260] user u-8741 accepted, calling auth-svc POST /tokens\n#2601 2026-11-04T22:03:09Z INFO account-svc [t-4264] user u-8744 accepted, calling auth-svc POST /tokens\n#2606 2026-11-04T22:03:10Z INFO account-svc [t-4267] user u-8745 accepted, calling auth-svc POST /tokens\n#2609 2026-11-04T22:03:11Z INFO account-svc [t-4271] user u-8748 accepted, calling auth-svc POST /tokens\n#2617 2026-11-04T22:03:13Z INFO account-svc [t-4275] user u-8752 accepted, calling auth-svc POST /tokens\n#2620 2026-11-04T22:03:14Z INFO account-svc [t-4278] user u-8755 accepted, calling auth-svc POST /tokens\n#2621 2026-11-04T22:03:14Z DEBUG account-svc GC pause 18ms (young), heap 32%\n#2623 2026-11-04T22:03:15Z INFO account-svc [t-4282] user u-8758 accepted, calling auth-svc POST /tokens\n#2628 2026-11-04T22:03:16Z INFO account-svc [t-4283] user u-8761 accepted, calling auth-svc POST /tokens\n#2634 2026-11-04T22:03:18Z INFO account-svc [t-4286] user u-8763 accepted, calling auth-svc POST /tokens\n#2638 2026-11-04T22:03:20Z INFO account-svc [t-4290] user u-8764 accepted, calling auth-svc POST /tokens\n#2641 2026-11-04T22:03:21Z INFO account-svc [t-4293] user u-8765 accepted, calling auth-svc POST /tokens\n#2645 2026-11-04T22:03:22Z INFO account-svc [t-4297] user u-8767 accepted, calling auth-svc POST /tokens\n#2650 2026-11-04T22:03:23Z INFO account-svc [t-4298] user u-8770 accepted, calling auth-svc POST /tokens\n#2652 2026-11-04T22:03:25Z INFO account-svc [t-4299] user u-8773 accepted, calling auth-svc POST /tokens\n#2656 2026-11-04T22:03:26Z INFO account-svc [t-4301] user u-8776 accepted, calling auth-svc POST /tokens\n#2658 2026-11-04T22:03:27Z INFO account-svc [t-4302] user u-8778 accepted, calling auth-svc POST /tokens\n#2661 2026-11-04T22:03:28Z INFO account-svc [t-4305] user u-8781 accepted, calling auth-svc POST /tokens\n#2666 2026-11-04T22:03:29Z INFO account-svc [t-4309] user u-8784 accepted, calling auth-svc POST /tokens\n#2670 2026-11-04T22:03:31Z INFO account-svc [t-4313] user u-8785 accepted, calling auth-svc POST /tokens\n#2672 2026-11-04T22:03:31Z DEBUG account-svc GC pause 21ms (young), heap 44%\n#2674 2026-11-04T22:03:32Z INFO account-svc [t-4314] user u-8788 accepted, calling auth-svc POST /tokens\n#2678 2026-11-04T22:03:33Z INFO account-svc [t-4317] user u-8790 accepted, calling auth-svc POST /tokens\n#2684 2026-11-04T22:03:34Z INFO account-svc [t-4318] user u-8792 accepted, calling auth-svc POST /tokens\n#2688 2026-11-04T22:03:34Z INFO account-svc [t-4322] user u-8794 accepted, calling auth-svc POST /tokens\n#2693 2026-11-04T22:03:36Z INFO account-svc [t-4326] user u-8797 accepted, calling auth-svc POST /tokens\n#2699 2026-11-04T22:03:38Z INFO account-svc [t-4327] user u-8800 accepted, calling auth-svc POST /tokens\n#2704 2026-11-04T22:03:38Z INFO account-svc [t-4331] user u-8802 accepted, calling auth-svc POST /tokens\n#2708 2026-11-04T22:03:40Z INFO account-svc [t-4333] user u-8805 accepted, calling auth-svc POST /tokens\n#2711 2026-11-04T22:03:41Z INFO account-svc [t-4336] user u-8807 accepted, calling auth-svc POST /tokens\n#2713 2026-11-04T22:03:42Z INFO account-svc [t-4339] user u-8810 accepted, calling auth-svc POST /tokens\n#2715 2026-11-04T22:03:42Z DEBUG account-svc GC pause 4ms (young), heap 45%\n#2717 2026-11-04T22:03:43Z INFO account-svc [t-4340] user u-8811 accepted, calling auth-svc POST /tokens\n#2721 2026-11-04T22:03:44Z INFO account-svc [t-4343] user u-8813 accepted, calling auth-svc POST /tokens\n#2723 2026-11-04T22:03:45Z INFO account-svc [t-4345] user u-8816 accepted, calling auth-svc POST /tokens\n#2726 2026-11-04T22:03:46Z INFO account-svc [t-4346] user u-8817 accepted, calling auth-svc POST /tokens"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "audit-consumer",
+          "since": "22:04:00",
+          "until": "22:05:10"
+        },
+        "output": "18 match(es):\n#2793 2026-11-04T22:04:03Z INFO audit-consumer processed batch of 48 messages from audit.events (lag 94ms)\n#2804 2026-11-04T22:04:08Z INFO audit-consumer processed batch of 72 messages from audit.events (lag 102ms)\n#2820 2026-11-04T22:04:13Z INFO audit-consumer processed batch of 78 messages from audit.events (lag 199ms)\n#2829 2026-11-04T22:04:17Z INFO audit-consumer processed batch of 50 messages from audit.events (lag 282ms)\n#2845 2026-11-04T22:04:22Z INFO audit-consumer processed batch of 99 messages from audit.events (lag 167ms)\n#2849 2026-11-04T22:04:25Z INFO audit-consumer processed batch of 80 messages from audit.events (lag 81ms)\n#2854 2026-11-04T22:04:28Z INFO audit-consumer processed batch of 117 messages from audit.events (lag 103ms)\n#2862 2026-11-04T22:04:32Z INFO audit-consumer processed batch of 59 messages from audit.events (lag 237ms)\n#2871 2026-11-04T22:04:36Z INFO audit-consumer processed batch of 29 messages from audit.events (lag 387ms)\n#2877 2026-11-04T22:04:40Z INFO audit-consumer processed batch of 104 messages from audit.events (lag 64ms)\n#2883 2026-11-04T22:04:45Z INFO audit-consumer processed batch of 57 messages from audit.events (lag 259ms)\n#2898 2026-11-04T22:04:48Z INFO audit-consumer processed batch of 84 messages from audit.events (lag 296ms)\n#2909 2026-11-04T22:04:52Z INFO audit-consumer processed batch of 81 messages from audit.events (lag 321ms)\n#2915 2026-11-04T22:04:55Z INFO audit-consumer processed batch of 106 messages from audit.events (lag 66ms)\n#2919 2026-11-04T22:04:59Z INFO audit-consumer processed batch of 109 messages from audit.events (lag 329ms)\n#2923 2026-11-04T22:05:02Z INFO audit-consumer processed batch of 46 messages from audit.events (lag 338ms)\n#2934 2026-11-04T22:05:05Z INFO audit-consumer processed batch of 77 messages from audit.events (lag 45ms)\n#2945 2026-11-04T22:05:10Z INFO audit-consumer processed batch of 91 messages from audit.events (lag 65ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "accounts-db",
+          "query": "conn",
+          "limit": 10
+        },
+        "output": "3 match(es):\n#2921 2026-11-04T22:05:00Z WARN accounts-db too many clients: 490 of 500 connection slots used, CPU at 98%\n#3016 2026-11-04T22:05:44Z WARN accounts-db resource monitor: cpu=99% conns=471/500\n#3140 2026-11-04T22:06:44Z WARN accounts-db accounts-db near its connection limit (484/500), load climbing (CPU 100%)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "accounts-db",
+          "query": "cpu",
+          "limit": 10
+        },
+        "output": "3 match(es):\n#2921 2026-11-04T22:05:00Z WARN accounts-db too many clients: 490 of 500 connection slots used, CPU at 98%\n#3016 2026-11-04T22:05:44Z WARN accounts-db resource monitor: cpu=99% conns=471/500\n#3140 2026-11-04T22:06:44Z WARN accounts-db accounts-db near its connection limit (484/500), load climbing (CPU 100%)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.7,
+              "evidenceLines": [
+                2921,
+                3016,
+                3140,
+                3138,
+                3526,
+                3045
+              ],
+              "reasoning": "accounts-db ran out of CPU and connection slots. It hit 98-100% CPU and 490/500 connections at 22:05:00 (#2921, #3016, #3140). Simple PK lookups on accounts then slowed to 4-7s (#3138, #3526). account-svc queries timed out after 5000ms (#3045), which produced the 504s on POST /login at edge-proxy. I found no deploy, lock holder or config change that would explain the saturation. The only DB-side anomaly I saw beforehand was a seq-scan audit_log query (#2897), and I didn't establish it as the cause. The other errors are unrelated red herrings: the template-svc mailer 502s and open circuit breaker, the status-poller timeouts against the deprecated legacy-inventory endpoint, and the metrics-agent exporter queue being full."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.2,
+              "evidenceLines": [
+                3045,
+                3138,
+                2897
+              ],
+              "reasoning": "An accounts-db query path that is slow, perhaps the audit_log seq scan competing with the login lookups, could also be read as a hung dependency."
+            }
+          ],
+          "recommendedAction": "Treat accounts-db as saturated. Find what is consuming its CPU and connections, such as the audit_log seq scan or other heavy clients. Throttle or kill those queries, add an index on audit_log.created_at, and raise capacity or put a connection pooler in front of the database. Check account-svc connection pool sizing and the login request rate."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 7,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1530,
+      "cacheReadTokens": 35830,
+      "cacheWriteTokens": 14401
+    },
+    "durationMs": 14381,
+    "stopReason": "tool_use"
+  }
+}

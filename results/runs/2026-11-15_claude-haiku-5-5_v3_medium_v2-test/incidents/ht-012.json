@@ -1,0 +1,199 @@
+{
+  "score": {
+    "incidentId": "ht-012",
+    "difficulty": "hard",
+    "scenario": "poison_message/consumer-crash-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0,
+    "top1": false,
+    "top1Lenient": false,
+    "top3": false,
+    "rank": null,
+    "evidence": {
+      "cited": 7,
+      "correct": 7,
+      "precision": 1,
+      "recall": 0.875,
+      "f1": 0.9333333333333333
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.0035290150000000004,
+    "durationMs": 12722,
+    "iterations": 6,
+    "toolCalls": 12,
+    "tokens": {
+      "input": 14,
+      "output": 2554,
+      "cacheRead": 43749,
+      "cacheWrite": 14505
+    }
+  },
+  "result": {
+    "incidentId": "ht-012",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0,
+          "evidenceLines": [
+            2908,
+            2968,
+            3062,
+            3240,
+            2949,
+            3047,
+            3492
+          ],
+          "reasoning": "event-processor (v4.23.8) crashes deterministically on message msg-476560 at events.raw offset 720765. The consumer hits a recursion limit / RangeError (stack overflow) in expandReferences on that message (#2908, #2968, #3062, #3240). Because the offset is never committed past it, each restart (backoff 10s to 80s, restarts 1-4 at #2910, #2970, #3067, #3241) resumes at the same committed offset 720765 (#2949, #3047, #3211, #3492) and crashes on the same message. The consumer group therefore stops advancing, and events.raw lag climbs from ~1.3k to ~20k (#3135 through #5404), which is the alert. Processing was healthy right up to this offset (#2894 batch OK), so the trigger is the single malformed/self-referencing payload, not load or a deploy. The 14:59:04 restart (#3488) also resumed at the same offset with no further progress. Payment-svc card-processor timeouts and api-gateway 503s on /checkout (#3542, #3766, #3921, #3994) are a separate downstream effect on order-service and not the cause of the crash loop. The metrics-agent queue drops and report-cron pandas ModuleNotFoundError (#3019 onward) are unrelated noise."
+        }
+      ],
+      "recommendedAction": "Quarantine or skip the poison message msg-476560 at events.raw offset 720765: move it to a dead-letter topic, or advance the event-processor consumer group offset past 720765 after capturing the payload. Then add a depth guard or iterative implementation to expandReferences to handle circular or very deep references, and make the consumer dead-letter messages that throw instead of crashing. Separately, investigate the card-processor timeouts behind payment-svc and the order-service checkout 503s, and fix the report-cron image missing pandas."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "event-processor",
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "9 match(es):\n#2547 2026-11-20T14:54:44Z WARN event-processor GC pause 782ms (G1 Old Gen), heap 56% after collection\n#2908 2026-11-20T14:56:14Z FATAL event-processor consumer aborted: recursion limit hit in expandReferences for msg-476560 at offset 720765\n#2910 2026-11-20T14:56:14Z ERROR event-processor process exited with code 1, restarting (restart 1, backoff 10s)\n#2968 2026-11-20T14:56:30Z FATAL event-processor unhandled exception processing msg-476560 (offset 720765): RangeError: Maximum call stack size exceeded at expandReferences\n#2970 2026-11-20T14:56:30Z ERROR event-processor process exited with code 1, restarting (restart 2, backoff 20s)\n#3062 2026-11-20T14:56:56Z FATAL event-processor process crashed on msg-476560@720765: RangeError: call stack overflow in expandReferences\n#3067 2026-11-20T14:56:56Z ERROR event-processor process exited with code 1, restarting (restart 3, backoff 40s)\n#3240 2026-11-20T14:57:44Z FATAL event-processor uncaught RangeError (stack size exceeded) while handling offset 720765 (msg-476560)\n#3241 2026-11-20T14:57:44Z ERROR event-processor process exited with code 1, restarting (restart 4, backoff 80s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 60
+        },
+        "output": "47 match(es):\n#1716 2026-11-20T14:51:18Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 458 samples\n#2044 2026-11-20T14:52:37Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 473 samples\n#2374 2026-11-20T14:54:01Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 904 samples\n#2709 2026-11-20T14:55:24Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2313 samples\n#2901 2026-11-20T14:56:11Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1685 samples\n#2908 2026-11-20T14:56:14Z FATAL event-processor consumer aborted: recursion limit hit in expandReferences for msg-476560 at offset 720765\n#2910 2026-11-20T14:56:14Z ERROR event-processor process exited with code 1, restarting (restart 1, backoff 10s)\n#2968 2026-11-20T14:56:30Z FATAL event-processor unhandled exception processing msg-476560 (offset 720765): RangeError: Maximum call stack size exceeded at expandReferences\n#2970 2026-11-20T14:56:30Z ERROR event-processor process exited with code 1, restarting (restart 2, backoff 20s)\n#3019 2026-11-20T14:56:43Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3062 2026-11-20T14:56:56Z FATAL event-processor process crashed on msg-476560@720765: RangeError: call stack overflow in expandReferences\n#3067 2026-11-20T14:56:56Z ERROR event-processor process exited with code 1, restarting (restart 3, backoff 40s)\n#3114 2026-11-20T14:57:09Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2227 samples\n#3240 2026-11-20T14:57:44Z FATAL event-processor uncaught RangeError (stack size exceeded) while handling offset 720765 (msg-476560)\n#3241 2026-11-20T14:57:44Z ERROR event-processor process exited with code 1, restarting (restart 4, backoff 80s)\n#3257 2026-11-20T14:57:48Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3391 2026-11-20T14:58:30Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 700 samples\n#3542 2026-11-20T14:59:20Z ERROR payment-svc [t-10045] call to the card processor aborted: no response within 30s\n#3545 2026-11-20T14:59:20Z ERROR order-service [t-10045] POST /charge -> payment-svc: context deadline exceeded after 30.0s (o-9849)\n#3588 2026-11-20T14:59:33Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3608 2026-11-20T14:59:37Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2305 samples\n#3737 2026-11-20T15:00:14Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3766 2026-11-20T15:00:25Z ERROR payment-svc [t-10202] HTTP client: read timed out after 30000 ms waiting for api.cardproc.example\n#3768 2026-11-20T15:00:25Z ERROR order-service [t-10202] PaymentClient.charge timed out after 30000ms calling payment-svc POST /charge (o-9984)\n#3903 2026-11-20T15:01:03Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3921 2026-11-20T15:01:09Z ERROR payment-svc [t-10297] card processor call FAILED: upstream timeout after 30000ms POST https://api.cardproc.example/v1/charges\n#3923 2026-11-20T15:01:09Z ERROR order-service [t-10297] upstream request to payment-svc failed: ReadTimeout (read timeout=30s) [o-10073]\n#3975 2026-11-20T15:01:26Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2021 samples\n#3994 2026-11-20T15:01:31Z ERROR api-gateway [t-10356] POST /checkout 503 13430ms: upstream order-service returned 503 Service Unavailable\n#4127 2026-11-20T15:02:08Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4210 2026-11-20T15:02:33Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1404 samples\n#4254 2026-11-20T15:02:48Z ERROR api-gateway [t-10534] POST /checkout 503 17959ms: upstream order-service returned 503 Service Unavailable\n#4393 2026-11-20T15:03:31Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4507 2026-11-20T15:04:06Z ERROR api-gateway [t-10713] POST /checkout 503 21626ms: upstream order-service returned 503 Service Unavailable\n#4530 2026-11-20T15:04:14Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 759 samples\n#4619 2026-11-20T15:04:40Z ERROR order-service pool checkout timeout: no connection to payment-svc available after 5000ms\n#4707 2026-11-20T15:05:04Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4721 2026-11-20T15:05:08Z ERROR api-gateway [t-10864] POST /checkout 503 5580ms: upstream order-service returned 503 Service Unavailable\n#4794 2026-11-20T15:05:32Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 970 samples\n#4821 2026-11-20T15:05:41Z ERROR api-gateway [t-10925] POST /checkout 503 15472ms: upstream order-service returned 503 Service Unavailable\n#4842 2026-11-20T15:05:46Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4987 2026-11-20T15:06:35Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1895 samples\n#5127 2026-11-20T15:07:20Z ERROR api-gateway [t-11131] POST /checkout 503 5920ms: upstream order-service returned 503 Service Unavailable\n#5143 2026-11-20T15:07:24Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#5194 2026-11-20T15:07:41Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 636 samples\n#5278 2026-11-20T15:08:06Z ERROR api-gateway [t-11231] POST /checkout 503 8415ms: upstream order-service returned 503 Service Unavailable\n#5322 2026-11-20T15:08:21Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "msg-476560",
+          "limit": 50
+        },
+        "output": "4 match(es):\n#2908 2026-11-20T14:56:14Z FATAL event-processor consumer aborted: recursion limit hit in expandReferences for msg-476560 at offset 720765\n#2968 2026-11-20T14:56:30Z FATAL event-processor unhandled exception processing msg-476560 (offset 720765): RangeError: Maximum call stack size exceeded at expandReferences\n#3062 2026-11-20T14:56:56Z FATAL event-processor process crashed on msg-476560@720765: RangeError: call stack overflow in expandReferences\n#3240 2026-11-20T14:57:44Z FATAL event-processor uncaught RangeError (stack size exceeded) while handling offset 720765 (msg-476560)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 2908,
+          "before": 15,
+          "after": 3
+        },
+        "output": "#2893 2026-11-20T14:56:10Z INFO ingest-gateway [t-9598] POST /v1/events 200 87ms\n#2894 2026-11-20T14:56:11Z INFO event-processor processed batch of 109 messages from events.raw (lag 122ms)\n#2895 2026-11-20T14:56:11Z DEBUG api-gateway upstream health: order-service ok, payment-svc ok\n#2896 2026-11-20T14:56:11Z INFO order-service [t-9601] order o-9489 accepted, calling payment-svc POST /charge\n#2897 2026-11-20T14:56:11Z INFO payment-svc [t-9601] POST /charge o-9489 ok 26ms\n#2898 2026-11-20T14:56:11Z INFO api-gateway [t-9601] POST /checkout 200 116ms\n#2899 2026-11-20T14:56:11Z DEBUG enrichment-svc GC pause 21ms (young), heap 37%\n#2900 2026-11-20T14:56:11Z INFO geo-cache stats: hits=11110 misses=780 evicted=0 connected_clients=36\n#2901 2026-11-20T14:56:11Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1685 samples\n#2902 2026-11-20T14:56:12Z INFO order-consumer processed batch of 66 messages from orders.events (lag 292ms)\n#2903 2026-11-20T14:56:12Z INFO ingest-api [t-9603] event e-9491 accepted, calling enrichment-svc POST /enrich\n#2904 2026-11-20T14:56:12Z INFO ingest-gateway [t-9603] POST /v1/events 200 46ms\n#2905 2026-11-20T14:56:13Z INFO redis stats: hits=18604 misses=403 evicted=0 connected_clients=58\n#2906 2026-11-20T14:56:13Z INFO ingest-api [t-9607] event e-9493 accepted, calling enrichment-svc POST /enrich\n#2907 2026-11-20T14:56:13Z INFO ingest-gateway [t-9607] POST /v1/events 200 69ms\n#2908 2026-11-20T14:56:14Z FATAL event-processor consumer aborted: recursion limit hit in expandReferences for msg-476560 at offset 720765\n#2909 2026-11-20T14:56:14Z INFO postgres checkpoint complete: wrote 795 buffers (2.2%)\n#2910 2026-11-20T14:56:14Z ERROR event-processor process exited with code 1, restarting (restart 1, backoff 10s)\n#2911 2026-11-20T14:56:14Z INFO ingest-api [t-9610] event e-9495 accepted, calling enrichment-svc POST /enrich"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "720765",
+          "limit": 50
+        },
+        "output": "8 match(es):\n#2908 2026-11-20T14:56:14Z FATAL event-processor consumer aborted: recursion limit hit in expandReferences for msg-476560 at offset 720765\n#2949 2026-11-20T14:56:25Z INFO event-processor resuming events.raw at committed offset 720765\n#2968 2026-11-20T14:56:30Z FATAL event-processor unhandled exception processing msg-476560 (offset 720765): RangeError: Maximum call stack size exceeded at expandReferences\n#3047 2026-11-20T14:56:51Z INFO event-processor resuming events.raw at committed offset 720765\n#3062 2026-11-20T14:56:56Z FATAL event-processor process crashed on msg-476560@720765: RangeError: call stack overflow in expandReferences\n#3211 2026-11-20T14:57:37Z INFO event-processor resuming events.raw at committed offset 720765\n#3240 2026-11-20T14:57:44Z FATAL event-processor uncaught RangeError (stack size exceeded) while handling offset 720765 (msg-476560)\n#3492 2026-11-20T14:59:05Z INFO event-processor resuming events.raw at committed offset 720765"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "reference",
+          "limit": 50
+        },
+        "output": "3 match(es):\n#2908 2026-11-20T14:56:14Z FATAL event-processor consumer aborted: recursion limit hit in expandReferences for msg-476560 at offset 720765\n#2968 2026-11-20T14:56:30Z FATAL event-processor unhandled exception processing msg-476560 (offset 720765): RangeError: Maximum call stack size exceeded at expandReferences\n#3062 2026-11-20T14:56:56Z FATAL event-processor process crashed on msg-476560@720765: RangeError: call stack overflow in expandReferences"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "event-processor",
+          "since": "14:44:00",
+          "until": "14:56:10",
+          "level": "INFO",
+          "limit": 15
+        },
+        "output": "179 match(es), showing first 15:\n#9 2026-11-20T14:44:02Z INFO event-processor processed batch of 28 messages from events.raw (lag 234ms)\n#18 2026-11-20T14:44:05Z INFO event-processor processed batch of 109 messages from events.raw (lag 394ms)\n#39 2026-11-20T14:44:09Z INFO event-processor processed batch of 109 messages from events.raw (lag 357ms)\n#55 2026-11-20T14:44:13Z INFO event-processor processed batch of 86 messages from events.raw (lag 246ms)\n#66 2026-11-20T14:44:16Z INFO event-processor processed batch of 108 messages from events.raw (lag 353ms)\n#75 2026-11-20T14:44:19Z INFO event-processor processed batch of 69 messages from events.raw (lag 221ms)\n#93 2026-11-20T14:44:23Z INFO event-processor processed batch of 78 messages from events.raw (lag 258ms)\n#106 2026-11-20T14:44:26Z INFO event-processor processed batch of 77 messages from events.raw (lag 264ms)\n#120 2026-11-20T14:44:29Z INFO event-processor processed batch of 90 messages from events.raw (lag 297ms)\n#131 2026-11-20T14:44:32Z INFO event-processor processed batch of 88 messages from events.raw (lag 334ms)\n#152 2026-11-20T14:44:37Z INFO event-processor processed batch of 53 messages from events.raw (lag 230ms)\n#168 2026-11-20T14:44:41Z INFO event-processor processed batch of 63 messages from events.raw (lag 307ms)\n#187 2026-11-20T14:44:45Z INFO event-processor processed batch of 32 messages from events.raw (lag 71ms)\n#205 2026-11-20T14:44:50Z INFO event-processor processed batch of 87 messages from events.raw (lag 265ms)\n#213 2026-11-20T14:44:53Z INFO event-processor processed batch of 98 messages from events.raw (lag 323ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "event-processor",
+          "since": "14:59:00",
+          "limit": 40
+        },
+        "output": "2 match(es):\n#3488 2026-11-20T14:59:04Z INFO event-processor started event-processor v4.23.8, pid 1\n#3492 2026-11-20T14:59:05Z INFO event-processor resuming events.raw at committed offset 720765"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "dead-letter",
+          "limit": 20
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "v4.23",
+          "limit": 20
+        },
+        "output": "4 match(es):\n#2946 2026-11-20T14:56:24Z INFO event-processor started event-processor v4.23.8, pid 1\n#3037 2026-11-20T14:56:50Z INFO event-processor started event-processor v4.23.8, pid 1\n#3209 2026-11-20T14:57:36Z INFO event-processor started event-processor v4.23.8, pid 1\n#3488 2026-11-20T14:59:04Z INFO event-processor started event-processor v4.23.8, pid 1"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 3492,
+          "before": 5,
+          "after": 5
+        },
+        "output": "#3487 2026-11-20T14:59:03Z INFO ingest-gateway [t-10010] POST /v1/events 200 68ms\n#3488 2026-11-20T14:59:04Z INFO event-processor started event-processor v4.23.8, pid 1\n#3489 2026-11-20T14:59:04Z INFO ingest-api [t-10012] event e-9822 accepted, calling enrichment-svc POST /enrich\n#3490 2026-11-20T14:59:04Z INFO enrichment-svc [t-10012] POST /enrich e-9822 ok 82ms\n#3491 2026-11-20T14:59:04Z INFO ingest-gateway [t-10012] POST /v1/events 200 95ms\n#3492 2026-11-20T14:59:05Z INFO event-processor resuming events.raw at committed offset 720765\n#3493 2026-11-20T14:59:05Z INFO report-cron scheduler heartbeat: 10 jobs registered, next run in 149s\n#3494 2026-11-20T14:59:05Z INFO metrics-agent flushed 7875 series to remote-write in 141ms\n#3495 2026-11-20T14:59:05Z INFO order-consumer processed batch of 50 messages from orders.events (lag 264ms)\n#3496 2026-11-20T14:59:05Z INFO postgres checkpoint complete: wrote 1184 buffers (3.2%)\n#3497 2026-11-20T14:59:05Z INFO ingest-api [t-10016] event e-9823 accepted, calling enrichment-svc POST /enrich"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "events.raw",
+          "since": "14:55:00",
+          "limit": 40
+        },
+        "output": "34 match(es):\n#2620 2026-11-20T14:55:00Z INFO event-processor processed batch of 96 messages from events.raw (lag 55ms)\n#2634 2026-11-20T14:55:04Z INFO event-processor processed batch of 113 messages from events.raw (lag 236ms)\n#2648 2026-11-20T14:55:07Z INFO event-processor processed batch of 23 messages from events.raw (lag 139ms)\n#2662 2026-11-20T14:55:12Z INFO event-processor processed batch of 79 messages from events.raw (lag 184ms)\n#2677 2026-11-20T14:55:16Z INFO event-processor processed batch of 79 messages from events.raw (lag 99ms)\n#2689 2026-11-20T14:55:20Z INFO event-processor processed batch of 21 messages from events.raw (lag 386ms)\n#2711 2026-11-20T14:55:24Z INFO event-processor processed batch of 54 messages from events.raw (lag 342ms)\n#2729 2026-11-20T14:55:28Z INFO event-processor processed batch of 45 messages from events.raw (lag 203ms)\n#2744 2026-11-20T14:55:33Z INFO event-processor processed batch of 70 messages from events.raw (lag 300ms)\n#2762 2026-11-20T14:55:37Z INFO event-processor processed batch of 45 messages from events.raw (lag 106ms)\n#2779 2026-11-20T14:55:41Z INFO event-processor processed batch of 51 messages from events.raw (lag 106ms)\n#2793 2026-11-20T14:55:46Z INFO event-processor processed batch of 112 messages from events.raw (lag 334ms)\n#2804 2026-11-20T14:55:49Z INFO event-processor processed batch of 31 messages from events.raw (lag 318ms)\n#2815 2026-11-20T14:55:52Z INFO event-processor processed batch of 118 messages from events.raw (lag 90ms)\n#2832 2026-11-20T14:55:56Z INFO event-processor processed batch of 20 messages from events.raw (lag 400ms)\n#2852 2026-11-20T14:56:01Z INFO event-processor processed batch of 110 messages from events.raw (lag 370ms)\n#2873 2026-11-20T14:56:06Z INFO event-processor processed batch of 59 messages from events.raw (lag 375ms)\n#2894 2026-11-20T14:56:11Z INFO event-processor processed batch of 109 messages from events.raw (lag 122ms)\n#2949 2026-11-20T14:56:25Z INFO event-processor resuming events.raw at committed offset 720765\n#3047 2026-11-20T14:56:51Z INFO event-processor resuming events.raw at committed offset 720765\n#3135 2026-11-20T14:57:15Z WARN ingest-api publish to events.raw slow: broker reports consumer group event-processor lag 1307\n#3211 2026-11-20T14:57:37Z INFO event-processor resuming events.raw at committed offset 720765\n#3414 2026-11-20T14:58:39Z WARN ingest-api publish to events.raw slow: broker reports consumer group event-processor lag 3466\n#3492 2026-11-20T14:59:05Z INFO event-processor resuming events.raw at committed offset 720765\n#3537 2026-11-20T14:59:18Z WARN ingest-api publish to events.raw slow: broker reports consumer group event-processor lag 3042\n#3795 2026-11-20T15:00:32Z WARN ingest-api publish to events.raw slow: broker reports consumer group event-processor lag 6304\n#4038 2026-11-20T15:01:41Z WARN ingest-api publish to events.raw slow: broker reports consumer group event-processor lag 5310\n#4196 2026-11-20T15:02:30Z WARN ingest-api publish to events.raw slow: broker reports consumer group event-processor lag 11124\n#4446 2026-11-20T15:03:50Z WARN ingest-api publish to events.raw slow: broker reports consumer group event-processor lag 10318\n#4632 2026-11-20T15:04:42Z WARN ingest-api publish to events.raw slow: broker reports consumer group event-processor lag 8712\n#4869 2026-11-20T15:05:55Z WARN ingest-api publish to events.raw slow: broker reports consumer group event-processor lag 8460\n#5001 2026-11-20T15:06:38Z WARN ingest-api publish to events.raw slow: broker reports consumer group event-processor lag 11520\n#5229 2026-11-20T15:07:54Z WARN ingest-api publish to events.raw slow: broker reports consumer group event-processor lag 20009\n#5404 2026-11-20T15:08:46Z WARN ingest-api publish to events.raw slow: broker reports consumer group event-processor lag 18396"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0,
+              "evidenceLines": [
+                2908,
+                2968,
+                3062,
+                3240,
+                2949,
+                3047,
+                3492
+              ],
+              "reasoning": "event-processor (v4.23.8) crashes deterministically on message msg-476560 at events.raw offset 720765. The consumer hits a recursion limit / RangeError (stack overflow) in expandReferences on that message (#2908, #2968, #3062, #3240). Because the offset is never committed past it, each restart (backoff 10s to 80s, restarts 1-4 at #2910, #2970, #3067, #3241) resumes at the same committed offset 720765 (#2949, #3047, #3211, #3492) and crashes on the same message. The consumer group therefore stops advancing, and events.raw lag climbs from ~1.3k to ~20k (#3135 through #5404), which is the alert. Processing was healthy right up to this offset (#2894 batch OK), so the trigger is the single malformed/self-referencing payload, not load or a deploy. The 14:59:04 restart (#3488) also resumed at the same offset with no further progress. Payment-svc card-processor timeouts and api-gateway 503s on /checkout (#3542, #3766, #3921, #3994) are a separate downstream effect on order-service and not the cause of the crash loop. The metrics-agent queue drops and report-cron pandas ModuleNotFoundError (#3019 onward) are unrelated noise."
+            }
+          ],
+          "recommendedAction": "Quarantine or skip the poison message msg-476560 at events.raw offset 720765: move it to a dead-letter topic, or advance the event-processor consumer group offset past 720765 after capturing the payload. Then add a depth guard or iterative implementation to expandReferences to handle circular or very deep references, and make the consumer dead-letter messages that throw instead of crashing. Separately, investigate the card-processor timeouts behind payment-svc and the order-service checkout 503s, and fix the report-cron image missing pandas."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 12,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 2554,
+      "cacheReadTokens": 43749,
+      "cacheWriteTokens": 14505
+    },
+    "durationMs": 12722,
+    "stopReason": "tool_use"
+  }
+}

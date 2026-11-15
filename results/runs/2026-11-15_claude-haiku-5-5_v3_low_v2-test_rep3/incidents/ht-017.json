@@ -1,0 +1,154 @@
+{
+  "score": {
+    "incidentId": "ht-017",
+    "difficulty": "easy",
+    "scenario": "data_integrity/sequence-collision",
+    "truth": "data_integrity",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 3,
+      "precision": 0.42857142857142855,
+      "recall": 0.75,
+      "f1": 0.5454545454545454
+    },
+    "herringsCited": 2,
+    "costUsd": 0.0023946999999999996,
+    "durationMs": 8476,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 1811,
+      "cacheRead": 19945,
+      "cacheWrite": 10310
+    }
+  },
+  "result": {
+    "incidentId": "ht-017",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.88,
+          "evidenceLines": [
+            875,
+            1058,
+            1149,
+            1357,
+            1528,
+            1202,
+            1387
+          ],
+          "reasoning": "At 09:08:39 a catalog-db restore reloaded the products table from a snapshot (979231 rows) but left sequence products_id_seq at 965985, so newly allocated ids collide with existing rows. Inserts then fail with unique violations on products_pkey (#1058, #1149). search-api maps these to 409 'create failed' (#1357, #1528), and web-bff surfaces GET /search 500s with 5-22s latency (#1202, #1387), which is the customer 'could not save' symptom. The web-bff and search-api errors are downstream and are not cited as origin. The status-poller timeouts to deprecated legacy-inventory (#553, #1044) are a separate noisy red herring, and flag-sync, index-worker and redis-cache show no errors."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.08,
+          "evidenceLines": [
+            553,
+            1044
+          ],
+          "reasoning": "Status-poller calls a deprecated legacy-inventory endpoint that times out. This is real but only affects health checks and does not explain failed product saves."
+        }
+      ],
+      "recommendedAction": "Immediately reset the products_id_seq sequence in catalog-db to max(id)+1 (above 979231) so inserts stop colliding, then verify create-product succeeds. Audit the snapshot restore procedure so sequences are restored along with the table. Separately, remove or fix the status-poller healthcheck pointing at deprecated legacy-inventory."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "17 match(es):\n#553 2026-11-01T09:04:28Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#799 2026-11-01T09:07:39Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#875 2026-11-01T09:08:39Z WARN catalog-db restore: table products reloaded from snapshot (979231 rows); sequence products_id_seq left at 965985\n#1044 2026-11-01T09:11:03Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1058 2026-11-01T09:11:15Z ERROR catalog-db duplicate key value violates unique constraint \"products_pkey\" DETAIL: Key (id)=(976166) already exists.\n#1149 2026-11-01T09:12:51Z ERROR catalog-db ERROR: 23505 unique_violation on products (id 976171 is already present)\n#1202 2026-11-01T09:13:53Z ERROR web-bff [t-8398] GET /search 500 7562ms: upstream search-api returned 500 (create failed)\n#1233 2026-11-01T09:14:24Z ERROR catalog-db duplicate key value violates unique constraint \"products_pkey\" DETAIL: Key (id)=(976176) already exists.\n#1245 2026-11-01T09:14:36Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1357 2026-11-01T09:16:31Z ERROR search-api [t-8461] create product failed: unique violation on products.id, returning 409\n#1387 2026-11-01T09:16:59Z ERROR web-bff [t-8474] GET /search 500 22865ms: upstream search-api returned 500 (create failed)\n#1438 2026-11-01T09:17:54Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1528 2026-11-01T09:19:31Z ERROR search-api [t-8522] create product failed: unique violation on products.id, returning 409\n#1561 2026-11-01T09:20:08Z ERROR web-bff [t-8532] GET /search 500 5015ms: upstream search-api returned 500 (create failed)\n#1655 2026-11-01T09:21:49Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1765 2026-11-01T09:23:49Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1867 2026-11-01T09:25:26Z ERROR web-bff [t-8641] GET /search 500 21341ms: upstream search-api returned 500 (create failed)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "flag-sync",
+          "limit": 40
+        },
+        "output": "131 match(es), showing first 40:\n#9 2026-11-01T08:57:06Z INFO flag-sync synced 100 feature flags from flag service (etag 4a339f0)\n#28 2026-11-01T08:57:21Z INFO flag-sync synced 91 feature flags from flag service (etag 8a0a2f4)\n#49 2026-11-01T08:57:38Z INFO flag-sync synced 101 feature flags from flag service (etag bf02fee)\n#64 2026-11-01T08:57:48Z INFO flag-sync synced 104 feature flags from flag service (etag 2360019)\n#77 2026-11-01T08:58:00Z INFO flag-sync synced 103 feature flags from flag service (etag 255fefd)\n#100 2026-11-01T08:58:17Z INFO flag-sync synced 134 feature flags from flag service (etag c415bce)\n#117 2026-11-01T08:58:35Z INFO flag-sync synced 115 feature flags from flag service (etag 3914055)\n#127 2026-11-01T08:58:43Z INFO flag-sync synced 93 feature flags from flag service (etag ea0e90e)\n#151 2026-11-01T08:59:01Z INFO flag-sync synced 70 feature flags from flag service (etag a04da68)\n#171 2026-11-01T08:59:17Z INFO flag-sync synced 110 feature flags from flag service (etag ec52ba9)\n#190 2026-11-01T08:59:32Z INFO flag-sync synced 127 feature flags from flag service (etag 886b142)\n#209 2026-11-01T08:59:50Z INFO flag-sync synced 64 feature flags from flag service (etag 0bfa0e7)\n#224 2026-11-01T09:00:06Z INFO flag-sync synced 130 feature flags from flag service (etag 89de401)\n#241 2026-11-01T09:00:19Z INFO flag-sync synced 105 feature flags from flag service (etag 4d51d78)\n#263 2026-11-01T09:00:36Z INFO flag-sync synced 72 feature flags from flag service (etag 9c3cd6b)\n#277 2026-11-01T09:00:48Z INFO flag-sync synced 124 feature flags from flag service (etag 7bfa594)\n#290 2026-11-01T09:01:01Z INFO flag-sync synced 84 feature flags from flag service (etag e239e7e)\n#306 2026-11-01T09:01:14Z INFO flag-sync synced 107 feature flags from flag service (etag 5656ebd)\n#328 2026-11-01T09:01:32Z INFO flag-sync synced 95 feature flags from flag service (etag fa942b0)\n#342 2026-11-01T09:01:43Z INFO flag-sync synced 129 feature flags from flag service (etag dfced6b)\n#359 2026-11-01T09:01:56Z INFO flag-sync synced 98 feature flags from flag service (etag 5e7b7bc)\n#379 2026-11-01T09:02:09Z INFO flag-sync synced 74 feature flags from flag service (etag 20255fc)\n#391 2026-11-01T09:02:19Z INFO flag-sync synced 139 feature flags from flag service (etag a751dd1)\n#404 2026-11-01T09:02:31Z INFO flag-sync synced 98 feature flags from flag service (etag d2a87ca)\n#419 2026-11-01T09:02:42Z INFO flag-sync synced 69 feature flags from flag service (etag 2d1ca0a)\n#431 2026-11-01T09:02:51Z INFO flag-sync synced 90 feature flags from flag service (etag 61f6322)\n#442 2026-11-01T09:03:01Z INFO flag-sync synced 64 feature flags from flag service (etag e6a05a7)\n#452 2026-11-01T09:03:11Z INFO flag-sync synced 131 feature flags from flag service (etag dd847b6)\n#471 2026-11-01T09:03:22Z INFO flag-sync synced 94 feature flags from flag service (etag 609c911)\n#487 2026-11-01T09:03:38Z INFO flag-sync synced 133 feature flags from flag service (etag 8ac6a9f)\n#506 2026-11-01T09:03:52Z INFO flag-sync synced 63 feature flags from flag service (etag 7de8e64)\n#528 2026-11-01T09:04:10Z INFO flag-sync synced 122 feature flags from flag service (etag c2ef5cb)\n#542 2026-11-01T09:04:21Z INFO flag-sync synced 90 feature flags from flag service (etag f3055e3)\n#560 2026-11-01T09:04:31Z INFO flag-sync synced 60 feature flags from flag service (etag d6fc4a4)\n#574 2026-11-01T09:04:40Z INFO flag-sync synced 98 feature flags from flag service (etag 73731f6)\n#591 2026-11-01T09:04:53Z INFO flag-sync synced 135 feature flags from flag service (etag e13c774)\n#601 2026-11-01T09:05:01Z INFO flag-sync synced 68 feature flags from flag service (etag 6a59c8d)\n#615 2026-11-01T09:05:12Z INFO flag-sync synced 124 feature flags from flag service (etag 3b3dc59)\n#638 2026-11-01T09:05:30Z INFO flag-sync synced 88 feature flags from flag service (etag 524b121)\n#661 2026-11-01T09:05:48Z INFO flag-sync synced 73 feature flags from flag service (etag ebf329a)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 875,
+          "before": 12,
+          "after": 6
+        },
+        "output": "#863 2026-11-01T09:08:31Z INFO catalog-svc [t-8264] GET /products/batch p-7302 ok 43ms\n#864 2026-11-01T09:08:31Z INFO web-bff [t-8264] GET /search 200 67ms\n#865 2026-11-01T09:08:32Z DEBUG web-bff upstream health: search-api ok, catalog-svc ok\n#866 2026-11-01T09:08:33Z DEBUG search-api GC pause 4ms (young), heap 44%\n#867 2026-11-01T09:08:33Z INFO index-worker processed batch of 71 messages from catalog.updates (lag 197ms)\n#868 2026-11-01T09:08:34Z INFO search-api [t-8265] product p-7303 accepted, calling catalog-svc GET /products/batch\n#869 2026-11-01T09:08:34Z INFO web-bff [t-8265] GET /search 200 107ms\n#870 2026-11-01T09:08:37Z INFO redis-cache stats: hits=15666 misses=843 evicted=0 connected_clients=56\n#871 2026-11-01T09:08:37Z INFO status-poller poll cycle complete: 36 targets checked in 881ms\n#872 2026-11-01T09:08:38Z INFO search-api [t-8268] product p-7305 accepted, calling catalog-svc GET /products/batch\n#873 2026-11-01T09:08:38Z INFO catalog-svc [t-8268] GET /products/batch p-7305 ok 53ms\n#874 2026-11-01T09:08:38Z INFO web-bff [t-8268] GET /search 200 88ms\n#875 2026-11-01T09:08:39Z WARN catalog-db restore: table products reloaded from snapshot (979231 rows); sequence products_id_seq left at 965985\n#876 2026-11-01T09:08:40Z INFO index-worker processed batch of 30 messages from catalog.updates (lag 103ms)\n#877 2026-11-01T09:08:41Z INFO catalog-db checkpoint complete: wrote 909 buffers (6.2%)\n#878 2026-11-01T09:08:42Z INFO search-api [t-8271] product p-7308 accepted, calling catalog-svc GET /products/batch\n#879 2026-11-01T09:08:42Z INFO web-bff [t-8271] GET /search 200 89ms\n#880 2026-11-01T09:08:43Z DEBUG catalog-svc GC pause 25ms (young), heap 38%\n#881 2026-11-01T09:08:44Z INFO flag-sync synced 80 feature flags from flag service (etag 8e81140)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-db",
+          "limit": 30
+        },
+        "output": "114 match(es), showing first 30:\n#10 2026-11-01T08:57:10Z INFO catalog-db checkpoint complete: wrote 1217 buffers (1.5%)\n#29 2026-11-01T08:57:21Z INFO catalog-db checkpoint complete: wrote 1342 buffers (7.9%)\n#46 2026-11-01T08:57:35Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 10\n#69 2026-11-01T08:57:51Z INFO catalog-db checkpoint complete: wrote 523 buffers (6.2%)\n#81 2026-11-01T08:58:03Z INFO catalog-db checkpoint complete: wrote 669 buffers (5.5%)\n#102 2026-11-01T08:58:18Z INFO catalog-db checkpoint complete: wrote 449 buffers (5.0%)\n#118 2026-11-01T08:58:35Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 5\n#133 2026-11-01T08:58:48Z INFO catalog-db checkpoint complete: wrote 1225 buffers (5.0%)\n#152 2026-11-01T08:59:01Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 29\n#167 2026-11-01T08:59:14Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 16\n#182 2026-11-01T08:59:28Z INFO catalog-db checkpoint complete: wrote 677 buffers (4.5%)\n#202 2026-11-01T08:59:46Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 33\n#220 2026-11-01T09:00:04Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 25\n#238 2026-11-01T09:00:15Z INFO catalog-db checkpoint complete: wrote 989 buffers (2.4%)\n#256 2026-11-01T09:00:32Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 5\n#279 2026-11-01T09:00:49Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 5\n#297 2026-11-01T09:01:05Z INFO catalog-db checkpoint complete: wrote 1021 buffers (7.4%)\n#311 2026-11-01T09:01:17Z INFO catalog-db checkpoint complete: wrote 816 buffers (5.2%)\n#323 2026-11-01T09:01:29Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 30\n#343 2026-11-01T09:01:44Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 36\n#368 2026-11-01T09:02:02Z INFO catalog-db checkpoint complete: wrote 1344 buffers (3.1%)\n#390 2026-11-01T09:02:19Z INFO catalog-db checkpoint complete: wrote 620 buffers (6.0%)\n#413 2026-11-01T09:02:39Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 8\n#437 2026-11-01T09:02:59Z INFO catalog-db checkpoint complete: wrote 1103 buffers (5.7%)\n#466 2026-11-01T09:03:18Z INFO catalog-db checkpoint complete: wrote 797 buffers (5.3%)\n#479 2026-11-01T09:03:30Z INFO catalog-db checkpoint complete: wrote 287 buffers (7.7%)\n#499 2026-11-01T09:03:46Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 23\n#514 2026-11-01T09:03:59Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 24\n#538 2026-11-01T09:04:17Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 19\n#561 2026-11-01T09:04:32Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 11"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"data_integrity\",\"confidence\":0.88,\"evidenceLines\":[875,1058,1149,1357,1528,1202,1387],\"reasoning\":\"At 09:08:39 a catalog-db restore reloaded the products table from a snapshot (979231 rows) but left sequence products_id_seq at 965985, so the next id allocated collides with existing rows. Inserts start failing with unique violations on products_pkey (#1058, #1149); search-api maps these to 409 'create failed' (#1357, #1528), and web-bff surfaces GET /search 500s with 5-22s latency (#1202, #1387). The alert's 'could not save' errors trace to this. Symptoms (web-bff 500s, search-api 409s) are downstream and not cited as origin. The status-poller timeouts to deprecated legacy-inventory (#553 etc.) are a noisy unrelated red herring; flag-sync, index-worker and redis-cache show no errors.\",\"Also a half-applied restore (data_integrity) is the same fault seen from the schema side; the restore itself is the origin.\"},{\"rootCause\":\"config_error\",\"confidence\":0.1,\"evidenceLines\":[553,1044],\"reasoning\":\"Status-poller calls a deprecated legacy-inventory endpoint that times out. This is real but only affects health checks and does not explain failed product saves.\"}]",
+          "recommendedAction": "Immediately reset the products_id_seq sequence in catalog-db to max(id)+1 (above 979231) so inserts stop colliding, then verify create-product succeeds. Audit the snapshot restore procedure so sequences are restored with the table. Separately, remove or fix the status-poller healthcheck pointing at deprecated legacy-inventory."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.88,
+              "evidenceLines": [
+                875,
+                1058,
+                1149,
+                1357,
+                1528,
+                1202,
+                1387
+              ],
+              "reasoning": "At 09:08:39 a catalog-db restore reloaded the products table from a snapshot (979231 rows) but left sequence products_id_seq at 965985, so newly allocated ids collide with existing rows. Inserts then fail with unique violations on products_pkey (#1058, #1149). search-api maps these to 409 'create failed' (#1357, #1528), and web-bff surfaces GET /search 500s with 5-22s latency (#1202, #1387), which is the customer 'could not save' symptom. The web-bff and search-api errors are downstream and are not cited as origin. The status-poller timeouts to deprecated legacy-inventory (#553, #1044) are a separate noisy red herring, and flag-sync, index-worker and redis-cache show no errors."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.08,
+              "evidenceLines": [
+                553,
+                1044
+              ],
+              "reasoning": "Status-poller calls a deprecated legacy-inventory endpoint that times out. This is real but only affects health checks and does not explain failed product saves."
+            }
+          ],
+          "recommendedAction": "Immediately reset the products_id_seq sequence in catalog-db to max(id)+1 (above 979231) so inserts stop colliding, then verify create-product succeeds. Audit the snapshot restore procedure so sequences are restored along with the table. Separately, remove or fix the status-poller healthcheck pointing at deprecated legacy-inventory."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1811,
+      "cacheReadTokens": 19945,
+      "cacheWriteTokens": 10310
+    },
+    "durationMs": 8476,
+    "stopReason": "tool_use"
+  }
+}

@@ -1,0 +1,155 @@
+{
+  "score": {
+    "incidentId": "ht-025",
+    "difficulty": "easy",
+    "scenario": "resource_exhaustion/db-disk-full",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 9,
+      "correct": 6,
+      "precision": 0.6666666666666666,
+      "recall": 1,
+      "f1": 0.8
+    },
+    "herringsCited": 8,
+    "costUsd": 0.0016251599999999998,
+    "durationMs": 5810,
+    "iterations": 3,
+    "toolCalls": 3,
+    "tokens": {
+      "input": 8,
+      "output": 1123,
+      "cacheRead": 9536,
+      "cacheWrite": 7740
+    }
+  },
+  "result": {
+    "incidentId": "ht-025",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.88,
+          "evidenceLines": [
+            372,
+            687,
+            815,
+            893,
+            794,
+            923,
+            852,
+            961,
+            1155
+          ],
+          "reasoning": "events-db's /var/lib/mysql volume filled up. Disk usage went 95% (#372, WAL/binlog growth ~688MB/h) then 99% (#687), and InnoDB writes started failing with 'No space left on device' (#815, #893). ingest-api inserts then fail with error 1114 'The table is full' (#794, #923), and ingest-gateway returns 500s for POST /v1/events because upstream ingest-api fails (#852, #961, #1155). Reads stay healthy since they don't need writes. The gateway 500s are downstream symptoms; the disk is the origin. billing-reconciler's checksum errors on invoice_archive (2019 partitions) are a separate data-integrity issue and do not explain the write failures. The WAL/binlog growth source is not yet identified."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.15,
+          "evidenceLines": [
+            400,
+            495,
+            672,
+            704,
+            847,
+            941,
+            1062,
+            1169
+          ],
+          "reasoning": "billing-reconciler reports invoice_archive rows violating checksum constraints across 2019 partitions. This is real and separate, but it is a background issue that does not produce the POST /v1/events 500s. It is listed only as a lower-ranked alternative."
+        }
+      ],
+      "recommendedAction": "Immediately free disk on events-db: find and purge or archive the WAL/binlog growth (check binlog retention and the long-running transaction or replication consumer holding logs), and expand the volume if possible. Then confirm ingest-api writes recover and the gateway 500 rate drops. Separately, have billing-reconciler investigate the invoice_archive 2019 checksum violations, and add disk-growth alerting earlier than 95%."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "18 match(es):\n#372 2026-10-03T05:17:46Z WARN events-db disk usage 95% on /var/lib/mysql (WAL/binlog growth 688MB/h)\n#400 2026-10-03T05:18:07Z ERROR billing-reconciler invoice_archive row inv-336336 violates checksum constraint, skipping (archive partition 2019-Q1)\n#495 2026-10-03T05:19:24Z ERROR billing-reconciler invoice_archive row inv-192047 violates checksum constraint, skipping (archive partition 2019-Q2)\n#672 2026-10-03T05:21:47Z ERROR billing-reconciler invoice_archive row inv-852627 violates checksum constraint, skipping (archive partition 2019-Q2)\n#687 2026-10-03T05:21:56Z WARN events-db disk usage 99% on /var/lib/mysql (WAL/binlog growth 815MB/h)\n#704 2026-10-03T05:22:09Z ERROR billing-reconciler invoice_archive row inv-544858 violates checksum constraint, skipping (archive partition 2019-Q2)\n#794 2026-10-03T05:23:29Z ERROR ingest-api [t-3735] insert into events failed for e-5589: error 1114: The table is full\n#815 2026-10-03T05:23:50Z ERROR events-db [ERROR] [MY-012639] InnoDB: Write to file ./events.ibd failed: No space left on device\n#847 2026-10-03T05:24:24Z ERROR billing-reconciler invoice_archive row inv-798376 violates checksum constraint, skipping (archive partition 2019-Q1)\n#852 2026-10-03T05:24:30Z ERROR ingest-gateway [t-3757] POST /v1/events 500 9266ms: upstream ingest-api returned 500 Internal Server Error\n#893 2026-10-03T05:25:20Z ERROR events-db [ERROR] [MY-012639] InnoDB: Write to file ./events.ibd failed: No space left on device\n#923 2026-10-03T05:25:52Z ERROR ingest-api [t-3775] could not save event e-5627: database rejected the write (table full)\n#941 2026-10-03T05:26:11Z ERROR billing-reconciler invoice_archive row inv-604612 violates checksum constraint, skipping (archive partition 2019-Q4)\n#961 2026-10-03T05:26:32Z ERROR ingest-gateway [t-3790] POST /v1/events 500 20954ms: upstream ingest-api returned 500 Internal Server Error\n#989 2026-10-03T05:27:11Z ERROR ingest-gateway [t-3794] POST /v1/events 500 10670ms: upstream ingest-api returned 500 Internal Server Error\n#1062 2026-10-03T05:28:30Z ERROR billing-reconciler invoice_archive row inv-577711 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1155 2026-10-03T05:30:07Z ERROR ingest-gateway [t-3856] POST /v1/events 500 26264ms: upstream ingest-api returned 500 Internal Server Error\n#1169 2026-10-03T05:30:20Z ERROR billing-reconciler invoice_archive row inv-937636 violates checksum constraint, skipping (archive partition 2019-Q3)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 60
+        },
+        "output": "16 match(es):\n#400 2026-10-03T05:18:07Z ERROR billing-reconciler invoice_archive row inv-336336 violates checksum constraint, skipping (archive partition 2019-Q1)\n#495 2026-10-03T05:19:24Z ERROR billing-reconciler invoice_archive row inv-192047 violates checksum constraint, skipping (archive partition 2019-Q2)\n#672 2026-10-03T05:21:47Z ERROR billing-reconciler invoice_archive row inv-852627 violates checksum constraint, skipping (archive partition 2019-Q2)\n#704 2026-10-03T05:22:09Z ERROR billing-reconciler invoice_archive row inv-544858 violates checksum constraint, skipping (archive partition 2019-Q2)\n#794 2026-10-03T05:23:29Z ERROR ingest-api [t-3735] insert into events failed for e-5589: error 1114: The table is full\n#815 2026-10-03T05:23:50Z ERROR events-db [ERROR] [MY-012639] InnoDB: Write to file ./events.ibd failed: No space left on device\n#847 2026-10-03T05:24:24Z ERROR billing-reconciler invoice_archive row inv-798376 violates checksum constraint, skipping (archive partition 2019-Q1)\n#852 2026-10-03T05:24:30Z ERROR ingest-gateway [t-3757] POST /v1/events 500 9266ms: upstream ingest-api returned 500 Internal Server Error\n#893 2026-10-03T05:25:20Z ERROR events-db [ERROR] [MY-012639] InnoDB: Write to file ./events.ibd failed: No space left on device\n#923 2026-10-03T05:25:52Z ERROR ingest-api [t-3775] could not save event e-5627: database rejected the write (table full)\n#941 2026-10-03T05:26:11Z ERROR billing-reconciler invoice_archive row inv-604612 violates checksum constraint, skipping (archive partition 2019-Q4)\n#961 2026-10-03T05:26:32Z ERROR ingest-gateway [t-3790] POST /v1/events 500 20954ms: upstream ingest-api returned 500 Internal Server Error\n#989 2026-10-03T05:27:11Z ERROR ingest-gateway [t-3794] POST /v1/events 500 10670ms: upstream ingest-api returned 500 Internal Server Error\n#1062 2026-10-03T05:28:30Z ERROR billing-reconciler invoice_archive row inv-577711 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1155 2026-10-03T05:30:07Z ERROR ingest-gateway [t-3856] POST /v1/events 500 26264ms: upstream ingest-api returned 500 Internal Server Error\n#1169 2026-10-03T05:30:20Z ERROR billing-reconciler invoice_archive row inv-937636 violates checksum constraint, skipping (archive partition 2019-Q3)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "events-db",
+          "since": "05:13:00",
+          "until": "05:19:00",
+          "limit": 40
+        },
+        "output": "26 match(es):\n#6 2026-10-03T05:13:03Z INFO events-db InnoDB: page cleaner flushed 650 pages, buffer pool hit rate 99.2%\n#17 2026-10-03T05:13:15Z INFO events-db InnoDB: page cleaner flushed 179 pages, buffer pool hit rate 99.2%\n#38 2026-10-03T05:13:28Z INFO events-db InnoDB: page cleaner flushed 139 pages, buffer pool hit rate 99.3%\n#51 2026-10-03T05:13:39Z INFO events-db InnoDB: page cleaner flushed 623 pages, buffer pool hit rate 99.6%\n#68 2026-10-03T05:13:51Z INFO events-db InnoDB: page cleaner flushed 622 pages, buffer pool hit rate 99%\n#85 2026-10-03T05:14:05Z INFO events-db InnoDB: page cleaner flushed 184 pages, buffer pool hit rate 99.6%\n#101 2026-10-03T05:14:18Z INFO events-db InnoDB: page cleaner flushed 833 pages, buffer pool hit rate 99.2%\n#117 2026-10-03T05:14:34Z INFO events-db InnoDB: page cleaner flushed 121 pages, buffer pool hit rate 98.8%\n#133 2026-10-03T05:14:45Z INFO events-db InnoDB: page cleaner flushed 106 pages, buffer pool hit rate 99.5%\n#151 2026-10-03T05:15:00Z INFO events-db InnoDB: page cleaner flushed 254 pages, buffer pool hit rate 98.5%\n#176 2026-10-03T05:15:19Z INFO events-db InnoDB: page cleaner flushed 558 pages, buffer pool hit rate 99%\n#197 2026-10-03T05:15:35Z INFO events-db InnoDB: page cleaner flushed 637 pages, buffer pool hit rate 99%\n#209 2026-10-03T05:15:48Z INFO events-db InnoDB: page cleaner flushed 305 pages, buffer pool hit rate 98.7%\n#231 2026-10-03T05:16:04Z INFO events-db InnoDB: page cleaner flushed 558 pages, buffer pool hit rate 99.2%\n#249 2026-10-03T05:16:16Z INFO events-db InnoDB: page cleaner flushed 490 pages, buffer pool hit rate 98.7%\n#268 2026-10-03T05:16:33Z INFO events-db InnoDB: page cleaner flushed 742 pages, buffer pool hit rate 99.2%\n#296 2026-10-03T05:16:52Z INFO events-db InnoDB: page cleaner flushed 621 pages, buffer pool hit rate 99.5%\n#316 2026-10-03T05:17:07Z INFO events-db InnoDB: page cleaner flushed 381 pages, buffer pool hit rate 99.5%\n#338 2026-10-03T05:17:24Z INFO events-db InnoDB: page cleaner flushed 656 pages, buffer pool hit rate 99%\n#357 2026-10-03T05:17:36Z INFO events-db InnoDB: page cleaner flushed 694 pages, buffer pool hit rate 99.6%\n#372 2026-10-03T05:17:46Z WARN events-db disk usage 95% on /var/lib/mysql (WAL/binlog growth 688MB/h)\n#375 2026-10-03T05:17:48Z INFO events-db InnoDB: page cleaner flushed 448 pages, buffer pool hit rate 99.2%\n#394 2026-10-03T05:18:05Z INFO events-db InnoDB: page cleaner flushed 154 pages, buffer pool hit rate 99.1%\n#423 2026-10-03T05:18:25Z INFO events-db InnoDB: page cleaner flushed 299 pages, buffer pool hit rate 99.5%\n#441 2026-10-03T05:18:38Z INFO events-db InnoDB: page cleaner flushed 694 pages, buffer pool hit rate 98.7%\n#454 2026-10-03T05:18:50Z INFO events-db InnoDB: page cleaner flushed 609 pages, buffer pool hit rate 99.7%"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.88,
+              "evidenceLines": [
+                372,
+                687,
+                815,
+                893,
+                794,
+                923,
+                852,
+                961,
+                1155
+              ],
+              "reasoning": "events-db's /var/lib/mysql volume filled up. Disk usage went 95% (#372, WAL/binlog growth ~688MB/h) then 99% (#687), and InnoDB writes started failing with 'No space left on device' (#815, #893). ingest-api inserts then fail with error 1114 'The table is full' (#794, #923), and ingest-gateway returns 500s for POST /v1/events because upstream ingest-api fails (#852, #961, #1155). Reads stay healthy since they don't need writes. The gateway 500s are downstream symptoms; the disk is the origin. billing-reconciler's checksum errors on invoice_archive (2019 partitions) are a separate data-integrity issue and do not explain the write failures. The WAL/binlog growth source is not yet identified.",
+              "reasoning_detail": "Disk exhaustion on the DB host is the earliest anomaly that explains the alert timing and the write-only failure pattern."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.15,
+              "evidenceLines": [
+                400,
+                495,
+                672,
+                704,
+                847,
+                941,
+                1062,
+                1169
+              ],
+              "reasoning": "billing-reconciler reports invoice_archive rows violating checksum constraints across 2019 partitions. This is real and separate, but it is a background issue that does not produce the POST /v1/events 500s. It is listed only as a lower-ranked alternative."
+            }
+          ],
+          "recommendedAction": "Immediately free disk on events-db: find and purge or archive the WAL/binlog growth (check binlog retention and the long-running transaction or replication consumer holding logs), and expand the volume if possible. Then confirm ingest-api writes recover and the gateway 500 rate drops. Separately, have billing-reconciler investigate the invoice_archive 2019 checksum violations, and add disk-growth alerting earlier than 95%."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 3,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 1123,
+      "cacheReadTokens": 9536,
+      "cacheWriteTokens": 7740
+    },
+    "durationMs": 5810,
+    "stopReason": "tool_use"
+  }
+}

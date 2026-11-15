@@ -1,0 +1,162 @@
+{
+  "score": {
+    "incidentId": "ht-036",
+    "difficulty": "medium",
+    "scenario": "dependency_timeout/external-hang",
+    "truth": "dependency_timeout",
+    "acceptable": [
+      "external_outage"
+    ],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 8,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "secondaryCited": 3,
+    "costUsd": 0.063376,
+    "durationMs": 11907,
+    "iterations": 3,
+    "toolCalls": 3,
+    "tokens": {
+      "input": 8,
+      "output": 1123,
+      "cacheRead": 10970,
+      "cacheWrite": 7738
+    }
+  },
+  "result": {
+    "incidentId": "ht-036",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.88,
+          "evidenceLines": [
+            1465,
+            1501,
+            1545,
+            1546,
+            1616,
+            1617,
+            1706,
+            1708
+          ],
+          "reasoning": "The GET /search path goes web-bff -> search-api -> catalog-svc -> the third-party translation API (api.translate.example). The first anomaly on that path is catalog-svc reporting slow translation calls (4.1s at 01:22:19, then 10.3s). After that the calls hit the 30s read timeout (#1545, #1616, #1706). search-api's calls to catalog-svc timed out at the same time (#1546, #1617, #1708). Those hung calls filled search-api's 50-connection pool to catalog-svc, which led to pool checkout timeouts, search-api returning 503, and the web-bff 503s on /search that triggered the alert. The provider hangs rather than failing fast, so this is dependency_timeout rather than external_outage."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.07,
+          "evidenceLines": [
+            1545,
+            1616
+          ],
+          "reasoning": "The translation API is a third-party service and may be having a wider outage. However, the logs only show it hanging (timeouts), not fast errors or 5xx responses."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.05,
+          "evidenceLines": [
+            1511,
+            1583,
+            1661
+          ],
+          "reasoning": "A separate problem: enrichment-svc's geo-IP API key is being rejected with 401, which causes 502s on ingest-api and ingest-gateway. This is on the ingest path, not /search, so it is a concurrent red herring that needs its own follow-up (rotate or fix the credential)."
+        }
+      ],
+      "recommendedAction": "Lower catalog-svc's timeout for the translation API (it's currently 30s, well above search-api's budget) and add a circuit breaker with a fallback that serves untranslated or cached text. Contact the translation provider about the latency. Separately, fix the geo-IP API key for enrichment-svc, which is causing the ingest 502s."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "48 match(es):\n#1043 2026-10-01T01:18:56Z WARN search-api heap usage 83% of 4096MiB (threshold 80%), starting concurrent mark cycle\n#1465 2026-10-01T01:22:19Z WARN catalog-svc [t-3860] translation API call slow: 4127ms (soft threshold 2000ms) POST https://api.translate.example/v2/translate\n#1501 2026-10-01T01:22:44Z WARN catalog-svc [t-3879] translation API call slow: 10304ms (soft threshold 2000ms) POST https://api.translate.example/v2/translate\n#1511 2026-10-01T01:22:53Z ERROR enrichment-svc [t-3884] POST /v1/lookup -> 401 {\"error\":\"invalid_api_key\"}\n#1520 2026-10-01T01:22:58Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 945 samples\n#1522 2026-10-01T01:23:01Z ERROR ingest-api [t-3889] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#1545 2026-10-01T01:23:19Z ERROR catalog-svc [t-3897] HTTP client: read timed out after 30000 ms waiting for api.translate.example\n#1546 2026-10-01T01:23:19Z ERROR search-api [t-3897] upstream request to catalog-svc failed: ReadTimeout (read timeout=30s) [p-6100]\n#1553 2026-10-01T01:23:24Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 846 samples\n#1570 2026-10-01T01:23:37Z ERROR ingest-gateway [t-3911] POST /v1/events 502 24453ms: upstream ingest-api returned 502 Bad Gateway\n#1583 2026-10-01T01:23:49Z ERROR enrichment-svc [t-3913] geo-IP provider auth failed: HTTP 401, credentials not accepted by api.geoip.example\n#1587 2026-10-01T01:23:52Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1976 samples\n#1608 2026-10-01T01:24:09Z ERROR ingest-gateway [t-3925] POST /v1/events 502 19066ms: upstream ingest-api returned 502 Bad Gateway\n#1616 2026-10-01T01:24:17Z ERROR catalog-svc [t-3930] translation API call FAILED: upstream timeout after 30000ms POST https://api.translate.example/v2/translate\n#1617 2026-10-01T01:24:18Z ERROR search-api [t-3930] GET /products/batch -> catalog-svc: context deadline exceeded after 30.0s (p-6117)\n#1640 2026-10-01T01:24:37Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 614 samples\n#1655 2026-10-01T01:24:54Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 810 samples\n#1661 2026-10-01T01:25:01Z ERROR enrichment-svc [t-3942] geo-IP provider rejected request: 401 Unauthorized (invalid API key) POST https://api.geoip.example/v1/lookup\n#1668 2026-10-01T01:25:07Z ERROR ingest-gateway [t-3944] POST /v1/events 502 15060ms: upstream ingest-api returned 502 Bad Gateway\n#1686 2026-10-01T01:25:25Z ERROR ingest-api [t-3950] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#1691 2026-10-01T01:25:30Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 709 samples\n#1698 2026-10-01T01:25:36Z WARN search-api HTTP connection pool to catalog-svc at capacity (50/50 in use), 37 requests queued\n#1706 2026-10-01T01:25:40Z ERROR catalog-svc [t-3953] call to the translation API aborted: no response within 30s\n#1708 2026-10-01T01:25:40Z ERROR search-api [t-3953] CatalogClient.getBatch timed out after 30000ms calling catalog-svc GET /products/batch (p-6133)\n#1718 2026-10-01T01:25:51Z ERROR web-bff [t-3961] GET /search 503 5857ms: upstream search-api returned 503 Service Unavailable\n#1735 2026-10-01T01:26:08Z ERROR ingest-gateway [t-3969] POST /v1/events 502 24681ms: upstream ingest-api returned 502 Bad Gateway\n#1737 2026-10-01T01:26:08Z ERROR web-bff [t-3973] GET /search 503 17972ms: upstream search-api returned 503 Service Unavailable\n#1738 2026-10-01T01:26:08Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2158 samples\n#1758 2026-10-01T01:26:22Z ERROR enrichment-svc [t-3987] POST /v1/lookup -> 401 {\"error\":\"invalid_api_key\"}\n#1770 2026-10-01T01:26:36Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 541 samples\n#1781 2026-10-01T01:26:44Z ERROR web-bff [t-3997] GET /search 503 5340ms: upstream search-api returned 503 Service Unavailable\n#1797 2026-10-01T01:27:00Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 702 samples\n#1810 2026-10-01T01:27:10Z ERROR ingest-gateway [t-4007] POST /v1/events 502 13555ms: upstream ingest-api returned 502 Bad Gateway\n#1831 2026-10-01T01:27:35Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 293 samples\n#1832 2026-10-01T01:27:36Z ERROR web-bff [t-4016] GET /search 503 17295ms: upstream search-api returned 503 Service Unavailable\n#1844 2026-10-01T01:27:41Z WARN search-api HTTP connection pool to catalog-svc at capacity (50/50 in use), 61 requests queued\n#1858 2026-10-01T01:27:54Z ERROR ingest-api [t-4025] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#1867 2026-10-01T01:28:00Z ERROR search-api pool checkout timeout: no connection to catalog-svc available after 5000ms\n#1870 2026-10-01T01:28:03Z ERROR ingest-gateway [t-4030] POST /v1/events 502 12565ms: upstream ingest-api returned 502 Bad Gateway\n#1872 2026-10-01T01:28:06Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 437 samples\n#1887 2026-10-01T01:28:22Z ERROR web-bff [t-4033] GET /search 503 16178ms: upstream search-api returned 503 Service Unavailable\n#1892 2026-10-01T01:28:30Z ERROR ingest-api [t-4036] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#1899 2026-10-01T01:28:33Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1848 samples\n#1928 2026-10-01T01:29:05Z ERROR ingest-gateway [t-4047] POST /v1/events 502 23109ms: upstream ingest-api returned 502 Bad Gateway\n#1929 2026-10-01T01:29:05Z ERROR web-bff [t-4048] GET /search 503 11470ms: upstream search-api returned 503 Service Unavailable\n#1948 2026-10-01T01:29:21Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2318 samples\n#1963 2026-10-01T01:29:38Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2373 samples\n#1964 2026-10-01T01:29:39Z ERROR web-bff [t-4061] GET /search 503 27887ms: upstream search-api returned 503 Service Unavailable"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-svc",
+          "query": "translat",
+          "limit": 10
+        },
+        "output": "5 match(es):\n#1465 2026-10-01T01:22:19Z WARN catalog-svc [t-3860] translation API call slow: 4127ms (soft threshold 2000ms) POST https://api.translate.example/v2/translate\n#1501 2026-10-01T01:22:44Z WARN catalog-svc [t-3879] translation API call slow: 10304ms (soft threshold 2000ms) POST https://api.translate.example/v2/translate\n#1545 2026-10-01T01:23:19Z ERROR catalog-svc [t-3897] HTTP client: read timed out after 30000 ms waiting for api.translate.example\n#1616 2026-10-01T01:24:17Z ERROR catalog-svc [t-3930] translation API call FAILED: upstream timeout after 30000ms POST https://api.translate.example/v2/translate\n#1706 2026-10-01T01:25:40Z ERROR catalog-svc [t-3953] call to the translation API aborted: no response within 30s"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 10
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.88,
+              "evidenceLines": [
+                1465,
+                1501,
+                1545,
+                1546,
+                1616,
+                1617,
+                1706,
+                1708
+              ],
+              "reasoning": "The GET /search path goes web-bff -> search-api -> catalog-svc -> the third-party translation API (api.translate.example). The first anomaly on that path is catalog-svc reporting slow translation calls (4.1s at 01:22:19, then 10.3s). After that the calls hit the 30s read timeout (#1545, #1616, #1706). search-api's calls to catalog-svc timed out at the same time (#1546, #1617, #1708). Those hung calls filled search-api's 50-connection pool to catalog-svc, which led to pool checkout timeouts, search-api returning 503, and the web-bff 503s on /search that triggered the alert. The provider hangs rather than failing fast, so this is dependency_timeout rather than external_outage."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.07,
+              "evidenceLines": [
+                1545,
+                1616
+              ],
+              "reasoning": "The translation API is a third-party service and may be having a wider outage. However, the logs only show it hanging (timeouts), not fast errors or 5xx responses."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.05,
+              "evidenceLines": [
+                1511,
+                1583,
+                1661
+              ],
+              "reasoning": "A separate problem: enrichment-svc's geo-IP API key is being rejected with 401, which causes 502s on ingest-api and ingest-gateway. This is on the ingest path, not /search, so it is a concurrent red herring that needs its own follow-up (rotate or fix the credential)."
+            }
+          ],
+          "recommendedAction": "Lower catalog-svc's timeout for the translation API (it's currently 30s, well above search-api's budget) and add a circuit breaker with a fallback that serves untranslated or cached text. Contact the translation provider about the latency. Separately, fix the geo-IP API key for enrichment-svc, which is causing the ingest 502s."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 3,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 1123,
+      "cacheReadTokens": 10970,
+      "cacheWriteTokens": 7738
+    },
+    "durationMs": 11907,
+    "stopReason": "tool_use"
+  }
+}

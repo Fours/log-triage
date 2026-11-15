@@ -1,0 +1,158 @@
+{
+  "score": {
+    "incidentId": "ht-010",
+    "difficulty": "medium",
+    "scenario": "poison_message/redelivery-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "poison_message",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "secondaryCited": 4,
+    "costUsd": 0.0023126350000000004,
+    "durationMs": 6765,
+    "iterations": 4,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 10,
+      "output": 1305,
+      "cacheRead": 24176,
+      "cacheWrite": 11339
+    }
+  },
+  "result": {
+    "incidentId": "ht-010",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.9,
+          "evidenceLines": [
+            1932,
+            1937,
+            2110,
+            2112,
+            2196,
+            2308
+          ],
+          "reasoning": "order-consumer fails on msg-577362 at orders.events partition 1, offset 589882: the payload has a NUL byte at position 902, so JSON parse fails. The consumer nacks and redelivers it (attempt 9 at #1937, attempt 13 at #2112) with no max-retries configured, so the single bad message blocks partition 1 and lag grows from about 68s (#2095) to over 600s (#2790). Consumer CPU is normal because it is idle-retrying, not working, which fits the alert. The lag began right after the first failure at 05:46:47 and matches the timing. Other errors (catalog-svc 401 from the translation API, metrics-agent exporter drops, web-bff 502s, order-service 120s timeouts) are downstream or unrelated to the queue lag."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.15,
+          "evidenceLines": [
+            1958,
+            2079,
+            2156,
+            2253
+          ],
+          "reasoning": "Separate fault: catalog-svc's translation API credentials are rejected (HTTP 401 invalid_api_key). This explains the search-api 502s and web-bff /search 502s, but not the orders.events backlog, so it is a secondary incident and not the cause of the lag."
+        }
+      ],
+      "recommendedAction": "Immediately move or skip the poison message msg-577362 (orders.events partition 1, offset 589882) to a dead-letter queue so partition 1 can drain, and configure a max-retry limit with DLQ on order-consumer. Then find the producer that wrote a NUL byte into that payload and fix its serialization. Separately, rotate or fix the translation API key used by catalog-svc (401 invalid_api_key), which is causing the search 502s."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "44 match(es):\n#854 2026-10-08T05:38:34Z WARN order-consumer GC pause 947ms (G1 Old Gen), heap 65% after collection\n#1932 2026-10-08T05:46:47Z ERROR order-consumer handler error for msg-577362 at offset 589882: invalid JSON payload (byte 902 is NUL)\n#1958 2026-10-08T05:47:04Z ERROR catalog-svc [t-2440] translation API auth failed: HTTP 401, credentials not accepted by api.translate.example\n#1996 2026-10-08T05:47:30Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1652 samples\n#2002 2026-10-08T05:47:35Z ERROR search-api [t-2473] CatalogClient.getBatch failed: catalog-svc returned 502 (upstream translation API error)\n#2021 2026-10-08T05:47:46Z ERROR web-bff [t-2487] GET /search 502 26430ms: upstream search-api returned 502 Bad Gateway\n#2061 2026-10-08T05:48:19Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 544 samples\n#2079 2026-10-08T05:48:36Z ERROR catalog-svc [t-2521] translation API rejected request: 401 Unauthorized (invalid API key) POST https://api.translate.example/v2/translate\n#2087 2026-10-08T05:48:42Z ERROR web-bff [t-2526] GET /search 502 21022ms: upstream search-api returned 502 Bad Gateway\n#2095 2026-10-08T05:48:45Z WARN order-consumer consumer lag on orders.events partition 1: 606 messages behind (68s)\n#2110 2026-10-08T05:48:55Z ERROR order-consumer failed to process msg-577362 (partition 1, offset 589882): JSON parse error: unexpected token '\\u0000' at position 902\n#2129 2026-10-08T05:49:06Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 434 samples\n#2156 2026-10-08T05:49:25Z ERROR catalog-svc [t-2560] POST /v2/translate -> 401 {\"error\":\"invalid_api_key\"}\n#2160 2026-10-08T05:49:27Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1930 samples\n#2196 2026-10-08T05:50:00Z ERROR order-consumer SyntaxError: Unexpected token \\u0000 in JSON at position 902 (message msg-577362, orders.events[1]@589882)\n#2215 2026-10-08T05:50:11Z ERROR web-bff [t-2600] GET /search 502 7154ms: upstream search-api returned 502 Bad Gateway\n#2227 2026-10-08T05:50:22Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1053 samples\n#2252 2026-10-08T05:50:40Z ERROR order-service [t-2616] order o-3232 timed out waiting for downstream confirmation (120s), marked failed\n#2253 2026-10-08T05:50:40Z ERROR catalog-svc [t-2620] translation API auth failed: HTTP 401, credentials not accepted by api.translate.example\n#2303 2026-10-08T05:51:13Z WARN order-consumer consumer lag on orders.events partition 1: 2392 messages behind (164s)\n#2308 2026-10-08T05:51:18Z ERROR order-consumer handler error for msg-577362 at offset 589882: invalid JSON payload (byte 902 is NUL)\n#2324 2026-10-08T05:51:26Z WARN order-consumer consumer lag on orders.events partition 1: 3276 messages behind (162s)\n#2330 2026-10-08T05:51:30Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2166 samples\n#2366 2026-10-08T05:51:56Z ERROR search-api [t-2682] CatalogClient.getBatch failed: catalog-svc returned 502 (upstream translation API error)\n#2397 2026-10-08T05:52:15Z ERROR order-service [t-2704] order o-3292 timed out waiting for downstream confirmation (120s), marked failed\n#2414 2026-10-08T05:52:27Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2387 samples\n#2431 2026-10-08T05:52:37Z ERROR web-bff [t-2725] GET /search 502 8029ms: upstream search-api returned 502 Bad Gateway\n#2491 2026-10-08T05:53:19Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2366 samples\n#2538 2026-10-08T05:53:50Z WARN order-consumer consumer lag on orders.events partition 1: 4444 messages behind (344s)\n#2543 2026-10-08T05:53:53Z ERROR web-bff [t-2790] GET /search 502 29616ms: upstream search-api returned 502 Bad Gateway\n#2571 2026-10-08T05:54:15Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 243 samples\n#2572 2026-10-08T05:54:16Z WARN order-consumer consumer lag on orders.events partition 1: 6100 messages behind (205s)\n#2574 2026-10-08T05:54:17Z ERROR search-api [t-2803] CatalogClient.getBatch failed: catalog-svc returned 502 (upstream translation API error)\n#2633 2026-10-08T05:54:59Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1918 samples\n#2639 2026-10-08T05:55:05Z ERROR web-bff [t-2840] GET /search 502 7531ms: upstream search-api returned 502 Bad Gateway\n#2653 2026-10-08T05:55:15Z ERROR order-service [t-2846] order o-3403 timed out waiting for downstream confirmation (120s), marked failed\n#2659 2026-10-08T05:55:17Z ERROR search-api [t-2854] CatalogClient.getBatch failed: catalog-svc returned 502 (upstream translation API error)\n#2674 2026-10-08T05:55:28Z WARN order-consumer consumer lag on orders.events partition 1: 8124 messages behind (396s)\n#2712 2026-10-08T05:55:55Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1948 samples\n#2771 2026-10-08T05:56:42Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1635 samples\n#2790 2026-10-08T05:56:52Z WARN order-consumer consumer lag on orders.events partition 1: 5292 messages behind (602s)\n#2793 2026-10-08T05:56:54Z ERROR web-bff [t-2921] GET /search 502 6317ms: upstream search-api returned 502 Bad Gateway\n#2820 2026-10-08T05:57:16Z ERROR order-service [t-2938] order o-3471 timed out waiting for downstream confirmation (120s), marked failed\n#2875 2026-10-08T05:57:53Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 906 samples"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "order-consumer",
+          "limit": 60
+        },
+        "output": "127 match(es), showing first 60:\n#3 2026-10-08T05:32:01Z INFO order-consumer processed batch of 81 messages from orders.events (lag 208ms)\n#23 2026-10-08T05:32:10Z INFO order-consumer processed batch of 73 messages from orders.events (lag 262ms)\n#33 2026-10-08T05:32:16Z INFO order-consumer processed batch of 67 messages from orders.events (lag 163ms)\n#51 2026-10-08T05:32:23Z INFO order-consumer processed batch of 112 messages from orders.events (lag 165ms)\n#67 2026-10-08T05:32:30Z INFO order-consumer processed batch of 86 messages from orders.events (lag 186ms)\n#84 2026-10-08T05:32:39Z INFO order-consumer processed batch of 67 messages from orders.events (lag 210ms)\n#96 2026-10-08T05:32:46Z INFO order-consumer processed batch of 93 messages from orders.events (lag 384ms)\n#117 2026-10-08T05:32:53Z INFO order-consumer processed batch of 97 messages from orders.events (lag 361ms)\n#131 2026-10-08T05:33:01Z INFO order-consumer processed batch of 72 messages from orders.events (lag 394ms)\n#153 2026-10-08T05:33:10Z INFO order-consumer processed batch of 88 messages from orders.events (lag 321ms)\n#168 2026-10-08T05:33:18Z INFO order-consumer processed batch of 69 messages from orders.events (lag 288ms)\n#187 2026-10-08T05:33:26Z INFO order-consumer processed batch of 48 messages from orders.events (lag 81ms)\n#202 2026-10-08T05:33:33Z INFO order-consumer processed batch of 26 messages from orders.events (lag 109ms)\n#214 2026-10-08T05:33:39Z INFO order-consumer processed batch of 51 messages from orders.events (lag 131ms)\n#232 2026-10-08T05:33:48Z INFO order-consumer processed batch of 96 messages from orders.events (lag 116ms)\n#253 2026-10-08T05:33:58Z INFO order-consumer processed batch of 95 messages from orders.events (lag 277ms)\n#270 2026-10-08T05:34:06Z INFO order-consumer processed batch of 112 messages from orders.events (lag 189ms)\n#282 2026-10-08T05:34:12Z INFO order-consumer processed batch of 32 messages from orders.events (lag 234ms)\n#301 2026-10-08T05:34:19Z INFO order-consumer processed batch of 31 messages from orders.events (lag 355ms)\n#319 2026-10-08T05:34:28Z INFO order-consumer processed batch of 74 messages from orders.events (lag 171ms)\n#339 2026-10-08T05:34:35Z INFO order-consumer processed batch of 99 messages from orders.events (lag 97ms)\n#356 2026-10-08T05:34:44Z INFO order-consumer processed batch of 50 messages from orders.events (lag 117ms)\n#372 2026-10-08T05:34:52Z INFO order-consumer processed batch of 21 messages from orders.events (lag 325ms)\n#388 2026-10-08T05:35:01Z INFO order-consumer processed batch of 113 messages from orders.events (lag 180ms)\n#403 2026-10-08T05:35:09Z INFO order-consumer processed batch of 20 messages from orders.events (lag 274ms)\n#423 2026-10-08T05:35:18Z INFO order-consumer processed batch of 95 messages from orders.events (lag 297ms)\n#439 2026-10-08T05:35:26Z INFO order-consumer processed batch of 41 messages from orders.events (lag 384ms)\n#455 2026-10-08T05:35:34Z INFO order-consumer processed batch of 48 messages from orders.events (lag 81ms)\n#476 2026-10-08T05:35:44Z INFO order-consumer processed batch of 76 messages from orders.events (lag 81ms)\n#497 2026-10-08T05:35:52Z INFO order-consumer processed batch of 27 messages from orders.events (lag 396ms)\n#516 2026-10-08T05:36:01Z INFO order-consumer processed batch of 77 messages from orders.events (lag 100ms)\n#531 2026-10-08T05:36:08Z INFO order-consumer processed batch of 91 messages from orders.events (lag 132ms)\n#548 2026-10-08T05:36:16Z INFO order-consumer processed batch of 48 messages from orders.events (lag 81ms)\n#565 2026-10-08T05:36:24Z INFO order-consumer processed batch of 24 messages from orders.events (lag 364ms)\n#582 2026-10-08T05:36:30Z INFO order-consumer processed batch of 27 messages from orders.events (lag 257ms)\n#596 2026-10-08T05:36:38Z INFO order-consumer processed batch of 117 messages from orders.events (lag 238ms)\n#611 2026-10-08T05:36:44Z INFO order-consumer processed batch of 74 messages from orders.events (lag 392ms)\n#630 2026-10-08T05:36:53Z INFO order-consumer processed batch of 28 messages from orders.events (lag 267ms)\n#646 2026-10-08T05:37:00Z INFO order-consumer processed batch of 106 messages from orders.events (lag 341ms)\n#665 2026-10-08T05:37:08Z INFO order-consumer processed batch of 80 messages from orders.events (lag 334ms)\n#691 2026-10-08T05:37:18Z INFO order-consumer processed batch of 109 messages from orders.events (lag 370ms)\n#713 2026-10-08T05:37:26Z INFO order-consumer processed batch of 42 messages from orders.events (lag 145ms)\n#731 2026-10-08T05:37:35Z INFO order-consumer processed batch of 88 messages from orders.events (lag 147ms)\n#748 2026-10-08T05:37:43Z INFO order-consumer processed batch of 99 messages from orders.events (lag 87ms)\n#766 2026-10-08T05:37:50Z INFO order-consumer processed batch of 51 messages from orders.events (lag 345ms)\n#778 2026-10-08T05:37:57Z INFO order-consumer processed batch of 52 messages from orders.events (lag 78ms)\n#792 2026-10-08T05:38:04Z INFO order-consumer processed batch of 103 messages from orders.events (lag 225ms)\n#812 2026-10-08T05:38:14Z INFO order-consumer processed batch of 95 messages from orders.events (lag 227ms)\n#829 2026-10-08T05:38:22Z INFO order-consumer processed batch of 54 messages from orders.events (lag 187ms)\n#845 2026-10-08T05:38:30Z INFO order-consumer processed batch of 41 messages from orders.events (lag 277ms)\n#854 2026-10-08T05:38:34Z WARN order-consumer GC pause 947ms (G1 Old Gen), heap 65% after collection\n#861 2026-10-08T05:38:38Z INFO order-consumer processed batch of 70 messages from orders.events (lag 243ms)\n#870 2026-10-08T05:38:43Z INFO order-consumer processed batch of 50 messages from orders.events (lag 56ms)\n#884 2026-10-08T05:38:50Z INFO order-consumer processed batch of 74 messages from orders.events (lag 395ms)\n#902 2026-10-08T05:38:58Z INFO order-consumer processed batch of 99 messages from orders.events (lag 89ms)\n#919 2026-10-08T05:39:06Z INFO order-consumer processed batch of 88 messages from orders.events (lag 61ms)\n#935 2026-10-08T05:39:11Z INFO order-consumer processed batch of 39 messages from orders.events (lag 337ms)\n#950 2026-10-08T05:39:19Z INFO order-consumer processed batch of 112 messages from orders.events (lag 218ms)\n#960 2026-10-08T05:39:24Z INFO order-consumer processed batch of 41 messages from orders.events (lag 389ms)\n#983 2026-10-08T05:39:34Z INFO order-consumer processed batch of 67 messages from orders.events (lag 211ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "577362",
+          "limit": 50
+        },
+        "output": "6 match(es):\n#1932 2026-10-08T05:46:47Z ERROR order-consumer handler error for msg-577362 at offset 589882: invalid JSON payload (byte 902 is NUL)\n#1937 2026-10-08T05:46:47Z INFO order-consumer nack msg-577362, redelivering (attempt 9, no max-retries configured)\n#2110 2026-10-08T05:48:55Z ERROR order-consumer failed to process msg-577362 (partition 1, offset 589882): JSON parse error: unexpected token '\\u0000' at position 902\n#2112 2026-10-08T05:48:55Z INFO order-consumer nack msg-577362, redelivering (attempt 13, no max-retries configured)\n#2196 2026-10-08T05:50:00Z ERROR order-consumer SyntaxError: Unexpected token \\u0000 in JSON at position 902 (message msg-577362, orders.events[1]@589882)\n#2308 2026-10-08T05:51:18Z ERROR order-consumer handler error for msg-577362 at offset 589882: invalid JSON payload (byte 902 is NUL)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "NUL",
+          "limit": 30
+        },
+        "output": "2 match(es):\n#1932 2026-10-08T05:46:47Z ERROR order-consumer handler error for msg-577362 at offset 589882: invalid JSON payload (byte 902 is NUL)\n#2308 2026-10-08T05:51:18Z ERROR order-consumer handler error for msg-577362 at offset 589882: invalid JSON payload (byte 902 is NUL)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1932,
+          "before": 8,
+          "after": 4
+        },
+        "output": "#1924 2026-10-08T05:46:42Z INFO order-consumer processed batch of 56 messages from orders.events (lag 104ms)\n#1925 2026-10-08T05:46:42Z INFO order-service [t-2418] order o-3095 accepted, calling payment-svc POST /charge\n#1926 2026-10-08T05:46:43Z INFO payment-svc [t-2418] POST /charge o-3095 ok 55ms\n#1927 2026-10-08T05:46:43Z INFO api-gateway [t-2418] POST /checkout 200 171ms\n#1928 2026-10-08T05:46:43Z INFO search-api [t-2421] product p-3097 accepted, calling catalog-svc GET /products/batch\n#1929 2026-10-08T05:46:43Z INFO web-bff [t-2421] GET /search 200 137ms\n#1930 2026-10-08T05:46:43Z INFO catalog-db checkpoint complete: wrote 1033 buffers (7.4%)\n#1931 2026-10-08T05:46:44Z INFO redis stats: hits=10363 misses=584 evicted=0 connected_clients=51\n#1932 2026-10-08T05:46:47Z ERROR order-consumer handler error for msg-577362 at offset 589882: invalid JSON payload (byte 902 is NUL)\n#1933 2026-10-08T05:46:47Z INFO order-service [t-2422] order o-3099 accepted, calling payment-svc POST /charge\n#1934 2026-10-08T05:46:47Z INFO metrics-agent flushed 6581 series to remote-write in 118ms\n#1935 2026-10-08T05:46:47Z INFO api-gateway [t-2422] POST /checkout 200 187ms\n#1936 2026-10-08T05:46:47Z INFO redis-cache stats: hits=15776 misses=401 evicted=0 connected_clients=58"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.9,
+              "evidenceLines": [
+                1932,
+                1937,
+                2110,
+                2112,
+                2196,
+                2308
+              ],
+              "reasoning": "order-consumer fails on msg-577362 at orders.events partition 1, offset 589882: the payload has a NUL byte at position 902, so JSON parse fails. The consumer nacks and redelivers it (attempt 9 at #1937, attempt 13 at #2112) with no max-retries configured, so the single bad message blocks partition 1 and lag grows from about 68s (#2095) to over 600s (#2790). Consumer CPU is normal because it is idle-retrying, not working, which fits the alert. The lag began right after the first failure at 05:46:47 and matches the timing. Other errors (catalog-svc 401 from the translation API, metrics-agent exporter drops, web-bff 502s, order-service 120s timeouts) are downstream or unrelated to the queue lag.",
+              "reasoning_extra": ""
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.15,
+              "evidenceLines": [
+                1958,
+                2079,
+                2156,
+                2253
+              ],
+              "reasoning": "Separate fault: catalog-svc's translation API credentials are rejected (HTTP 401 invalid_api_key). This explains the search-api 502s and web-bff /search 502s, but not the orders.events backlog, so it is a secondary incident and not the cause of the lag.",
+              "reasoning_extra": ""
+            }
+          ],
+          "recommendedAction": "Immediately move or skip the poison message msg-577362 (orders.events partition 1, offset 589882) to a dead-letter queue so partition 1 can drain, and configure a max-retry limit with DLQ on order-consumer. Then find the producer that wrote a NUL byte into that payload and fix its serialization. Separately, rotate or fix the translation API key used by catalog-svc (401 invalid_api_key), which is causing the search 502s."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1305,
+      "cacheReadTokens": 24176,
+      "cacheWriteTokens": 11339
+    },
+    "durationMs": 6765,
+    "stopReason": "tool_use"
+  }
+}

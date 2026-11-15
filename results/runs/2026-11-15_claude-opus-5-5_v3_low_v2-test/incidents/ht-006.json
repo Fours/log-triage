@@ -1,0 +1,167 @@
+{
+  "score": {
+    "incidentId": "ht-006",
+    "difficulty": "medium",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 3,
+      "precision": 0.5,
+      "recall": 0.75,
+      "f1": 0.6
+    },
+    "herringsCited": 0,
+    "secondaryCited": 2,
+    "costUsd": 0.0802724,
+    "durationMs": 12685,
+    "iterations": 5,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 12,
+      "output": 1222,
+      "cacheRead": 25947,
+      "cacheWrite": 10119
+    }
+  },
+  "result": {
+    "incidentId": "ht-006",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.88,
+          "evidenceLines": [
+            2228,
+            2372,
+            2317,
+            2414,
+            2410,
+            2638
+          ],
+          "reasoning": "redis-cache came back after a node replacement at 07:40:07 with no snapshot, so it started with 0 keys (#2228). search-api's miss ratio then jumped to 96% against a 3% baseline, and every miss went to catalog-db (#2372). That cache stampede filled catalog-db: 485 of 500 connections in use and CPU at 96% (#2317). Simple lookups by id slowed to 3-8s (#2414, #2638), search-api queries timed out at 5000ms (#2410), and web-bff started returning 504s on /search. The notif-worker crash loop on msg-759587 is a separate poison-message incident on the notifications path and does not touch search. The metrics-agent sample drops are unrelated noise."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.08,
+          "evidenceLines": [
+            2410,
+            2414
+          ],
+          "reasoning": "Another reading: catalog-db queries simply hang and time out. But the logs show the database was slow because of the flood of cache-miss load, not because it hung on its own."
+        },
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.04,
+          "evidenceLines": [
+            2051,
+            2091
+          ],
+          "reasoning": "notif-worker crash-loops on a poison message, but that is on an unrelated notification path."
+        }
+      ],
+      "recommendedAction": "Warm redis-cache with the hot product keys. Rate-limit catalog-db loads in search-api, or add request coalescing so that only one request per missing key goes to the database. Also fix the node-replacement process so it keeps the RDB snapshot or warms the cache before taking traffic. Separately, skip or dead-letter msg-759587 for notif-worker."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 40
+        },
+        "output": "42 match(es), showing first 40:\n#283 2026-10-18T07:25:09Z WARN index-worker GC pause 887ms (G1 Old Gen), heap 58% after collection\n#2051 2026-10-18T07:38:43Z FATAL notif-worker unhandled exception processing msg-759587 (offset 829709): RangeError: Maximum call stack size exceeded at expandReferences\n#2052 2026-10-18T07:38:43Z ERROR notif-worker process exited with code 1, restarting (restart 1, backoff 10s)\n#2091 2026-10-18T07:38:58Z FATAL notif-worker process crashed on msg-759587@829709: RangeError: call stack overflow in expandReferences\n#2092 2026-10-18T07:38:59Z ERROR notif-worker process exited with code 1, restarting (restart 2, backoff 20s)\n#2143 2026-10-18T07:39:24Z FATAL notif-worker uncaught RangeError (stack size exceeded) while handling offset 829709 (msg-759587)\n#2145 2026-10-18T07:39:24Z ERROR notif-worker process exited with code 1, restarting (restart 3, backoff 40s)\n#2256 2026-10-18T07:40:26Z WARN notification-svc publish to notifications.outbound slow: broker reports consumer group notif-worker lag 1875\n#2277 2026-10-18T07:40:41Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1249 samples\n#2317 2026-10-18T07:41:10Z WARN catalog-db connections 485/500 (active 389), CPU 96%\n#2359 2026-10-18T07:41:32Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1483 samples\n#2410 2026-10-18T07:42:03Z ERROR search-api [t-5764] query on products timed out after 5000ms (p-4174)\n#2414 2026-10-18T07:42:04Z WARN catalog-db slow query 3478ms: SELECT * FROM products WHERE id = $1\n#2470 2026-10-18T07:42:39Z ERROR web-bff [t-5803] GET /search 504 12559ms: upstream search-api timed out\n#2471 2026-10-18T07:42:41Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1783 samples\n#2476 2026-10-18T07:42:45Z WARN notification-svc publish to notifications.outbound slow: broker reports consumer group notif-worker lag 2820\n#2508 2026-10-18T07:43:03Z WARN catalog-db too many clients: 471 of 500 connection slots used, CPU at 94%\n#2553 2026-10-18T07:43:30Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1621 samples\n#2578 2026-10-18T07:43:47Z WARN notification-svc publish to notifications.outbound slow: broker reports consumer group notif-worker lag 4686\n#2587 2026-10-18T07:43:52Z ERROR web-bff [t-5879] GET /search 504 27547ms: upstream search-api timed out\n#2638 2026-10-18T07:44:29Z WARN catalog-db slow query 7352ms: SELECT * FROM products WHERE id = $1\n#2644 2026-10-18T07:44:31Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2026 samples\n#2718 2026-10-18T07:45:23Z ERROR web-bff [t-5968] GET /search 504 25087ms: upstream search-api timed out\n#2733 2026-10-18T07:45:31Z ERROR search-api [t-5983] query on products timed out after 5000ms (p-4324)\n#2765 2026-10-18T07:45:54Z WARN notification-svc publish to notifications.outbound slow: broker reports consumer group notif-worker lag 3396\n#2774 2026-10-18T07:45:59Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1772 samples\n#2837 2026-10-18T07:46:39Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1355 samples\n#2900 2026-10-18T07:47:10Z ERROR web-bff [t-6080] GET /search 504 24476ms: upstream search-api timed out\n#2902 2026-10-18T07:47:12Z WARN catalog-db slow query 5220ms: SELECT * FROM products WHERE id = $1\n#2914 2026-10-18T07:47:19Z WARN notification-svc publish to notifications.outbound slow: broker reports consumer group notif-worker lag 6060\n#2997 2026-10-18T07:48:12Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1430 samples\n#3002 2026-10-18T07:48:16Z ERROR web-bff [t-6160] GET /search 504 16711ms: upstream search-api timed out\n#3095 2026-10-18T07:49:14Z WARN catalog-db slow query 5948ms: SELECT * FROM products WHERE id = $1\n#3132 2026-10-18T07:49:41Z ERROR search-api [t-6248] query on products timed out after 5000ms (p-4544)\n#3136 2026-10-18T07:49:43Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 963 samples\n#3155 2026-10-18T07:49:55Z ERROR web-bff [t-6263] GET /search 504 11281ms: upstream search-api timed out\n#3160 2026-10-18T07:49:58Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2020 samples\n#3165 2026-10-18T07:50:00Z WARN notification-svc publish to notifications.outbound slow: broker reports consumer group notif-worker lag 8664\n#3221 2026-10-18T07:50:43Z WARN notification-svc publish to notifications.outbound slow: broker reports consumer group notif-worker lag 5656\n#3276 2026-10-18T07:51:16Z WARN catalog-db slow query 8012ms: SELECT * FROM products WHERE id = $1"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "07:39:30",
+          "until": "07:41:10",
+          "query": "cache",
+          "limit": 30
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "07:39:50",
+          "until": "07:41:10",
+          "limit": 60,
+          "query": "s"
+        },
+        "output": "123 match(es), showing first 60:\n#2196 2026-10-18T07:39:50Z INFO catalog-svc [t-5627] GET /products/batch p-4072 ok 21ms\n#2197 2026-10-18T07:39:50Z INFO web-bff [t-5627] GET /search 200 119ms\n#2198 2026-10-18T07:39:50Z DEBUG search-api GC pause 12ms (young), heap 33%\n#2199 2026-10-18T07:39:50Z INFO notif-db InnoDB: page cleaner flushed 836 pages, buffer pool hit rate 99.4%\n#2200 2026-10-18T07:39:52Z INFO notification-svc [t-5630] message m-4075 accepted, calling template-svc POST /render\n#2201 2026-10-18T07:39:52Z INFO template-svc [t-5630] POST /render m-4075 ok 33ms\n#2202 2026-10-18T07:39:52Z INFO api-gateway [t-5630] POST /v1/notify 200 111ms\n#2203 2026-10-18T07:39:54Z INFO notification-svc [t-5633] message m-4078 accepted, calling template-svc POST /render\n#2204 2026-10-18T07:39:54Z INFO template-svc [t-5633] POST /render m-4078 ok 21ms\n#2205 2026-10-18T07:39:54Z INFO api-gateway [t-5633] POST /v1/notify 200 131ms\n#2206 2026-10-18T07:39:55Z INFO search-api [t-5636] product p-4081 accepted, calling catalog-svc GET /products/batch\n#2207 2026-10-18T07:39:55Z INFO catalog-svc [t-5636] GET /products/batch p-4081 ok 83ms\n#2208 2026-10-18T07:39:55Z INFO web-bff [t-5636] GET /search 200 121ms\n#2209 2026-10-18T07:39:55Z INFO index-worker processed batch of 104 messages from catalog.updates (lag 151ms)\n#2210 2026-10-18T07:39:56Z INFO notification-svc [t-5640] message m-4082 accepted, calling template-svc POST /render\n#2211 2026-10-18T07:39:56Z INFO api-gateway [t-5640] POST /v1/notify 200 111ms\n#2212 2026-10-18T07:39:57Z INFO search-api [t-5643] product p-4084 accepted, calling catalog-svc GET /products/batch\n#2213 2026-10-18T07:39:57Z INFO web-bff [t-5643] GET /search 200 125ms\n#2214 2026-10-18T07:39:58Z INFO redis-cache stats: hits=14092 misses=823 evicted=0 connected_clients=50\n#2215 2026-10-18T07:40:01Z INFO status-poller poll cycle complete: 28 targets checked in 313ms\n#2216 2026-10-18T07:40:02Z INFO notification-svc [t-5647] message m-4086 accepted, calling template-svc POST /render\n#2217 2026-10-18T07:40:02Z INFO api-gateway [t-5647] POST /v1/notify 200 183ms\n#2218 2026-10-18T07:40:02Z INFO search-api [t-5650] product p-4089 accepted, calling catalog-svc GET /products/batch\n#2219 2026-10-18T07:40:03Z INFO web-bff [t-5650] GET /search 200 128ms\n#2220 2026-10-18T07:40:03Z INFO metrics-agent flushed 6498 series to remote-write in 60ms\n#2221 2026-10-18T07:40:04Z INFO notif-worker started notif-worker v3.27.7, pid 1\n#2222 2026-10-18T07:40:04Z DEBUG template-svc GC pause 19ms (young), heap 32%\n#2223 2026-10-18T07:40:04Z INFO index-worker processed batch of 46 messages from catalog.updates (lag 64ms)\n#2224 2026-10-18T07:40:05Z INFO redis stats: hits=12559 misses=759 evicted=0 connected_clients=41\n#2225 2026-10-18T07:40:05Z INFO notif-worker resuming notifications.outbound at committed offset 829709\n#2226 2026-10-18T07:40:05Z INFO notification-svc [t-5651] message m-4090 accepted, calling template-svc POST /render\n#2227 2026-10-18T07:40:05Z INFO api-gateway [t-5651] POST /v1/notify 200 160ms\n#2228 2026-10-18T07:40:07Z INFO redis-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#2229 2026-10-18T07:40:07Z INFO search-api [t-5653] product p-4092 accepted, calling catalog-svc GET /products/batch\n#2230 2026-10-18T07:40:07Z DEBUG catalog-svc GC pause 11ms (young), heap 43%\n#2231 2026-10-18T07:40:07Z INFO web-bff [t-5653] GET /search 200 108ms\n#2232 2026-10-18T07:40:07Z INFO notification-svc [t-5657] message m-4095 accepted, calling template-svc POST /render\n#2233 2026-10-18T07:40:07Z INFO template-svc [t-5657] POST /render m-4095 ok 68ms\n#2234 2026-10-18T07:40:07Z INFO api-gateway [t-5657] POST /v1/notify 200 157ms\n#2235 2026-10-18T07:40:08Z INFO catalog-db checkpoint complete: wrote 227 buffers (7.9%)\n#2236 2026-10-18T07:40:10Z INFO notif-db InnoDB: page cleaner flushed 547 pages, buffer pool hit rate 99.8%\n#2237 2026-10-18T07:40:10Z INFO index-worker processed batch of 57 messages from catalog.updates (lag 129ms)\n#2238 2026-10-18T07:40:12Z INFO notification-svc [t-5660] message m-4097 accepted, calling template-svc POST /render\n#2239 2026-10-18T07:40:13Z INFO api-gateway [t-5660] POST /v1/notify 200 157ms\n#2240 2026-10-18T07:40:15Z DEBUG notification-svc GC pause 12ms (young), heap 44%\n#2241 2026-10-18T07:40:16Z INFO notification-svc [t-5661] message m-4100 accepted, calling template-svc POST /render\n#2242 2026-10-18T07:40:16Z INFO template-svc [t-5661] POST /render m-4100 ok 58ms\n#2243 2026-10-18T07:40:16Z INFO api-gateway [t-5661] POST /v1/notify 200 146ms\n#2244 2026-10-18T07:40:17Z INFO index-worker processed batch of 54 messages from catalog.updates (lag 392ms)\n#2245 2026-10-18T07:40:19Z INFO status-poller poll cycle complete: 24 targets checked in 601ms\n#2246 2026-10-18T07:40:19Z INFO redis stats: hits=11266 misses=538 evicted=0 connected_clients=59\n#2247 2026-10-18T07:40:20Z INFO notification-svc [t-5662] message m-4102 accepted, calling template-svc POST /render\n#2248 2026-10-18T07:40:21Z INFO api-gateway [t-5662] POST /v1/notify 200 123ms\n#2249 2026-10-18T07:40:23Z INFO search-api [t-5663] product p-4103 accepted, calling catalog-svc GET /products/batch\n#2250 2026-10-18T07:40:23Z INFO catalog-svc [t-5663] GET /products/batch p-4103 ok 21ms\n#2251 2026-10-18T07:40:23Z INFO web-bff [t-5663] GET /search 200 124ms\n#2252 2026-10-18T07:40:24Z INFO notification-svc [t-5666] message m-4105 accepted, calling template-svc POST /render\n#2253 2026-10-18T07:40:24Z INFO api-gateway [t-5666] POST /v1/notify 200 135ms\n#2254 2026-10-18T07:40:25Z DEBUG search-api GC pause 13ms (young), heap 35%\n#2255 2026-10-18T07:40:26Z INFO index-worker processed batch of 39 messages from catalog.updates (lag 179ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "07:40:08",
+          "until": "07:42:10",
+          "query": "miss",
+          "limit": 10
+        },
+        "output": "9 match(es):\n#2246 2026-10-18T07:40:19Z INFO redis stats: hits=11266 misses=538 evicted=0 connected_clients=59\n#2269 2026-10-18T07:40:34Z INFO redis stats: hits=19602 misses=500 evicted=0 connected_clients=39\n#2286 2026-10-18T07:40:46Z INFO redis stats: hits=14136 misses=576 evicted=0 connected_clients=59\n#2307 2026-10-18T07:41:03Z INFO redis stats: hits=14654 misses=820 evicted=0 connected_clients=30\n#2337 2026-10-18T07:41:20Z INFO redis stats: hits=19324 misses=280 evicted=0 connected_clients=34\n#2354 2026-10-18T07:41:31Z INFO redis stats: hits=12294 misses=374 evicted=0 connected_clients=48\n#2372 2026-10-18T07:41:41Z INFO search-api redis-cache miss ratio 96% over last 30s (baseline 3%), loading from catalog-db\n#2386 2026-10-18T07:41:47Z INFO redis stats: hits=19518 misses=890 evicted=0 connected_clients=50\n#2412 2026-10-18T07:42:04Z INFO redis stats: hits=8976 misses=259 evicted=0 connected_clients=56"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.88,
+              "evidenceLines": [
+                2228,
+                2372,
+                2317,
+                2414,
+                2410,
+                2638
+              ],
+              "reasoning": "redis-cache came back after a node replacement at 07:40:07 with no snapshot, so it started with 0 keys (#2228). search-api's miss ratio then jumped to 96% against a 3% baseline, and every miss went to catalog-db (#2372). That cache stampede filled catalog-db: 485 of 500 connections in use and CPU at 96% (#2317). Simple lookups by id slowed to 3-8s (#2414, #2638), search-api queries timed out at 5000ms (#2410), and web-bff started returning 504s on /search. The notif-worker crash loop on msg-759587 is a separate poison-message incident on the notifications path and does not touch search. The metrics-agent sample drops are unrelated noise."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.08,
+              "evidenceLines": [
+                2410,
+                2414
+              ],
+              "reasoning": "Another reading: catalog-db queries simply hang and time out. But the logs show the database was slow because of the flood of cache-miss load, not because it hung on its own."
+            },
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.04,
+              "evidenceLines": [
+                2051,
+                2091
+              ],
+              "reasoning": "notif-worker crash-loops on a poison message, but that is on an unrelated notification path."
+            }
+          ],
+          "recommendedAction": "Warm redis-cache with the hot product keys. Rate-limit catalog-db loads in search-api, or add request coalescing so that only one request per missing key goes to the database. Also fix the node-replacement process so it keeps the RDB snapshot or warms the cache before taking traffic. Separately, skip or dead-letter msg-759587 for notif-worker."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1222,
+      "cacheReadTokens": 25947,
+      "cacheWriteTokens": 10119
+    },
+    "durationMs": 12685,
+    "stopReason": "tool_use"
+  }
+}

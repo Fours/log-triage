@@ -1,0 +1,127 @@
+{
+  "score": {
+    "incidentId": "ht-019",
+    "difficulty": "easy",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 3,
+      "precision": 0.5,
+      "recall": 0.75,
+      "f1": 0.6
+    },
+    "herringsCited": 0,
+    "costUsd": 0.043359800000000004,
+    "durationMs": 7647,
+    "iterations": 2,
+    "toolCalls": 2,
+    "tokens": {
+      "input": 6,
+      "output": 660,
+      "cacheRead": 3529,
+      "cacheWrite": 5886
+    }
+  },
+  "result": {
+    "incidentId": "ht-019",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.9,
+          "evidenceLines": [
+            1023,
+            1089,
+            1090,
+            1107,
+            1236,
+            1428
+          ],
+          "reasoning": "At 19:58:49 Redis came back from a node replacement with no RDB snapshot, so the cache was empty. The miss ratio jumped to 96% (normal is 2%), every read fell through to postgres, and postgres hit 490/500 connections at 96% CPU. Order queries started timing out, which caused the 504s at the gateway. This is a cache stampede. The status-poller errors are a red herring: they come from a deprecated endpoint and were failing before the incident started."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.07,
+          "evidenceLines": [
+            1107,
+            1159
+          ],
+          "reasoning": "Another reading is that postgres simply ran out of connections and CPU. But that saturation follows the cache loss, so it's a symptom, not the cause."
+        }
+      ],
+      "recommendedAction": "Warm the Redis cache, or add request coalescing and rate limiting on cache misses. In the meantime, shed load or throttle checkout so postgres can recover. Turn on RDB/AOF persistence so a node replacement doesn't come back empty."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 40,
+          "since": "19:55:00"
+        },
+        "output": "23 match(es):\n#753 2026-11-01T19:55:12Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#961 2026-11-01T19:58:00Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1023 2026-11-01T19:58:49Z WARN redis restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#1079 2026-11-01T19:59:58Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1089 2026-11-01T20:00:06Z WARN order-service redis miss ratio 96% over last 30s (baseline 2%), loading from postgres\n#1090 2026-11-01T20:00:08Z WARN postgres slow query 5567ms: SELECT * FROM orders WHERE id = $1\n#1107 2026-11-01T20:00:34Z WARN postgres connections 490/500 (active 443), CPU 96%\n#1159 2026-11-01T20:01:37Z WARN postgres too many clients: 484 of 500 connection slots used, CPU at 95%\n#1164 2026-11-01T20:01:44Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1173 2026-11-01T20:01:58Z ERROR api-gateway [t-7870] POST /checkout 504 23950ms: upstream order-service timed out\n#1236 2026-11-01T20:03:16Z ERROR order-service [t-7892] query on orders timed out after 5000ms (o-2278)\n#1255 2026-11-01T20:03:51Z ERROR api-gateway [t-7895] POST /checkout 504 13282ms: upstream order-service timed out\n#1269 2026-11-01T20:04:07Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1318 2026-11-01T20:05:12Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1384 2026-11-01T20:06:34Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1428 2026-11-01T20:07:30Z WARN postgres slow query 8854ms: SELECT * FROM orders WHERE id = $1\n#1471 2026-11-01T20:08:23Z ERROR api-gateway [t-7972] POST /checkout 504 20508ms: upstream order-service timed out\n#1473 2026-11-01T20:08:27Z ERROR order-service [t-7973] query on orders timed out after 5000ms (o-2339)\n#1525 2026-11-01T20:09:45Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1546 2026-11-01T20:10:11Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1675 2026-11-01T20:13:09Z WARN postgres slow query 5682ms: SELECT * FROM orders WHERE id = $1\n#1679 2026-11-01T20:13:13Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1703 2026-11-01T20:13:33Z ERROR api-gateway [t-8048] POST /checkout 504 22487ms: upstream order-service timed out"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "redis",
+          "since": "19:57:00"
+        },
+        "output": "13 match(es):\n#889 2026-11-01T19:57:04Z INFO redis stats: hits=18468 misses=391 evicted=0 connected_clients=52\n#900 2026-11-01T19:57:12Z INFO redis stats: hits=18822 misses=693 evicted=0 connected_clients=38\n#913 2026-11-01T19:57:21Z INFO redis stats: hits=13067 misses=794 evicted=0 connected_clients=47\n#924 2026-11-01T19:57:31Z INFO redis stats: hits=12786 misses=797 evicted=0 connected_clients=42\n#940 2026-11-01T19:57:42Z INFO redis stats: hits=15574 misses=500 evicted=0 connected_clients=55\n#948 2026-11-01T19:57:50Z INFO redis stats: hits=8079 misses=559 evicted=0 connected_clients=42\n#960 2026-11-01T19:57:59Z INFO redis stats: hits=17879 misses=589 evicted=0 connected_clients=38\n#970 2026-11-01T19:58:08Z INFO redis stats: hits=11009 misses=251 evicted=0 connected_clients=60\n#982 2026-11-01T19:58:16Z INFO redis stats: hits=10561 misses=484 evicted=0 connected_clients=41\n#997 2026-11-01T19:58:26Z INFO redis stats: hits=16566 misses=689 evicted=0 connected_clients=38\n#1008 2026-11-01T19:58:37Z INFO redis stats: hits=10323 misses=259 evicted=0 connected_clients=38\n#1022 2026-11-01T19:58:48Z INFO redis stats: hits=15648 misses=333 evicted=0 connected_clients=60\n#1023 2026-11-01T19:58:49Z WARN redis restarted after node replacement; no RDB snapshot found, starting with 0 keys"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.9,
+              "evidenceLines": [
+                1023,
+                1089,
+                1090,
+                1107,
+                1236,
+                1428
+              ],
+              "reasoning": "At 19:58:49 Redis came back from a node replacement with no RDB snapshot, so the cache was empty. The miss ratio jumped to 96% (normal is 2%), every read fell through to postgres, and postgres hit 490/500 connections at 96% CPU. Order queries started timing out, which caused the 504s at the gateway. This is a cache stampede. The status-poller errors are a red herring: they come from a deprecated endpoint and were failing before the incident started."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.07,
+              "evidenceLines": [
+                1107,
+                1159
+              ],
+              "reasoning": "Another reading is that postgres simply ran out of connections and CPU. But that saturation follows the cache loss, so it's a symptom, not the cause."
+            }
+          ],
+          "recommendedAction": "Warm the Redis cache, or add request coalescing and rate limiting on cache misses. In the meantime, shed load or throttle checkout so postgres can recover. Turn on RDB/AOF persistence so a node replacement doesn't come back empty."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 2,
+    "toolCalls": 2,
+    "usage": {
+      "inputTokens": 6,
+      "outputTokens": 660,
+      "cacheReadTokens": 3529,
+      "cacheWriteTokens": 5886
+    },
+    "durationMs": 7647,
+    "stopReason": "tool_use"
+  }
+}

@@ -1,0 +1,154 @@
+{
+  "score": {
+    "incidentId": "ht-032",
+    "difficulty": "medium",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 4,
+      "precision": 0.8,
+      "recall": 0.4444444444444444,
+      "f1": 0.5714285714285714
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.0333507,
+    "durationMs": 9960,
+    "iterations": 4,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 10,
+      "output": 1067,
+      "cacheRead": 16332,
+      "cacheWrite": 8411
+    }
+  },
+  "result": {
+    "incidentId": "ht-032",
+    "model": "claude-sonnet-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.85,
+          "evidenceLines": [
+            1337,
+            1346,
+            1397,
+            1503,
+            1441
+          ],
+          "reasoning": "auth-svc lost an instance (liveness restart, capacity 3/4). account-svc then retried POST /tokens immediately with backoff disabled (4 attempts), driving auth-svc to 3-5x baseline load. auth-svc kept shedding 503s, and that kept the retry storm going, so /login did not recover. The edge-proxy 503s are the downstream symptom. status-poller timeouts against the deprecated legacy-inventory endpoint, the catalog S3 retry quota exhaustion, and the search-api 500s look unrelated."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.1,
+          "evidenceLines": [
+            1397,
+            1544
+          ],
+          "reasoning": "auth-svc was over capacity with 713-752 requests in flight, but the overload came from retry amplification."
+        }
+      ],
+      "recommendedAction": "Re-enable exponential backoff with jitter in account-svc's AuthClient, and cap its retries. Restore auth-svc capacity and investigate why auth-svc-3 failed its liveness probe. Temporarily throttle /login at the edge so auth-svc can drain its queue."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "service": "auth-svc",
+          "limit": 15
+        },
+        "output": "9 match(es):\n#1337 2026-10-22T12:06:48Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4\n#1397 2026-10-22T12:07:40Z WARN auth-svc admission control: 713 requests in flight (3.2x normal), rejecting new work\n#1441 2026-10-22T12:08:19Z ERROR auth-svc [t-5432] load shed: rejected POST /tokens with 503 (queue full)\n#1544 2026-10-22T12:09:37Z WARN auth-svc overloaded: request rate at 4.1 times baseline, 737 inflight, returning 503 to callers\n#1639 2026-10-22T12:10:50Z WARN auth-svc inbound request rate 5.0x baseline (inflight 752), shedding load with 503\n#1666 2026-10-22T12:11:12Z ERROR auth-svc [t-5539] load shed: rejected POST /tokens with 503 (queue full)\n#1818 2026-10-22T12:12:58Z ERROR auth-svc [t-5605] load shed: rejected POST /tokens with 503 (queue full)\n#1949 2026-10-22T12:14:59Z ERROR auth-svc [t-5650] load shed: rejected POST /tokens with 503 (queue full)\n#2225 2026-10-22T12:18:40Z ERROR auth-svc [t-5762] load shed: rejected POST /tokens with 503 (queue full)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "service": "status-poller",
+          "limit": 5
+        },
+        "output": "13 match(es), showing first 5:\n#1357 2026-10-22T12:07:08Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1460 2026-10-22T12:08:33Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1515 2026-10-22T12:09:14Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1604 2026-10-22T12:10:21Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1645 2026-10-22T12:10:57Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "12:04:00",
+          "until": "12:07:45",
+          "query": "auth",
+          "limit": 40
+        },
+        "output": "57 match(es), showing first 40:\n#1027 2026-10-22T12:04:03Z INFO account-svc [t-5166] user u-3935 accepted, calling auth-svc POST /tokens\n#1035 2026-10-22T12:04:06Z INFO account-svc [t-5170] user u-3940 accepted, calling auth-svc POST /tokens\n#1039 2026-10-22T12:04:08Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#1041 2026-10-22T12:04:10Z INFO account-svc [t-5176] user u-3945 accepted, calling auth-svc POST /tokens\n#1050 2026-10-22T12:04:12Z INFO account-svc [t-5183] user u-3949 accepted, calling auth-svc POST /tokens\n#1057 2026-10-22T12:04:17Z INFO account-svc [t-5191] user u-3954 accepted, calling auth-svc POST /tokens\n#1064 2026-10-22T12:04:19Z INFO account-svc [t-5194] user u-3955 accepted, calling auth-svc POST /tokens\n#1072 2026-10-22T12:04:25Z INFO account-svc [t-5201] user u-3958 accepted, calling auth-svc POST /tokens\n#1076 2026-10-22T12:04:28Z INFO account-svc [t-5204] user u-3959 accepted, calling auth-svc POST /tokens\n#1082 2026-10-22T12:04:32Z INFO account-svc [t-5208] user u-3961 accepted, calling auth-svc POST /tokens\n#1084 2026-10-22T12:04:35Z INFO account-svc [t-5210] user u-3964 accepted, calling auth-svc POST /tokens\n#1093 2026-10-22T12:04:38Z INFO account-svc [t-5218] user u-3969 accepted, calling auth-svc POST /tokens\n#1096 2026-10-22T12:04:39Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#1100 2026-10-22T12:04:42Z INFO account-svc [t-5222] user u-3970 accepted, calling auth-svc POST /tokens\n#1108 2026-10-22T12:04:44Z INFO account-svc [t-5230] user u-3976 accepted, calling auth-svc POST /tokens\n#1113 2026-10-22T12:04:48Z INFO account-svc [t-5233] user u-3977 accepted, calling auth-svc POST /tokens\n#1117 2026-10-22T12:04:50Z INFO account-svc [t-5237] user u-3979 accepted, calling auth-svc POST /tokens\n#1125 2026-10-22T12:04:55Z INFO account-svc [t-5242] user u-3982 accepted, calling auth-svc POST /tokens\n#1135 2026-10-22T12:04:59Z INFO account-svc [t-5247] user u-3984 accepted, calling auth-svc POST /tokens\n#1138 2026-10-22T12:05:02Z INFO account-svc [t-5251] user u-3986 accepted, calling auth-svc POST /tokens\n#1142 2026-10-22T12:05:05Z INFO account-svc [t-5253] user u-3989 accepted, calling auth-svc POST /tokens\n#1152 2026-10-22T12:05:11Z INFO account-svc [t-5262] user u-3997 accepted, calling auth-svc POST /tokens\n#1161 2026-10-22T12:05:14Z INFO account-svc [t-5269] user u-4001 accepted, calling auth-svc POST /tokens\n#1169 2026-10-22T12:05:18Z INFO account-svc [t-5272] user u-4006 accepted, calling auth-svc POST /tokens\n#1176 2026-10-22T12:05:21Z INFO account-svc [t-5275] user u-4007 accepted, calling auth-svc POST /tokens\n#1180 2026-10-22T12:05:22Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#1184 2026-10-22T12:05:26Z INFO account-svc [t-5279] user u-4009 accepted, calling auth-svc POST /tokens\n#1190 2026-10-22T12:05:31Z INFO account-svc [t-5280] user u-4010 accepted, calling auth-svc POST /tokens\n#1198 2026-10-22T12:05:36Z INFO account-svc [t-5284] user u-4015 accepted, calling auth-svc POST /tokens\n#1204 2026-10-22T12:05:38Z INFO account-svc [t-5288] user u-4017 accepted, calling auth-svc POST /tokens\n#1210 2026-10-22T12:05:43Z INFO account-svc [t-5295] user u-4019 accepted, calling auth-svc POST /tokens\n#1214 2026-10-22T12:05:45Z INFO account-svc [t-5296] user u-4022 accepted, calling auth-svc POST /tokens\n#1222 2026-10-22T12:05:48Z INFO account-svc [t-5304] user u-4025 accepted, calling auth-svc POST /tokens\n#1229 2026-10-22T12:05:53Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#1230 2026-10-22T12:05:53Z INFO account-svc [t-5306] user u-4028 accepted, calling auth-svc POST /tokens\n#1240 2026-10-22T12:05:57Z INFO account-svc [t-5314] user u-4032 accepted, calling auth-svc POST /tokens\n#1249 2026-10-22T12:06:00Z INFO account-svc [t-5324] user u-4041 accepted, calling auth-svc POST /tokens\n#1252 2026-10-22T12:06:01Z INFO account-svc [t-5326] user u-4042 accepted, calling auth-svc POST /tokens\n#1256 2026-10-22T12:06:06Z INFO account-svc [t-5330] user u-4044 accepted, calling auth-svc POST /tokens\n#1264 2026-10-22T12:06:08Z INFO account-svc [t-5336] user u-4048 accepted, calling auth-svc POST /tokens"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "retr",
+          "limit": 8
+        },
+        "output": "11 match(es), showing first 8:\n#997 2026-10-22T12:03:49Z WARN catalog-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (59 failed attempts in 60s)\n#1346 2026-10-22T12:06:52Z WARN account-svc [t-5389] retry 2/4 for POST /tokens after 503 from auth-svc (delay 0ms)\n#1376 2026-10-22T12:07:25Z ERROR edge-proxy [t-5399] POST /login 503 5158ms: upstream account-svc returned 503 (retries exhausted)\n#1503 2026-10-22T12:09:05Z WARN account-svc [t-5465] AuthClient.issueToken got 503, retrying immediately (attempt 4/4, backoff disabled)\n#1518 2026-10-22T12:09:16Z ERROR edge-proxy [t-5473] POST /login 503 9982ms: upstream account-svc returned 503 (retries exhausted)\n#1537 2026-10-22T12:09:32Z WARN account-svc [t-5486] retry 2/4 for POST /tokens after 503 from auth-svc (delay 0ms)\n#1634 2026-10-22T12:10:46Z ERROR edge-proxy [t-5529] POST /login 503 5205ms: upstream account-svc returned 503 (retries exhausted)\n#1803 2026-10-22T12:12:48Z ERROR edge-proxy [t-5598] POST /login 503 22770ms: upstream account-svc returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "12:06:09",
+          "until": "12:07:00",
+          "level": "WARN"
+        },
+        "output": "3 match(es):\n#1266 2026-10-22T12:06:09Z ERROR web-bff [t-5338] GET /search 500 27218ms: upstream search-api returned 500 Internal Server Error\n#1337 2026-10-22T12:06:48Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4\n#1346 2026-10-22T12:06:52Z WARN account-svc [t-5389] retry 2/4 for POST /tokens after 503 from auth-svc (delay 0ms)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.85,
+              "evidenceLines": [
+                1337,
+                1346,
+                1397,
+                1503,
+                1441
+              ],
+              "reasoning": "auth-svc lost an instance (liveness restart, capacity 3/4). account-svc then retried POST /tokens immediately with backoff disabled (4 attempts), driving auth-svc to 3-5x baseline load. auth-svc kept shedding 503s, and that kept the retry storm going, so /login did not recover. The edge-proxy 503s are the downstream symptom. status-poller timeouts against the deprecated legacy-inventory endpoint, the catalog S3 retry quota exhaustion, and the search-api 500s look unrelated."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.1,
+              "evidenceLines": [
+                1397,
+                1544
+              ],
+              "reasoning": "auth-svc was over capacity with 713-752 requests in flight, but the overload came from retry amplification."
+            }
+          ],
+          "recommendedAction": "Re-enable exponential backoff with jitter in account-svc's AuthClient, and cap its retries. Restore auth-svc capacity and investigate why auth-svc-3 failed its liveness probe. Temporarily throttle /login at the edge so auth-svc can drain its queue."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1067,
+      "cacheReadTokens": 16332,
+      "cacheWriteTokens": 8411
+    },
+    "durationMs": 9960,
+    "stopReason": "tool_use"
+  }
+}

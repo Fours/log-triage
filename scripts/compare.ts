@@ -28,6 +28,8 @@ const fmt: Record<string, (x: number) => string> = {
   costUsd: (x) => `${x >= 0 ? "+" : "−"}$${Math.abs(x).toFixed(4)}`,
   seconds: (x) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(1)}s`,
 };
+const lines = (x: number) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(2)} lines`;
+fmt.herringsCited = lines;
 const pts = (x: number) => `${x >= 0 ? "+" : "−"}${Math.abs(x * 100).toFixed(1)} pts`;
 
 console.log(`B − A, paired over shared incidents\n  A = ${a}\n  B = ${b}\n`);

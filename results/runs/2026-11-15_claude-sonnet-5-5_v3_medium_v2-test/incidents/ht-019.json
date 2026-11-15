@@ -1,0 +1,116 @@
+{
+  "score": {
+    "incidentId": "ht-019",
+    "difficulty": "easy",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.8,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 3,
+      "precision": 0.6,
+      "recall": 0.75,
+      "f1": 0.6666666666666665
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0181824,
+    "durationMs": 5374,
+    "iterations": 2,
+    "toolCalls": 1,
+    "tokens": {
+      "input": 6,
+      "output": 499,
+      "cacheRead": 3529,
+      "cacheWrite": 5131
+    }
+  },
+  "result": {
+    "incidentId": "ht-019",
+    "model": "claude-sonnet-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.8,
+          "evidenceLines": [
+            1023,
+            1089,
+            1090,
+            1107,
+            1236
+          ],
+          "reasoning": "Redis restarted after node replacement with no snapshot and 0 keys (#1023). The cache went cold, so the order-service redis miss ratio hit 96% (#1089). Every miss fell through to postgres, which saturated on connections and CPU (#1107). Orders queries then slowed and timed out (#1090, #1236), and checkout returned 504s. The status-poller errors on legacy-inventory started before the incident and are a red herring."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.1,
+          "evidenceLines": [
+            1107,
+            1159
+          ],
+          "reasoning": "Postgres connection and CPU exhaustion could be read as the primary fault, but it follows the cache loss."
+        }
+      ],
+      "recommendedAction": "Warm the redis cache gradually. Rate-limit or add request coalescing on postgres fallback reads. Persist redis snapshots. Remove the deprecated legacy-inventory healthcheck."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "24 match(es):\n#712 2026-11-01T19:54:37Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#753 2026-11-01T19:55:12Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#961 2026-11-01T19:58:00Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1023 2026-11-01T19:58:49Z WARN redis restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#1079 2026-11-01T19:59:58Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1089 2026-11-01T20:00:06Z WARN order-service redis miss ratio 96% over last 30s (baseline 2%), loading from postgres\n#1090 2026-11-01T20:00:08Z WARN postgres slow query 5567ms: SELECT * FROM orders WHERE id = $1\n#1107 2026-11-01T20:00:34Z WARN postgres connections 490/500 (active 443), CPU 96%\n#1159 2026-11-01T20:01:37Z WARN postgres too many clients: 484 of 500 connection slots used, CPU at 95%\n#1164 2026-11-01T20:01:44Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1173 2026-11-01T20:01:58Z ERROR api-gateway [t-7870] POST /checkout 504 23950ms: upstream order-service timed out\n#1236 2026-11-01T20:03:16Z ERROR order-service [t-7892] query on orders timed out after 5000ms (o-2278)\n#1255 2026-11-01T20:03:51Z ERROR api-gateway [t-7895] POST /checkout 504 13282ms: upstream order-service timed out\n#1269 2026-11-01T20:04:07Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1318 2026-11-01T20:05:12Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1384 2026-11-01T20:06:34Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1428 2026-11-01T20:07:30Z WARN postgres slow query 8854ms: SELECT * FROM orders WHERE id = $1\n#1471 2026-11-01T20:08:23Z ERROR api-gateway [t-7972] POST /checkout 504 20508ms: upstream order-service timed out\n#1473 2026-11-01T20:08:27Z ERROR order-service [t-7973] query on orders timed out after 5000ms (o-2339)\n#1525 2026-11-01T20:09:45Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1546 2026-11-01T20:10:11Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1675 2026-11-01T20:13:09Z WARN postgres slow query 5682ms: SELECT * FROM orders WHERE id = $1\n#1679 2026-11-01T20:13:13Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1703 2026-11-01T20:13:33Z ERROR api-gateway [t-8048] POST /checkout 504 22487ms: upstream order-service timed out"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.8,
+              "evidenceLines": [
+                1023,
+                1089,
+                1090,
+                1107,
+                1236
+              ],
+              "reasoning": "Redis restarted after node replacement with no snapshot and 0 keys (#1023). The cache went cold, so the order-service redis miss ratio hit 96% (#1089). Every miss fell through to postgres, which saturated on connections and CPU (#1107). Orders queries then slowed and timed out (#1090, #1236), and checkout returned 504s. The status-poller errors on legacy-inventory started before the incident and are a red herring."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.1,
+              "evidenceLines": [
+                1107,
+                1159
+              ],
+              "reasoning": "Postgres connection and CPU exhaustion could be read as the primary fault, but it follows the cache loss."
+            }
+          ],
+          "recommendedAction": "Warm the redis cache gradually. Rate-limit or add request coalescing on postgres fallback reads. Persist redis snapshots. Remove the deprecated legacy-inventory healthcheck."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 2,
+    "toolCalls": 1,
+    "usage": {
+      "inputTokens": 6,
+      "outputTokens": 499,
+      "cacheReadTokens": 3529,
+      "cacheWriteTokens": 5131
+    },
+    "durationMs": 5374,
+    "stopReason": "tool_use"
+  }
+}

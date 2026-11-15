@@ -1,0 +1,260 @@
+{
+  "score": {
+    "incidentId": "ht-048",
+    "difficulty": "easy",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.72,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 9,
+      "correct": 7,
+      "precision": 0.7777777777777778,
+      "recall": 1,
+      "f1": 0.8750000000000001
+    },
+    "herringsCited": 0,
+    "costUsd": 0.00540894,
+    "durationMs": 19003,
+    "iterations": 10,
+    "toolCalls": 16,
+    "tokens": {
+      "input": 22,
+      "output": 3537,
+      "cacheRead": 117774,
+      "cacheWrite": 19684
+    }
+  },
+  "result": {
+    "incidentId": "ht-048",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.72,
+          "evidenceLines": [
+            1092,
+            1129,
+            1137,
+            1164,
+            1205,
+            1187,
+            1212,
+            1234,
+            1186
+          ],
+          "reasoning": "The trigger is small: template-svc-1 was restarted by a failed liveness probe at 16:10:28 (#1092), dropping capacity to 3/4; it was ready again at 16:11:16 (#1129). Right after, notification-svc began getting 503s from template-svc /render (#1137) and retried immediately with backoff disabled (#1137, #1164, #1205, 0ms delay, up to 4 attempts). Those retries multiplied the load: template-svc hit 590 in-flight requests (3.2x normal, #1187) and then 827 at 4.1x baseline (#1234), and it began load-shedding with 503s (#1212, #1401, #1504). Notification-svc exhausted retries and api-gateway returned 503s to clients (#1186, #1300, #1356, #1474). The fault is not recovering because the retry loop keeps the template-svc queue saturated. The notif-db, redis and notif-worker logs look healthy. The status-poller timeouts against legacy-inventory (#299, #353, ... #1513) are a separate, deprecated healthcheck and do not sit on the notify path, so they are a red herring."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.25,
+          "evidenceLines": [
+            1092,
+            1187,
+            1234,
+            1212
+          ],
+          "reasoning": "Alternative reading: template-svc itself ran out of request capacity (instance restart at 3/4 capacity, in-flight pool at 590 then 827 with queue-full rejections). If the restart was the cause of the capacity loss, this would be a resource limit rather than amplification. The logs show no memory or GC issue (GC pauses are 6-25ms, heap 30-45%), which weakens this reading."
+        }
+      ],
+      "recommendedAction": "1) Enable exponential backoff with jitter and a retry cap on notification-svc's TemplateClient.render. Immediate retries with backoff disabled are what amplify the load. 2) Shed or pause the excess notify traffic, or temporarily raise template-svc capacity or replicas, so the in-flight queue can drain. 3) Investigate why template-svc-1's liveness probe failed at 16:10:28. 4) Separately, the status-poller healthcheck against deprecated legacy-inventory is timing out. Remove or repoint it so it stops adding noise."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "25 match(es):\n#299 2026-11-24T16:00:02Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#353 2026-11-24T16:00:44Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#593 2026-11-24T16:03:49Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#650 2026-11-24T16:04:34Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#776 2026-11-24T16:06:11Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#953 2026-11-24T16:08:36Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1092 2026-11-24T16:10:28Z WARN template-svc instance template-svc-1 restarting (liveness probe failed), capacity 3/4\n#1126 2026-11-24T16:11:11Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1137 2026-11-24T16:11:24Z WARN notification-svc [t-4578] TemplateClient.render got 503, retrying immediately (attempt 2/4, backoff disabled)\n#1164 2026-11-24T16:11:55Z WARN notification-svc [t-4590] retry 3/4 for POST /render after 503 from template-svc (delay 0ms)\n#1186 2026-11-24T16:12:27Z ERROR api-gateway [t-4594] POST /v1/notify 503 27585ms: upstream notification-svc returned 503 (retries exhausted)\n#1187 2026-11-24T16:12:28Z WARN template-svc admission control: 590 requests in flight (3.2x normal), rejecting new work\n#1205 2026-11-24T16:12:54Z WARN notification-svc [t-4601] TemplateClient.render got 503, retrying immediately (attempt 4/4, backoff disabled)\n#1212 2026-11-24T16:13:03Z ERROR template-svc [t-4604] load shed: rejected POST /render with 503 (queue full)\n#1216 2026-11-24T16:13:09Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1234 2026-11-24T16:13:36Z WARN template-svc inbound request rate 4.1x baseline (inflight 827), shedding load with 503\n#1255 2026-11-24T16:13:58Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1300 2026-11-24T16:14:51Z ERROR api-gateway [t-4627] POST /v1/notify 503 6211ms: upstream notification-svc returned 503 (retries exhausted)\n#1356 2026-11-24T16:16:04Z ERROR api-gateway [t-4639] POST /v1/notify 503 28235ms: upstream notification-svc returned 503 (retries exhausted)\n#1389 2026-11-24T16:16:51Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1401 2026-11-24T16:17:04Z ERROR template-svc [t-4652] load shed: rejected POST /render with 503 (queue full)\n#1451 2026-11-24T16:18:06Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1474 2026-11-24T16:18:38Z ERROR api-gateway [t-4667] POST /v1/notify 503 12878ms: upstream notification-svc returned 503 (retries exhausted)\n#1504 2026-11-24T16:19:13Z ERROR template-svc [t-4676] load shed: rejected POST /render with 503 (queue full)\n#1513 2026-11-24T16:19:20Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "status-poller",
+          "limit": 30
+        },
+        "output": "128 match(es), showing first 30:\n#6 2026-11-24T15:56:05Z INFO status-poller poll cycle complete: 30 targets checked in 510ms\n#25 2026-11-24T15:56:18Z INFO status-poller poll cycle complete: 29 targets checked in 419ms\n#37 2026-11-24T15:56:31Z INFO status-poller poll cycle complete: 21 targets checked in 659ms\n#57 2026-11-24T15:56:47Z INFO status-poller poll cycle complete: 22 targets checked in 556ms\n#67 2026-11-24T15:56:56Z INFO status-poller poll cycle complete: 35 targets checked in 814ms\n#81 2026-11-24T15:57:07Z INFO status-poller poll cycle complete: 29 targets checked in 578ms\n#100 2026-11-24T15:57:23Z INFO status-poller poll cycle complete: 21 targets checked in 612ms\n#119 2026-11-24T15:57:35Z INFO status-poller poll cycle complete: 31 targets checked in 803ms\n#141 2026-11-24T15:57:53Z INFO status-poller poll cycle complete: 33 targets checked in 304ms\n#152 2026-11-24T15:58:02Z INFO status-poller poll cycle complete: 25 targets checked in 874ms\n#170 2026-11-24T15:58:19Z INFO status-poller poll cycle complete: 35 targets checked in 330ms\n#181 2026-11-24T15:58:28Z INFO status-poller poll cycle complete: 25 targets checked in 351ms\n#201 2026-11-24T15:58:45Z INFO status-poller poll cycle complete: 31 targets checked in 522ms\n#213 2026-11-24T15:58:55Z INFO status-poller poll cycle complete: 22 targets checked in 780ms\n#227 2026-11-24T15:59:08Z INFO status-poller poll cycle complete: 34 targets checked in 560ms\n#250 2026-11-24T15:59:24Z INFO status-poller poll cycle complete: 38 targets checked in 516ms\n#268 2026-11-24T15:59:37Z INFO status-poller poll cycle complete: 38 targets checked in 743ms\n#286 2026-11-24T15:59:52Z INFO status-poller poll cycle complete: 37 targets checked in 523ms\n#299 2026-11-24T16:00:02Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#307 2026-11-24T16:00:06Z INFO status-poller poll cycle complete: 19 targets checked in 725ms\n#328 2026-11-24T16:00:24Z INFO status-poller poll cycle complete: 25 targets checked in 488ms\n#341 2026-11-24T16:00:32Z INFO status-poller poll cycle complete: 36 targets checked in 395ms\n#350 2026-11-24T16:00:40Z INFO status-poller poll cycle complete: 20 targets checked in 867ms\n#353 2026-11-24T16:00:44Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#374 2026-11-24T16:00:59Z INFO status-poller poll cycle complete: 33 targets checked in 358ms\n#392 2026-11-24T16:01:11Z INFO status-poller poll cycle complete: 22 targets checked in 865ms\n#408 2026-11-24T16:01:23Z INFO status-poller poll cycle complete: 25 targets checked in 775ms\n#420 2026-11-24T16:01:37Z INFO status-poller poll cycle complete: 24 targets checked in 645ms\n#443 2026-11-24T16:01:55Z INFO status-poller poll cycle complete: 34 targets checked in 789ms\n#454 2026-11-24T16:02:05Z INFO status-poller poll cycle complete: 22 targets checked in 638ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "since": "15:56:00",
+          "until": "16:10:30",
+          "limit": 60
+        },
+        "output": "tool error: since (15:56:00) is after until (16:10:30)",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-db",
+          "limit": 40
+        },
+        "output": "98 match(es), showing first 40:\n#1 2026-11-24T15:56:01Z INFO notif-db InnoDB: page cleaner flushed 502 pages, buffer pool hit rate 99%\n#13 2026-11-24T15:56:12Z INFO notif-db InnoDB: page cleaner flushed 101 pages, buffer pool hit rate 98.8%\n#38 2026-11-24T15:56:31Z INFO notif-db InnoDB: page cleaner flushed 243 pages, buffer pool hit rate 99%\n#61 2026-11-24T15:56:48Z INFO notif-db InnoDB: page cleaner flushed 875 pages, buffer pool hit rate 98.5%\n#76 2026-11-24T15:57:04Z INFO notif-db InnoDB: page cleaner flushed 141 pages, buffer pool hit rate 99.1%\n#97 2026-11-24T15:57:20Z INFO notif-db InnoDB: page cleaner flushed 157 pages, buffer pool hit rate 99.3%\n#115 2026-11-24T15:57:33Z INFO notif-db InnoDB: page cleaner flushed 775 pages, buffer pool hit rate 98.6%\n#129 2026-11-24T15:57:45Z INFO notif-db InnoDB: page cleaner flushed 705 pages, buffer pool hit rate 99.2%\n#149 2026-11-24T15:58:00Z INFO notif-db InnoDB: page cleaner flushed 116 pages, buffer pool hit rate 99.9%\n#165 2026-11-24T15:58:14Z INFO notif-db InnoDB: page cleaner flushed 485 pages, buffer pool hit rate 98.6%\n#190 2026-11-24T15:58:34Z INFO notif-db InnoDB: page cleaner flushed 610 pages, buffer pool hit rate 98.7%\n#202 2026-11-24T15:58:46Z INFO notif-db InnoDB: page cleaner flushed 202 pages, buffer pool hit rate 99.8%\n#219 2026-11-24T15:58:59Z INFO notif-db InnoDB: page cleaner flushed 881 pages, buffer pool hit rate 99.4%\n#242 2026-11-24T15:59:19Z INFO notif-db InnoDB: page cleaner flushed 759 pages, buffer pool hit rate 99.9%\n#267 2026-11-24T15:59:36Z INFO notif-db InnoDB: page cleaner flushed 345 pages, buffer pool hit rate 99.3%\n#288 2026-11-24T15:59:53Z INFO notif-db InnoDB: page cleaner flushed 336 pages, buffer pool hit rate 99%\n#306 2026-11-24T16:00:05Z INFO notif-db InnoDB: page cleaner flushed 421 pages, buffer pool hit rate 98.6%\n#329 2026-11-24T16:00:24Z INFO notif-db InnoDB: page cleaner flushed 525 pages, buffer pool hit rate 98.5%\n#347 2026-11-24T16:00:38Z INFO notif-db InnoDB: page cleaner flushed 625 pages, buffer pool hit rate 99.2%\n#368 2026-11-24T16:00:54Z INFO notif-db InnoDB: page cleaner flushed 893 pages, buffer pool hit rate 99.6%\n#386 2026-11-24T16:01:07Z INFO notif-db InnoDB: page cleaner flushed 463 pages, buffer pool hit rate 98.5%\n#401 2026-11-24T16:01:19Z INFO notif-db InnoDB: page cleaner flushed 796 pages, buffer pool hit rate 98.5%\n#421 2026-11-24T16:01:38Z INFO notif-db InnoDB: page cleaner flushed 753 pages, buffer pool hit rate 99.2%\n#438 2026-11-24T16:01:53Z INFO notif-db InnoDB: page cleaner flushed 886 pages, buffer pool hit rate 99.7%\n#455 2026-11-24T16:02:05Z INFO notif-db InnoDB: page cleaner flushed 579 pages, buffer pool hit rate 99.5%\n#477 2026-11-24T16:02:21Z INFO notif-db InnoDB: page cleaner flushed 651 pages, buffer pool hit rate 99%\n#490 2026-11-24T16:02:33Z INFO notif-db InnoDB: page cleaner flushed 287 pages, buffer pool hit rate 99.7%\n#512 2026-11-24T16:02:48Z INFO notif-db InnoDB: page cleaner flushed 589 pages, buffer pool hit rate 99%\n#529 2026-11-24T16:03:01Z INFO notif-db InnoDB: page cleaner flushed 639 pages, buffer pool hit rate 98.8%\n#550 2026-11-24T16:03:16Z INFO notif-db InnoDB: page cleaner flushed 201 pages, buffer pool hit rate 99.6%\n#568 2026-11-24T16:03:31Z INFO notif-db InnoDB: page cleaner flushed 260 pages, buffer pool hit rate 99.3%\n#583 2026-11-24T16:03:43Z INFO notif-db InnoDB: page cleaner flushed 618 pages, buffer pool hit rate 98.9%\n#602 2026-11-24T16:03:59Z INFO notif-db InnoDB: page cleaner flushed 177 pages, buffer pool hit rate 99.8%\n#621 2026-11-24T16:04:14Z INFO notif-db InnoDB: page cleaner flushed 774 pages, buffer pool hit rate 98.5%\n#644 2026-11-24T16:04:28Z INFO notif-db InnoDB: page cleaner flushed 884 pages, buffer pool hit rate 98.5%\n#661 2026-11-24T16:04:41Z INFO notif-db InnoDB: page cleaner flushed 795 pages, buffer pool hit rate 99.3%\n#675 2026-11-24T16:04:54Z INFO notif-db InnoDB: page cleaner flushed 441 pages, buffer pool hit rate 99%\n#698 2026-11-24T16:05:13Z INFO notif-db InnoDB: page cleaner flushed 595 pages, buffer pool hit rate 98.5%\n#715 2026-11-24T16:05:26Z INFO notif-db InnoDB: page cleaner flushed 755 pages, buffer pool hit rate 98.5%\n#734 2026-11-24T16:05:41Z INFO notif-db InnoDB: page cleaner flushed 140 pages, buffer pool hit rate 99.5%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "until": "16:10:30",
+          "limit": 80
+        },
+        "output": "154 match(es), showing first 80:\n#3 2026-11-24T15:56:02Z DEBUG template-svc GC pause 7ms (young), heap 37%\n#11 2026-11-24T15:56:08Z INFO template-svc [t-4062] POST /render m-8133 ok 74ms\n#15 2026-11-24T15:56:13Z INFO template-svc [t-4065] POST /render m-8135 ok 48ms\n#23 2026-11-24T15:56:18Z DEBUG template-svc GC pause 14ms (young), heap 33%\n#42 2026-11-24T15:56:36Z DEBUG template-svc GC pause 22ms (young), heap 43%\n#46 2026-11-24T15:56:38Z INFO template-svc [t-4080] POST /render m-8146 ok 67ms\n#50 2026-11-24T15:56:41Z INFO template-svc [t-4084] POST /render m-8149 ok 58ms\n#59 2026-11-24T15:56:47Z INFO template-svc [t-4086] POST /render m-8153 ok 23ms\n#68 2026-11-24T15:56:57Z DEBUG template-svc GC pause 13ms (young), heap 34%\n#84 2026-11-24T15:57:09Z INFO template-svc [t-4102] POST /render m-8163 ok 28ms\n#89 2026-11-24T15:57:14Z INFO template-svc [t-4104] POST /render m-8164 ok 27ms\n#92 2026-11-24T15:57:16Z DEBUG template-svc GC pause 25ms (young), heap 41%\n#104 2026-11-24T15:57:27Z INFO template-svc [t-4113] POST /render m-8171 ok 24ms\n#109 2026-11-24T15:57:29Z INFO template-svc [t-4115] POST /render m-8172 ok 32ms\n#113 2026-11-24T15:57:32Z INFO template-svc [t-4116] POST /render m-8173 ok 80ms\n#116 2026-11-24T15:57:33Z DEBUG template-svc GC pause 14ms (young), heap 40%\n#121 2026-11-24T15:57:38Z INFO template-svc [t-4118] POST /render m-8175 ok 76ms\n#132 2026-11-24T15:57:48Z DEBUG template-svc GC pause 11ms (young), heap 34%\n#134 2026-11-24T15:57:49Z INFO template-svc [t-4121] POST /render m-8178 ok 52ms\n#154 2026-11-24T15:58:03Z INFO template-svc [t-4129] POST /render m-8186 ok 68ms\n#162 2026-11-24T15:58:10Z DEBUG template-svc GC pause 11ms (young), heap 36%\n#174 2026-11-24T15:58:21Z INFO template-svc [t-4137] POST /render m-8196 ok 20ms\n#185 2026-11-24T15:58:30Z INFO template-svc [t-4142] POST /render m-8200 ok 83ms\n#187 2026-11-24T15:58:32Z DEBUG template-svc GC pause 22ms (young), heap 43%\n#204 2026-11-24T15:58:47Z DEBUG template-svc GC pause 17ms (young), heap 30%\n#206 2026-11-24T15:58:49Z INFO template-svc [t-4152] POST /render m-8209 ok 40ms\n#225 2026-11-24T15:59:08Z DEBUG template-svc GC pause 11ms (young), heap 45%\n#229 2026-11-24T15:59:08Z INFO template-svc [t-4163] POST /render m-8215 ok 83ms\n#234 2026-11-24T15:59:13Z INFO template-svc [t-4164] POST /render m-8217 ok 35ms\n#245 2026-11-24T15:59:21Z DEBUG template-svc GC pause 6ms (young), heap 35%\n#247 2026-11-24T15:59:22Z INFO template-svc [t-4175] POST /render m-8223 ok 46ms\n#254 2026-11-24T15:59:27Z INFO template-svc [t-4176] POST /render m-8225 ok 58ms\n#258 2026-11-24T15:59:30Z INFO template-svc [t-4178] POST /render m-8227 ok 66ms\n#273 2026-11-24T15:59:40Z INFO template-svc [t-4188] POST /render m-8232 ok 76ms\n#276 2026-11-24T15:59:42Z DEBUG template-svc GC pause 13ms (young), heap 35%\n#279 2026-11-24T15:59:44Z INFO template-svc [t-4190] POST /render m-8235 ok 58ms\n#291 2026-11-24T15:59:55Z INFO template-svc [t-4199] POST /render m-8243 ok 68ms\n#296 2026-11-24T15:59:58Z INFO template-svc [t-4203] POST /render m-8245 ok 26ms\n#302 2026-11-24T16:00:03Z INFO template-svc [t-4207] POST /render m-8246 ok 46ms\n#308 2026-11-24T16:00:07Z DEBUG template-svc GC pause 12ms (young), heap 32%\n#311 2026-11-24T16:00:09Z INFO template-svc [t-4211] POST /render m-8249 ok 49ms\n#321 2026-11-24T16:00:17Z INFO template-svc [t-4215] POST /render m-8251 ok 24ms\n#325 2026-11-24T16:00:21Z INFO template-svc [t-4218] POST /render m-8252 ok 90ms\n#327 2026-11-24T16:00:23Z DEBUG template-svc GC pause 6ms (young), heap 41%\n#331 2026-11-24T16:00:25Z INFO template-svc [t-4220] POST /render m-8255 ok 38ms\n#345 2026-11-24T16:00:36Z INFO template-svc [t-4223] POST /render m-8259 ok 79ms\n#354 2026-11-24T16:00:44Z INFO template-svc [t-4228] POST /render m-8265 ok 42ms\n#356 2026-11-24T16:00:45Z DEBUG template-svc GC pause 23ms (young), heap 43%\n#361 2026-11-24T16:00:46Z INFO template-svc [t-4231] POST /render m-8267 ok 64ms\n#372 2026-11-24T16:00:58Z INFO template-svc [t-4234] POST /render m-8270 ok 54ms\n#376 2026-11-24T16:01:00Z INFO template-svc [t-4238] POST /render m-8272 ok 23ms\n#378 2026-11-24T16:01:01Z DEBUG template-svc GC pause 17ms (young), heap 34%\n#384 2026-11-24T16:01:06Z INFO template-svc [t-4241] POST /render m-8274 ok 61ms\n#390 2026-11-24T16:01:11Z INFO template-svc [t-4243] POST /render m-8275 ok 50ms\n#397 2026-11-24T16:01:15Z INFO template-svc [t-4247] POST /render m-8276 ok 32ms\n#404 2026-11-24T16:01:21Z DEBUG template-svc GC pause 8ms (young), heap 44%\n#416 2026-11-24T16:01:32Z INFO template-svc [t-4255] POST /render m-8282 ok 34ms\n#431 2026-11-24T16:01:45Z DEBUG template-svc GC pause 11ms (young), heap 36%\n#440 2026-11-24T16:01:54Z INFO template-svc [t-4264] POST /render m-8289 ok 72ms\n#445 2026-11-24T16:01:57Z INFO template-svc [t-4265] POST /render m-8290 ok 61ms\n#450 2026-11-24T16:02:00Z INFO template-svc [t-4268] POST /render m-8292 ok 62ms\n#459 2026-11-24T16:02:07Z DEBUG template-svc GC pause 19ms (young), heap 37%\n#467 2026-11-24T16:02:15Z INFO template-svc [t-4276] POST /render m-8297 ok 25ms\n#472 2026-11-24T16:02:18Z INFO template-svc [t-4278] POST /render m-8299 ok 84ms\n#476 2026-11-24T16:02:21Z DEBUG template-svc GC pause 15ms (young), heap 35%\n#487 2026-11-24T16:02:31Z INFO template-svc [t-4288] POST /render m-8305 ok 36ms\n#492 2026-11-24T16:02:33Z INFO template-svc [t-4290] POST /render m-8307 ok 57ms\n#497 2026-11-24T16:02:36Z DEBUG template-svc GC pause 11ms (young), heap 29%\n#505 2026-11-24T16:02:44Z INFO template-svc [t-4293] POST /render m-8311 ok 44ms\n#510 2026-11-24T16:02:47Z INFO template-svc [t-4294] POST /render m-8314 ok 35ms\n#515 2026-11-24T16:02:52Z INFO template-svc [t-4297] POST /render m-8317 ok 37ms\n#525 2026-11-24T16:02:59Z DEBUG template-svc GC pause 25ms (young), heap 32%\n#534 2026-11-24T16:03:06Z INFO template-svc [t-4306] POST /render m-8325 ok 77ms\n#538 2026-11-24T16:03:10Z INFO template-svc [t-4310] POST /render m-8327 ok 49ms\n#543 2026-11-24T16:03:13Z INFO template-svc [t-4312] POST /render m-8329 ok 79ms\n#548 2026-11-24T16:03:15Z INFO template-svc [t-4314] POST /render m-8332 ok 26ms\n#552 2026-11-24T16:03:18Z DEBUG template-svc GC pause 25ms (young), heap 33%\n#554 2026-11-24T16:03:18Z INFO template-svc [t-4316] POST /render m-8334 ok 82ms\n#561 2026-11-24T16:03:25Z INFO template-svc [t-4318] POST /render m-8336 ok 35ms\n#573 2026-11-24T16:03:35Z INFO template-svc [t-4320] POST /render m-8340 ok 42ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "level": "WARN",
+          "limit": 30
+        },
+        "output": "6 match(es):\n#1092 2026-11-24T16:10:28Z WARN template-svc instance template-svc-1 restarting (liveness probe failed), capacity 3/4\n#1187 2026-11-24T16:12:28Z WARN template-svc admission control: 590 requests in flight (3.2x normal), rejecting new work\n#1212 2026-11-24T16:13:03Z ERROR template-svc [t-4604] load shed: rejected POST /render with 503 (queue full)\n#1234 2026-11-24T16:13:36Z WARN template-svc inbound request rate 4.1x baseline (inflight 827), shedding load with 503\n#1401 2026-11-24T16:17:04Z ERROR template-svc [t-4652] load shed: rejected POST /render with 503 (queue full)\n#1504 2026-11-24T16:19:13Z ERROR template-svc [t-4676] load shed: rejected POST /render with 503 (queue full)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "level": "WARN",
+          "limit": 30
+        },
+        "output": "3 match(es):\n#1137 2026-11-24T16:11:24Z WARN notification-svc [t-4578] TemplateClient.render got 503, retrying immediately (attempt 2/4, backoff disabled)\n#1164 2026-11-24T16:11:55Z WARN notification-svc [t-4590] retry 3/4 for POST /render after 503 from template-svc (delay 0ms)\n#1205 2026-11-24T16:12:54Z WARN notification-svc [t-4601] TemplateClient.render got 503, retrying immediately (attempt 4/4, backoff disabled)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1092,
+          "before": 25,
+          "after": 10
+        },
+        "output": "#1067 2026-11-24T16:10:09Z INFO notification-svc [t-4556] message m-8531 accepted, calling template-svc POST /render\n#1068 2026-11-24T16:10:09Z INFO redis stats: hits=12007 misses=436 evicted=0 connected_clients=56\n#1069 2026-11-24T16:10:09Z INFO template-svc [t-4556] POST /render m-8531 ok 51ms\n#1070 2026-11-24T16:10:09Z INFO api-gateway [t-4556] POST /v1/notify 200 111ms\n#1071 2026-11-24T16:10:10Z INFO notif-worker processed batch of 24 messages from notifications.outbound (lag 111ms)\n#1072 2026-11-24T16:10:12Z INFO report-cron scheduler heartbeat: 12 jobs registered, next run in 38s\n#1073 2026-11-24T16:10:13Z INFO status-poller poll cycle complete: 24 targets checked in 789ms\n#1074 2026-11-24T16:10:13Z INFO notification-svc [t-4557] message m-8532 accepted, calling template-svc POST /render\n#1075 2026-11-24T16:10:13Z INFO template-svc [t-4557] POST /render m-8532 ok 22ms\n#1076 2026-11-24T16:10:13Z INFO api-gateway [t-4557] POST /v1/notify 200 135ms\n#1077 2026-11-24T16:10:14Z DEBUG api-gateway upstream health: notification-svc ok, template-svc ok\n#1078 2026-11-24T16:10:15Z DEBUG template-svc GC pause 16ms (young), heap 43%\n#1079 2026-11-24T16:10:16Z INFO notif-worker processed batch of 81 messages from notifications.outbound (lag 161ms)\n#1080 2026-11-24T16:10:18Z INFO notification-svc [t-4561] message m-8535 accepted, calling template-svc POST /render\n#1081 2026-11-24T16:10:18Z INFO redis stats: hits=8766 misses=459 evicted=0 connected_clients=58\n#1082 2026-11-24T16:10:18Z INFO api-gateway [t-4561] POST /v1/notify 200 169ms\n#1083 2026-11-24T16:10:19Z INFO notif-db InnoDB: page cleaner flushed 297 pages, buffer pool hit rate 98.7%\n#1084 2026-11-24T16:10:20Z INFO notif-worker processed batch of 66 messages from notifications.outbound (lag 81ms)\n#1085 2026-11-24T16:10:21Z INFO report-cron scheduler heartbeat: 11 jobs registered, next run in 187s\n#1086 2026-11-24T16:10:24Z INFO notification-svc [t-4562] message m-8536 accepted, calling template-svc POST /render\n#1087 2026-11-24T16:10:24Z INFO template-svc [t-4562] POST /render m-8536 ok 70ms\n#1088 2026-11-24T16:10:24Z INFO api-gateway [t-4562] POST /v1/notify 200 118ms\n#1089 2026-11-24T16:10:25Z INFO notif-worker processed batch of 55 messages from notifications.outbound (lag 181ms)\n#1090 2026-11-24T16:10:27Z INFO notification-svc [t-4565] message m-8537 accepted, calling template-svc POST /render\n#1091 2026-11-24T16:10:27Z INFO api-gateway [t-4565] POST /v1/notify 200 191ms\n#1092 2026-11-24T16:10:28Z WARN template-svc instance template-svc-1 restarting (liveness probe failed), capacity 3/4\n#1093 2026-11-24T16:10:29Z DEBUG notification-svc GC pause 4ms (young), heap 39%\n#1094 2026-11-24T16:10:29Z INFO redis stats: hits=15164 misses=514 evicted=0 connected_clients=48\n#1095 2026-11-24T16:10:30Z DEBUG template-svc GC pause 7ms (young), heap 31%\n#1096 2026-11-24T16:10:31Z INFO status-poller poll cycle complete: 36 targets checked in 722ms\n#1097 2026-11-24T16:10:31Z INFO report-cron scheduler heartbeat: 10 jobs registered, next run in 277s\n#1098 2026-11-24T16:10:31Z INFO notif-worker processed batch of 111 messages from notifications.outbound (lag 381ms)\n#1099 2026-11-24T16:10:36Z INFO notif-worker processed batch of 55 messages from notifications.outbound (lag 179ms)\n#1100 2026-11-24T16:10:38Z INFO redis stats: hits=10272 misses=685 evicted=0 connected_clients=45\n#1101 2026-11-24T16:10:39Z INFO notif-db InnoDB: page cleaner flushed 842 pages, buffer pool hit rate 99.7%\n#1102 2026-11-24T16:10:41Z INFO notif-worker processed batch of 101 messages from notifications.outbound (lag 120ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "template-svc-1",
+          "limit": 40
+        },
+        "output": "2 match(es):\n#1092 2026-11-24T16:10:28Z WARN template-svc instance template-svc-1 restarting (liveness probe failed), capacity 3/4\n#1129 2026-11-24T16:11:16Z INFO template-svc instance template-svc-1 ready, capacity 4/4"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "liveness",
+          "limit": 40
+        },
+        "output": "1 match(es):\n#1092 2026-11-24T16:10:28Z WARN template-svc instance template-svc-1 restarting (liveness probe failed), capacity 3/4"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "backoff",
+          "limit": 40
+        },
+        "output": "2 match(es):\n#1137 2026-11-24T16:11:24Z WARN notification-svc [t-4578] TemplateClient.render got 503, retrying immediately (attempt 2/4, backoff disabled)\n#1205 2026-11-24T16:12:54Z WARN notification-svc [t-4601] TemplateClient.render got 503, retrying immediately (attempt 4/4, backoff disabled)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1137,
+          "before": 12,
+          "after": 6
+        },
+        "output": "#1125 2026-11-24T16:11:10Z INFO notif-worker processed batch of 88 messages from notifications.outbound (lag 137ms)\n#1126 2026-11-24T16:11:11Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1127 2026-11-24T16:11:12Z INFO report-cron scheduler heartbeat: 10 jobs registered, next run in 96s\n#1128 2026-11-24T16:11:12Z DEBUG template-svc GC pause 17ms (young), heap 29%\n#1129 2026-11-24T16:11:16Z INFO template-svc instance template-svc-1 ready, capacity 4/4\n#1130 2026-11-24T16:11:17Z INFO notif-worker processed batch of 82 messages from notifications.outbound (lag 43ms)\n#1131 2026-11-24T16:11:17Z INFO status-poller poll cycle complete: 34 targets checked in 513ms\n#1132 2026-11-24T16:11:21Z INFO report-cron scheduler heartbeat: 9 jobs registered, next run in 184s\n#1133 2026-11-24T16:11:21Z INFO redis stats: hits=15474 misses=870 evicted=0 connected_clients=54\n#1134 2026-11-24T16:11:22Z INFO notif-db InnoDB: page cleaner flushed 682 pages, buffer pool hit rate 99%\n#1135 2026-11-24T16:11:22Z INFO notif-worker processed batch of 94 messages from notifications.outbound (lag 357ms)\n#1136 2026-11-24T16:11:23Z DEBUG notification-svc GC pause 20ms (young), heap 45%\n#1137 2026-11-24T16:11:24Z WARN notification-svc [t-4578] TemplateClient.render got 503, retrying immediately (attempt 2/4, backoff disabled)\n#1138 2026-11-24T16:11:28Z INFO notif-worker processed batch of 117 messages from notifications.outbound (lag 280ms)\n#1139 2026-11-24T16:11:30Z INFO report-cron scheduler heartbeat: 9 jobs registered, next run in 279s\n#1140 2026-11-24T16:11:30Z INFO notification-svc [t-4581] message m-8546 accepted, calling template-svc POST /render\n#1141 2026-11-24T16:11:30Z INFO api-gateway [t-4581] POST /v1/notify 200 93ms\n#1142 2026-11-24T16:11:31Z INFO redis stats: hits=17595 misses=747 evicted=0 connected_clients=32\n#1143 2026-11-24T16:11:31Z DEBUG template-svc GC pause 9ms (young), heap 34%"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-4578"
+        },
+        "output": "1 line(s) for t-4578:\n#1137 2026-11-24T16:11:24Z WARN notification-svc [t-4578] TemplateClient.render got 503, retrying immediately (attempt 2/4, backoff disabled)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 20
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "since": "16:11:20",
+          "until": "16:12:30",
+          "limit": 40
+        },
+        "output": "5 match(es):\n#1143 2026-11-24T16:11:31Z DEBUG template-svc GC pause 9ms (young), heap 34%\n#1160 2026-11-24T16:11:54Z DEBUG template-svc GC pause 20ms (young), heap 36%\n#1178 2026-11-24T16:12:13Z DEBUG template-svc GC pause 7ms (young), heap 32%\n#1187 2026-11-24T16:12:28Z WARN template-svc admission control: 590 requests in flight (3.2x normal), rejecting new work\n#1190 2026-11-24T16:12:30Z DEBUG template-svc GC pause 9ms (young), heap 35%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "api-gateway",
+          "since": "16:11:20",
+          "until": "16:12:30",
+          "limit": 40
+        },
+        "output": "5 match(es):\n#1141 2026-11-24T16:11:30Z INFO api-gateway [t-4581] POST /v1/notify 200 93ms\n#1147 2026-11-24T16:11:36Z INFO api-gateway [t-4582] POST /v1/notify 200 173ms\n#1153 2026-11-24T16:11:40Z INFO api-gateway [t-4586] POST /v1/notify 200 107ms\n#1166 2026-11-24T16:11:56Z INFO api-gateway [t-4591] POST /v1/notify 200 140ms\n#1186 2026-11-24T16:12:27Z ERROR api-gateway [t-4594] POST /v1/notify 503 27585ms: upstream notification-svc returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.72,
+              "evidenceLines": [
+                1092,
+                1129,
+                1137,
+                1164,
+                1205,
+                1187,
+                1212,
+                1234,
+                1186
+              ],
+              "reasoning": "The trigger is small: template-svc-1 was restarted by a failed liveness probe at 16:10:28 (#1092), dropping capacity to 3/4; it was ready again at 16:11:16 (#1129). Right after, notification-svc began getting 503s from template-svc /render (#1137) and retried immediately with backoff disabled (#1137, #1164, #1205, 0ms delay, up to 4 attempts). Those retries multiplied the load: template-svc hit 590 in-flight requests (3.2x normal, #1187) and then 827 at 4.1x baseline (#1234), and it began load-shedding with 503s (#1212, #1401, #1504). Notification-svc exhausted retries and api-gateway returned 503s to clients (#1186, #1300, #1356, #1474). The fault is not recovering because the retry loop keeps the template-svc queue saturated. The notif-db, redis and notif-worker logs look healthy. The status-poller timeouts against legacy-inventory (#299, #353, ... #1513) are a separate, deprecated healthcheck and do not sit on the notify path, so they are a red herring.",
+              "reasoning_note": "See reasoning above."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.25,
+              "evidenceLines": [
+                1092,
+                1187,
+                1234,
+                1212
+              ],
+              "reasoning": "Alternative reading: template-svc itself ran out of request capacity (instance restart at 3/4 capacity, in-flight pool at 590 then 827 with queue-full rejections). If the restart was the cause of the capacity loss, this would be a resource limit rather than amplification. The logs show no memory or GC issue (GC pauses are 6-25ms, heap 30-45%), which weakens this reading."
+            }
+          ],
+          "recommendedAction": "1) Enable exponential backoff with jitter and a retry cap on notification-svc's TemplateClient.render. Immediate retries with backoff disabled are what amplify the load. 2) Shed or pause the excess notify traffic, or temporarily raise template-svc capacity or replicas, so the in-flight queue can drain. 3) Investigate why template-svc-1's liveness probe failed at 16:10:28. 4) Separately, the status-poller healthcheck against deprecated legacy-inventory is timing out. Remove or repoint it so it stops adding noise."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 10,
+    "toolCalls": 16,
+    "usage": {
+      "inputTokens": 22,
+      "outputTokens": 3537,
+      "cacheReadTokens": 117774,
+      "cacheWriteTokens": 19684
+    },
+    "durationMs": 19003,
+    "stopReason": "tool_use"
+  }
+}

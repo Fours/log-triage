@@ -1,0 +1,168 @@
+{
+  "score": {
+    "incidentId": "ht-032",
+    "difficulty": "medium",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 7,
+      "precision": 0.875,
+      "recall": 0.7777777777777778,
+      "f1": 0.823529411764706
+    },
+    "herringsCited": 0,
+    "secondaryCited": 3,
+    "costUsd": 0.0812874,
+    "durationMs": 16145,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 1429,
+      "cacheRead": 20712,
+      "cacheWrite": 9705
+    }
+  },
+  "result": {
+    "incidentId": "ht-032",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.88,
+          "evidenceLines": [
+            1337,
+            1346,
+            1438,
+            1503,
+            1397,
+            1544,
+            1639,
+            1441
+          ],
+          "reasoning": "auth-svc handled POST /tokens normally (20–85ms) up to 12:06:39. At 12:06:48 one instance, auth-svc-3, restarted after failing its liveness probe, which dropped capacity to 3/4 (#1337). That alone should have been survivable, and the instance was back at 4/4 by 12:07:32 (#1385). Meanwhile account-svc retried every 503 from auth-svc immediately, with no backoff, up to 4 attempts (#1346, #1438, #1503). That multiplied the load: auth-svc reached 3.2x normal in-flight requests at 12:07:40 (#1397), 4.1x at 12:09:37 (#1544) and 5.0x at 12:10:50 (#1639). It kept shedding load with 503s (#1441) even after full capacity returned, so the overload kept feeding itself. The edge-proxy POST /login 503s come from account-svc running out of retries, so they are downstream impact. No deploy appears anywhere in the logs. Unrelated noise I set aside: S3 503s in catalog-svc that break /search (a separate path), the status-poller checks against the deprecated legacy-inventory endpoint, the 12:00:23 edge-proxy disk warning, and an accounts-db slow query at 11:57:59."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.07,
+          "evidenceLines": [
+            1337,
+            1397
+          ],
+          "reasoning": "Another reading is that auth-svc simply has too little capacity, since a single instance restarting tipped it into admission control. But the request rate rose to 4–5x baseline, which points to retry amplification rather than normal load."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.03,
+          "evidenceLines": [
+            842,
+            1009,
+            1052
+          ],
+          "reasoning": "S3 in us-east-1 returned 503s to catalog-svc, which explains the /search 500s. It does not affect the login path."
+        }
+      ],
+      "recommendedAction": "Stop the retry storm. Add exponential backoff with jitter and a retry budget or circuit breaker to account-svc's AuthClient (it currently retries immediately, 4 attempts). Until that ships, cut retries to 1 or temporarily rate-limit POST /login at edge-proxy so auth-svc can drain. Scale auth-svc out for headroom, then investigate why auth-svc-3 failed its liveness probe. Track the S3 503s affecting catalog-svc and /search as a separate issue."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "52 match(es):\n#252 2026-10-22T11:57:59Z WARN accounts-db slow query 1369ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#572 2026-10-22T12:00:23Z WARN edge-proxy disk usage 80% on /var/log (threshold 75%)\n#842 2026-10-22T12:02:29Z ERROR catalog-svc [t-5050] S3 upload of p-3845.json returned 503 ServiceUnavailable (us-east-1, 182A033)\n#942 2026-10-22T12:03:19Z ERROR web-bff [t-5120] GET /search 500 6596ms: upstream search-api returned 500 Internal Server Error\n#979 2026-10-22T12:03:39Z WARN account-svc heap usage 83% of 2048MiB (threshold 80%), starting concurrent mark cycle\n#997 2026-10-22T12:03:49Z WARN catalog-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (59 failed attempts in 60s)\n#1009 2026-10-22T12:03:54Z ERROR catalog-svc [t-5157] aws-sdk PutObjectCommand failed for key p-3928.json: ServiceUnavailable (HTTP 503), requestId=B18E431\n#1052 2026-10-22T12:04:13Z ERROR catalog-svc [t-5187] PutObject s3://search-artifacts-prod/p-3951.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id CEF3130)\n#1091 2026-10-22T12:04:38Z ERROR search-api [t-5217] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#1248 2026-10-22T12:05:58Z ERROR catalog-svc [t-5322] S3 upload of p-4038.json returned 503 ServiceUnavailable (us-east-1, C51398E)\n#1266 2026-10-22T12:06:09Z ERROR web-bff [t-5338] GET /search 500 27218ms: upstream search-api returned 500 Internal Server Error\n#1337 2026-10-22T12:06:48Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4\n#1346 2026-10-22T12:06:52Z WARN account-svc [t-5389] retry 2/4 for POST /tokens after 503 from auth-svc (delay 0ms)\n#1357 2026-10-22T12:07:08Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1376 2026-10-22T12:07:25Z ERROR edge-proxy [t-5399] POST /login 503 5158ms: upstream account-svc returned 503 (retries exhausted)\n#1397 2026-10-22T12:07:40Z WARN auth-svc admission control: 713 requests in flight (3.2x normal), rejecting new work\n#1431 2026-10-22T12:08:12Z ERROR web-bff [t-5418] GET /search 500 11437ms: upstream search-api returned 500 Internal Server Error\n#1438 2026-10-22T12:08:15Z WARN account-svc [t-5429] auth-svc unavailable (503), re-sending at once: attempt 3 of 4, no backoff policy\n#1441 2026-10-22T12:08:19Z ERROR auth-svc [t-5432] load shed: rejected POST /tokens with 503 (queue full)\n#1460 2026-10-22T12:08:33Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1493 2026-10-22T12:08:56Z ERROR search-api [t-5455] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#1503 2026-10-22T12:09:05Z WARN account-svc [t-5465] AuthClient.issueToken got 503, retrying immediately (attempt 4/4, backoff disabled)\n#1515 2026-10-22T12:09:14Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1518 2026-10-22T12:09:16Z ERROR edge-proxy [t-5473] POST /login 503 9982ms: upstream account-svc returned 503 (retries exhausted)\n#1537 2026-10-22T12:09:32Z WARN account-svc [t-5486] retry 2/4 for POST /tokens after 503 from auth-svc (delay 0ms)\n#1544 2026-10-22T12:09:37Z WARN auth-svc overloaded: request rate at 4.1 times baseline, 737 inflight, returning 503 to callers\n#1604 2026-10-22T12:10:21Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1624 2026-10-22T12:10:37Z ERROR web-bff [t-5524] GET /search 500 13173ms: upstream search-api returned 500 Internal Server Error\n#1634 2026-10-22T12:10:46Z ERROR edge-proxy [t-5529] POST /login 503 5205ms: upstream account-svc returned 503 (retries exhausted)\n#1639 2026-10-22T12:10:50Z WARN auth-svc inbound request rate 5.0x baseline (inflight 752), shedding load with 503\n#1645 2026-10-22T12:10:57Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1666 2026-10-22T12:11:12Z ERROR auth-svc [t-5539] load shed: rejected POST /tokens with 503 (queue full)\n#1684 2026-10-22T12:11:22Z ERROR search-api [t-5548] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#1732 2026-10-22T12:11:56Z ERROR web-bff [t-5570] GET /search 500 14503ms: upstream search-api returned 500 Internal Server Error\n#1743 2026-10-22T12:12:00Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1800 2026-10-22T12:12:45Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1803 2026-10-22T12:12:48Z ERROR edge-proxy [t-5598] POST /login 503 22770ms: upstream account-svc returned 503 (retries exhausted)\n#1818 2026-10-22T12:12:58Z ERROR auth-svc [t-5605] load shed: rejected POST /tokens with 503 (queue full)\n#1861 2026-10-22T12:13:37Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1922 2026-10-22T12:14:40Z ERROR edge-proxy [t-5632] POST /login 503 6720ms: upstream account-svc returned 503 (retries exhausted)\n#1926 2026-10-22T12:14:44Z ERROR web-bff [t-5633] GET /search 500 12379ms: upstream search-api returned 500 Internal Server Error\n#1949 2026-10-22T12:14:59Z ERROR auth-svc [t-5650] load shed: rejected POST /tokens with 503 (queue full)\n#1963 2026-10-22T12:15:11Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1986 2026-10-22T12:15:27Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2010 2026-10-22T12:15:49Z ERROR edge-proxy [t-5673] POST /login 503 13008ms: upstream account-svc returned 503 (retries exhausted)\n#2032 2026-10-22T12:16:09Z ERROR search-api [t-5688] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#2065 2026-10-22T12:16:40Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2161 2026-10-22T12:17:47Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2216 2026-10-22T12:18:34Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2223 2026-10-22T12:18:38Z ERROR web-bff [t-5758] GET /search 500 22792ms: upstream search-api returned 500 Internal Server Error\n#2225 2026-10-22T12:18:40Z ERROR auth-svc [t-5762] load shed: rejected POST /tokens with 503 (queue full)\n#2226 2026-10-22T12:18:41Z ERROR edge-proxy [t-5763] POST /login 503 23587ms: upstream account-svc returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "since": "12:04:00",
+          "until": "12:07:45",
+          "limit": 40
+        },
+        "output": "34 match(es):\n#1028 2026-10-22T12:04:03Z INFO auth-svc [t-5166] POST /tokens u-3935 ok 40ms\n#1042 2026-10-22T12:04:10Z INFO auth-svc [t-5176] POST /tokens u-3945 ok 77ms\n#1059 2026-10-22T12:04:17Z INFO auth-svc [t-5191] POST /tokens u-3954 ok 76ms\n#1063 2026-10-22T12:04:19Z DEBUG auth-svc GC pause 9ms (young), heap 31%\n#1073 2026-10-22T12:04:25Z INFO auth-svc [t-5201] POST /tokens u-3958 ok 26ms\n#1094 2026-10-22T12:04:38Z INFO auth-svc [t-5218] POST /tokens u-3969 ok 62ms\n#1101 2026-10-22T12:04:42Z INFO auth-svc [t-5222] POST /tokens u-3970 ok 58ms\n#1109 2026-10-22T12:04:44Z INFO auth-svc [t-5230] POST /tokens u-3976 ok 25ms\n#1114 2026-10-22T12:04:48Z INFO auth-svc [t-5233] POST /tokens u-3977 ok 55ms\n#1119 2026-10-22T12:04:52Z DEBUG auth-svc GC pause 5ms (young), heap 40%\n#1154 2026-10-22T12:05:11Z INFO auth-svc [t-5262] POST /tokens u-3997 ok 75ms\n#1162 2026-10-22T12:05:14Z INFO auth-svc [t-5269] POST /tokens u-4001 ok 33ms\n#1171 2026-10-22T12:05:19Z INFO auth-svc [t-5272] POST /tokens u-4006 ok 29ms\n#1177 2026-10-22T12:05:21Z INFO auth-svc [t-5275] POST /tokens u-4007 ok 72ms\n#1181 2026-10-22T12:05:23Z DEBUG auth-svc GC pause 9ms (young), heap 40%\n#1199 2026-10-22T12:05:36Z INFO auth-svc [t-5284] POST /tokens u-4015 ok 21ms\n#1215 2026-10-22T12:05:45Z INFO auth-svc [t-5296] POST /tokens u-4022 ok 58ms\n#1223 2026-10-22T12:05:48Z INFO auth-svc [t-5304] POST /tokens u-4025 ok 44ms\n#1228 2026-10-22T12:05:51Z DEBUG auth-svc GC pause 17ms (young), heap 35%\n#1231 2026-10-22T12:05:53Z INFO auth-svc [t-5306] POST /tokens u-4028 ok 69ms\n#1241 2026-10-22T12:05:57Z INFO auth-svc [t-5314] POST /tokens u-4032 ok 85ms\n#1250 2026-10-22T12:06:00Z INFO auth-svc [t-5324] POST /tokens u-4041 ok 58ms\n#1269 2026-10-22T12:06:11Z INFO auth-svc [t-5342] POST /tokens u-4051 ok 67ms\n#1274 2026-10-22T12:06:14Z INFO auth-svc [t-5346] POST /tokens u-4052 ok 21ms\n#1279 2026-10-22T12:06:17Z INFO auth-svc [t-5348] POST /tokens u-4055 ok 41ms\n#1291 2026-10-22T12:06:20Z DEBUG auth-svc GC pause 24ms (young), heap 40%\n#1298 2026-10-22T12:06:26Z INFO auth-svc [t-5360] POST /tokens u-4062 ok 66ms\n#1305 2026-10-22T12:06:29Z INFO auth-svc [t-5367] POST /tokens u-4065 ok 41ms\n#1323 2026-10-22T12:06:39Z INFO auth-svc [t-5379] POST /tokens u-4073 ok 65ms\n#1337 2026-10-22T12:06:48Z WARN auth-svc instance auth-svc-3 restarting (liveness probe failed), capacity 3/4\n#1347 2026-10-22T12:06:52Z DEBUG auth-svc GC pause 23ms (young), heap 39%\n#1361 2026-10-22T12:07:12Z DEBUG auth-svc GC pause 9ms (young), heap 32%\n#1385 2026-10-22T12:07:32Z INFO auth-svc instance auth-svc-3 ready, capacity 4/4\n#1397 2026-10-22T12:07:40Z WARN auth-svc admission control: 713 requests in flight (3.2x normal), rejecting new work"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 10
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-5399"
+        },
+        "output": "1 line(s) for t-5399:\n#1376 2026-10-22T12:07:25Z ERROR edge-proxy [t-5399] POST /login 503 5158ms: upstream account-svc returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.88,
+              "evidenceLines": [
+                1337,
+                1346,
+                1438,
+                1503,
+                1397,
+                1544,
+                1639,
+                1441
+              ],
+              "reasoning": "auth-svc handled POST /tokens normally (20–85ms) up to 12:06:39. At 12:06:48 one instance, auth-svc-3, restarted after failing its liveness probe, which dropped capacity to 3/4 (#1337). That alone should have been survivable, and the instance was back at 4/4 by 12:07:32 (#1385). Meanwhile account-svc retried every 503 from auth-svc immediately, with no backoff, up to 4 attempts (#1346, #1438, #1503). That multiplied the load: auth-svc reached 3.2x normal in-flight requests at 12:07:40 (#1397), 4.1x at 12:09:37 (#1544) and 5.0x at 12:10:50 (#1639). It kept shedding load with 503s (#1441) even after full capacity returned, so the overload kept feeding itself. The edge-proxy POST /login 503s come from account-svc running out of retries, so they are downstream impact. No deploy appears anywhere in the logs. Unrelated noise I set aside: S3 503s in catalog-svc that break /search (a separate path), the status-poller checks against the deprecated legacy-inventory endpoint, the 12:00:23 edge-proxy disk warning, and an accounts-db slow query at 11:57:59."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.07,
+              "evidenceLines": [
+                1337,
+                1397
+              ],
+              "reasoning": "Another reading is that auth-svc simply has too little capacity, since a single instance restarting tipped it into admission control. But the request rate rose to 4–5x baseline, which points to retry amplification rather than normal load."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.03,
+              "evidenceLines": [
+                842,
+                1009,
+                1052
+              ],
+              "reasoning": "S3 in us-east-1 returned 503s to catalog-svc, which explains the /search 500s. It does not affect the login path."
+            }
+          ],
+          "recommendedAction": "Stop the retry storm. Add exponential backoff with jitter and a retry budget or circuit breaker to account-svc's AuthClient (it currently retries immediately, 4 attempts). Until that ships, cut retries to 1 or temporarily rate-limit POST /login at edge-proxy so auth-svc can drain. Scale auth-svc out for headroom, then investigate why auth-svc-3 failed its liveness probe. Track the S3 503s affecting catalog-svc and /search as a separate issue."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1429,
+      "cacheReadTokens": 20712,
+      "cacheWriteTokens": 9705
+    },
+    "durationMs": 16145,
+    "stopReason": "tool_use"
+  }
+}

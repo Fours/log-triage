@@ -1,0 +1,271 @@
+{
+  "score": {
+    "incidentId": "ht-040",
+    "difficulty": "hard",
+    "scenario": "dependency_timeout/db-lock-wait",
+    "truth": "dependency_timeout",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.8,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 9,
+      "correct": 8,
+      "precision": 0.8888888888888888,
+      "recall": 0.8,
+      "f1": 0.8421052631578948
+    },
+    "herringsCited": 3,
+    "secondaryCited": 0,
+    "costUsd": 0.0051534,
+    "durationMs": 18120,
+    "iterations": 8,
+    "toolCalls": 16,
+    "tokens": {
+      "input": 18,
+      "output": 3797,
+      "cacheRead": 90510,
+      "cacheWrite": 18784
+    }
+  },
+  "result": {
+    "incidentId": "ht-040",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.8,
+          "evidenceLines": [
+            3059,
+            3382,
+            3470,
+            3488,
+            3732,
+            3497,
+            3567,
+            3740,
+            3799
+          ],
+          "reasoning": "Origin: an enrichment-svc-reconciler transaction (events-db TRANSACTION 82971) was open and holding a row lock on the events table, ACTIVE 102 sec as of 07:41:44 (#3059), so it began about 07:40:02 and was never committed. From 07:43:13 UPDATE events statements begin failing with lock wait timeouts (#3382, #3470), and enrichment-svc's event updates are cancelled by statement_timeout (#3488, #3732). Ingest-api then waits 15s on enrichment-svc and times out (#3497, #3567, #3740), and ingest-gateway returns 504s on POST /v1/events (#3799). The 504s, pool checkout timeouts and metrics-agent queue drops are downstream spread. Caveat: the holder's identity and the reason its transaction stayed open are only visible in one line, so the lock holder is not fully explained. The timing is consistent with the hung-lock dependency_timeout reading. A concurrent online index migration at 07:37:41-07:38:20 (#2062, #2231) finished before the lock-holder transaction began, so it is not the holder."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.15,
+          "evidenceLines": [
+            3384,
+            3413,
+            3547
+          ],
+          "reasoning": "billing-reconciler reports invoice_archive rows violating checksum constraints in 2019 archive partitions (#3384, #3413, #3547). These are off the /v1/events request path and are a separate, pre-existing data problem, not the cause of the 504 spike."
+        }
+      ],
+      "recommendedAction": "Immediately find and terminate the open enrichment-svc-reconciler transaction (events-db transaction 82971) holding the row lock on events, and confirm that the lock is released. Fix the reconciler so it commits or rolls back promptly. Add a lock-wait and idle-in-transaction alert on events-db. Once the lock clears, ingest-api and the gateway should recover. Separately, track the billing invoice_archive checksum violations (2019 partitions) and the idp.example 401 invalid API key failures on auth-svc (#3949, #4052), which affect /login but not /v1/events. Note: the events-db holder identity is only visible in one log line, so confirm with a live processlist before acting."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "since": "07:29:00",
+          "until": "07:31:00",
+          "limit": 60
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 60
+        },
+        "output": "75 match(es), showing first 60:\n#1329 2026-10-07T07:34:36Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 404 samples\n#1611 2026-10-07T07:35:49Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1900 samples\n#1885 2026-10-07T07:36:56Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1203 samples\n#2183 2026-10-07T07:38:09Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2276 samples\n#2575 2026-10-07T07:39:44Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1766 samples\n#2857 2026-10-07T07:40:53Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 583 samples\n#3055 2026-10-07T07:41:43Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2242 samples\n#3373 2026-10-07T07:43:08Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2081 samples\n#3382 2026-10-07T07:43:13Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)\n#3384 2026-10-07T07:43:13Z ERROR billing-reconciler invoice_archive row inv-378757 violates checksum constraint, skipping (archive partition 2019-Q1)\n#3413 2026-10-07T07:43:22Z ERROR billing-reconciler invoice_archive row inv-138879 violates checksum constraint, skipping (archive partition 2019-Q1)\n#3470 2026-10-07T07:43:43Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)\n#3488 2026-10-07T07:43:49Z ERROR enrichment-svc [t-3565] canceling UPDATE on events for e-7460 due to statement_timeout\n#3497 2026-10-07T07:43:54Z ERROR ingest-api [t-3565] gave up waiting on enrichment-svc for e-7460: no response in 15000 ms\n#3547 2026-10-07T07:44:14Z ERROR billing-reconciler invoice_archive row inv-342331 violates checksum constraint, skipping (archive partition 2019-Q3)\n#3550 2026-10-07T07:44:16Z ERROR enrichment-svc [t-3600] db write events/e-7483 aborted: QueryCanceled after 10.0s\n#3567 2026-10-07T07:44:21Z ERROR ingest-api [t-3600] EnrichClient.enrich timed out after 15000ms calling enrichment-svc POST /enrich (e-7483)\n#3580 2026-10-07T07:44:26Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2187 samples\n#3594 2026-10-07T07:44:32Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)\n#3658 2026-10-07T07:44:54Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2137 samples\n#3709 2026-10-07T07:45:13Z ERROR billing-reconciler invoice_archive row inv-174385 violates checksum constraint, skipping (archive partition 2019-Q3)\n#3732 2026-10-07T07:45:24Z ERROR enrichment-svc [t-3698] events update (e-7563) exceeded the 10000 ms limit and was cancelled\n#3740 2026-10-07T07:45:29Z ERROR ingest-api [t-3698] upstream request to enrichment-svc failed: ReadTimeout (read timeout=15s) [e-7563]\n#3799 2026-10-07T07:46:00Z ERROR ingest-gateway [t-3720] POST /v1/events 504 27998ms: upstream ingest-api timed out\n#3807 2026-10-07T07:46:02Z ERROR billing-reconciler invoice_archive row inv-584573 violates checksum constraint, skipping (archive partition 2019-Q2)\n#3814 2026-10-07T07:46:07Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1012 samples\n#3820 2026-10-07T07:46:08Z ERROR edge-proxy [t-3727] POST /login 502 28430ms: upstream account-svc returned 502 Bad Gateway\n#3826 2026-10-07T07:46:14Z ERROR auth-svc [t-3728] POST /oauth2/token -> 401 {\"error\":\"invalid_api_key\"}\n#3878 2026-10-07T07:46:34Z ERROR billing-reconciler invoice_archive row inv-874570 violates checksum constraint, skipping (archive partition 2019-Q3)\n#3912 2026-10-07T07:46:51Z ERROR ingest-gateway [t-3772] POST /v1/events 504 6190ms: upstream ingest-api timed out\n#3949 2026-10-07T07:47:09Z ERROR auth-svc [t-3791] identity provider auth failed: HTTP 401, credentials not accepted by idp.example\n#3956 2026-10-07T07:47:13Z ERROR billing-reconciler invoice_archive row inv-243963 violates checksum constraint, skipping (archive partition 2019-Q2)\n#3957 2026-10-07T07:47:13Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1596 samples\n#3971 2026-10-07T07:47:18Z ERROR account-svc [t-3796] AuthClient.issueToken failed: auth-svc returned 502 (upstream identity provider error)\n#3985 2026-10-07T07:47:25Z ERROR ingest-gateway [t-3804] POST /v1/events 504 24829ms: upstream ingest-api timed out\n#3995 2026-10-07T07:47:32Z ERROR edge-proxy [t-3806] POST /login 502 27051ms: upstream account-svc returned 502 Bad Gateway\n#4052 2026-10-07T07:48:01Z ERROR auth-svc [t-3826] identity provider rejected request: 401 Unauthorized (invalid API key) POST https://idp.example/oauth2/token\n#4054 2026-10-07T07:48:02Z ERROR billing-reconciler invoice_archive row inv-492333 violates checksum constraint, skipping (archive partition 2019-Q3)\n#4071 2026-10-07T07:48:18Z ERROR ingest-api pool checkout timeout: no connection to enrichment-svc available after 5000ms\n#4094 2026-10-07T07:48:28Z ERROR ingest-gateway [t-3834] POST /v1/events 504 22404ms: upstream ingest-api timed out\n#4108 2026-10-07T07:48:34Z ERROR billing-reconciler invoice_archive row inv-877365 violates checksum constraint, skipping (archive partition 2019-Q4)\n#4144 2026-10-07T07:48:52Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1499 samples\n#4169 2026-10-07T07:49:05Z ERROR account-svc [t-3859] AuthClient.issueToken failed: auth-svc returned 502 (upstream identity provider error)\n#4185 2026-10-07T07:49:11Z ERROR billing-reconciler invoice_archive row inv-318554 violates checksum constraint, skipping (archive partition 2019-Q2)\n#4194 2026-10-07T07:49:19Z ERROR auth-svc [t-3873] POST /oauth2/token -> 401 {\"error\":\"invalid_api_key\"}\n#4219 2026-10-07T07:49:38Z ERROR ingest-gateway [t-3877] POST /v1/events 504 26536ms: upstream ingest-api timed out\n#4225 2026-10-07T07:49:42Z ERROR edge-proxy [t-3879] POST /login 502 24852ms: upstream account-svc returned 502 Bad Gateway\n#4253 2026-10-07T07:49:57Z ERROR billing-reconciler invoice_archive row inv-835011 violates checksum constraint, skipping (archive partition 2019-Q2)\n#4274 2026-10-07T07:50:08Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 258 samples\n#4276 2026-10-07T07:50:08Z ERROR ingest-gateway [t-3894] POST /v1/events 504 11567ms: upstream ingest-api timed out\n#4355 2026-10-07T07:50:48Z ERROR edge-proxy [t-3932] POST /login 502 19822ms: upstream account-svc returned 502 Bad Gateway\n#4369 2026-10-07T07:50:55Z ERROR billing-reconciler invoice_archive row inv-277257 violates checksum constraint, skipping (archive partition 2019-Q1)\n#4374 2026-10-07T07:50:56Z ERROR ingest-gateway [t-3943] POST /v1/events 504 22327ms: upstream ingest-api timed out\n#4393 2026-10-07T07:51:09Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 476 samples\n#4452 2026-10-07T07:51:34Z ERROR billing-reconciler invoice_archive row inv-442295 violates checksum constraint, skipping (archive partition 2019-Q3)\n#4459 2026-10-07T07:51:37Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 495 samples\n#4513 2026-10-07T07:52:07Z ERROR ingest-gateway [t-3990] POST /v1/events 504 18695ms: upstream ingest-api timed out\n#4522 2026-10-07T07:52:12Z ERROR billing-reconciler invoice_archive row inv-529355 violates checksum constraint, skipping (archive partition 2019-Q2)\n#4534 2026-10-07T07:52:18Z ERROR account-svc [t-3997] AuthClient.issueToken failed: auth-svc returned 502 (upstream identity provider error)\n#4552 2026-10-07T07:52:30Z ERROR ingest-gateway [t-4004] POST /v1/events 504 6047ms: upstream ingest-api timed out"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "billing-reconciler",
+          "since": "07:29:00",
+          "until": "07:43:20",
+          "limit": 40
+        },
+        "output": "91 match(es), showing first 40:\n#7 2026-10-07T07:29:01Z INFO billing-reconciler reconciled 459 current-period invoices, 0 discrepancies\n#29 2026-10-07T07:29:07Z INFO billing-reconciler reconciled 1199 current-period invoices, 0 discrepancies\n#60 2026-10-07T07:29:15Z INFO billing-reconciler reconciled 397 current-period invoices, 0 discrepancies\n#97 2026-10-07T07:29:24Z INFO billing-reconciler reconciled 816 current-period invoices, 0 discrepancies\n#131 2026-10-07T07:29:33Z INFO billing-reconciler reconciled 455 current-period invoices, 0 discrepancies\n#170 2026-10-07T07:29:43Z INFO billing-reconciler reconciled 640 current-period invoices, 0 discrepancies\n#207 2026-10-07T07:29:52Z INFO billing-reconciler reconciled 377 current-period invoices, 0 discrepancies\n#239 2026-10-07T07:30:00Z INFO billing-reconciler reconciled 349 current-period invoices, 0 discrepancies\n#275 2026-10-07T07:30:09Z INFO billing-reconciler reconciled 1131 current-period invoices, 0 discrepancies\n#327 2026-10-07T07:30:22Z INFO billing-reconciler reconciled 545 current-period invoices, 0 discrepancies\n#355 2026-10-07T07:30:30Z INFO billing-reconciler reconciled 1000 current-period invoices, 0 discrepancies\n#387 2026-10-07T07:30:38Z INFO billing-reconciler reconciled 506 current-period invoices, 0 discrepancies\n#412 2026-10-07T07:30:45Z INFO billing-reconciler reconciled 568 current-period invoices, 0 discrepancies\n#465 2026-10-07T07:30:58Z INFO billing-reconciler reconciled 509 current-period invoices, 0 discrepancies\n#524 2026-10-07T07:31:12Z INFO billing-reconciler reconciled 626 current-period invoices, 0 discrepancies\n#583 2026-10-07T07:31:26Z INFO billing-reconciler reconciled 1107 current-period invoices, 0 discrepancies\n#616 2026-10-07T07:31:34Z INFO billing-reconciler reconciled 1040 current-period invoices, 0 discrepancies\n#637 2026-10-07T07:31:40Z INFO billing-reconciler reconciled 509 current-period invoices, 0 discrepancies\n#668 2026-10-07T07:31:47Z INFO billing-reconciler reconciled 589 current-period invoices, 0 discrepancies\n#718 2026-10-07T07:32:00Z INFO billing-reconciler reconciled 947 current-period invoices, 0 discrepancies\n#741 2026-10-07T07:32:06Z INFO billing-reconciler reconciled 1157 current-period invoices, 0 discrepancies\n#775 2026-10-07T07:32:15Z INFO billing-reconciler reconciled 1107 current-period invoices, 0 discrepancies\n#834 2026-10-07T07:32:28Z INFO billing-reconciler reconciled 780 current-period invoices, 0 discrepancies\n#872 2026-10-07T07:32:39Z INFO billing-reconciler reconciled 1050 current-period invoices, 0 discrepancies\n#904 2026-10-07T07:32:47Z INFO billing-reconciler reconciled 776 current-period invoices, 0 discrepancies\n#930 2026-10-07T07:32:53Z INFO billing-reconciler reconciled 1059 current-period invoices, 0 discrepancies\n#966 2026-10-07T07:33:02Z INFO billing-reconciler reconciled 765 current-period invoices, 0 discrepancies\n#1006 2026-10-07T07:33:14Z INFO billing-reconciler reconciled 879 current-period invoices, 0 discrepancies\n#1046 2026-10-07T07:33:23Z INFO billing-reconciler reconciled 535 current-period invoices, 0 discrepancies\n#1070 2026-10-07T07:33:30Z INFO billing-reconciler reconciled 428 current-period invoices, 0 discrepancies\n#1106 2026-10-07T07:33:38Z INFO billing-reconciler reconciled 1194 current-period invoices, 0 discrepancies\n#1151 2026-10-07T07:33:50Z INFO billing-reconciler reconciled 579 current-period invoices, 0 discrepancies\n#1181 2026-10-07T07:33:58Z INFO billing-reconciler reconciled 886 current-period invoices, 0 discrepancies\n#1230 2026-10-07T07:34:11Z INFO billing-reconciler reconciled 1090 current-period invoices, 0 discrepancies\n#1289 2026-10-07T07:34:25Z INFO billing-reconciler reconciled 855 current-period invoices, 0 discrepancies\n#1340 2026-10-07T07:34:39Z INFO billing-reconciler reconciled 1090 current-period invoices, 0 discrepancies\n#1388 2026-10-07T07:34:52Z INFO billing-reconciler reconciled 1161 current-period invoices, 0 discrepancies\n#1424 2026-10-07T07:35:01Z INFO billing-reconciler reconciled 300 current-period invoices, 0 discrepancies\n#1454 2026-10-07T07:35:09Z INFO billing-reconciler reconciled 602 current-period invoices, 0 discrepancies\n#1481 2026-10-07T07:35:15Z INFO billing-reconciler reconciled 535 current-period invoices, 0 discrepancies"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "events-db",
+          "since": "07:29:00",
+          "until": "07:43:20",
+          "limit": 40
+        },
+        "output": "75 match(es), showing first 40:\n#59 2026-10-07T07:29:15Z INFO events-db InnoDB: page cleaner flushed 268 pages, buffer pool hit rate 99.8%\n#108 2026-10-07T07:29:26Z INFO events-db InnoDB: page cleaner flushed 723 pages, buffer pool hit rate 99.7%\n#162 2026-10-07T07:29:41Z INFO events-db InnoDB: page cleaner flushed 247 pages, buffer pool hit rate 98.6%\n#209 2026-10-07T07:29:52Z INFO events-db InnoDB: page cleaner flushed 814 pages, buffer pool hit rate 99.3%\n#252 2026-10-07T07:30:04Z INFO events-db InnoDB: page cleaner flushed 350 pages, buffer pool hit rate 99.4%\n#311 2026-10-07T07:30:17Z INFO events-db InnoDB: page cleaner flushed 609 pages, buffer pool hit rate 99.8%\n#348 2026-10-07T07:30:27Z INFO events-db InnoDB: page cleaner flushed 815 pages, buffer pool hit rate 98.5%\n#378 2026-10-07T07:30:36Z INFO events-db InnoDB: page cleaner flushed 523 pages, buffer pool hit rate 99.4%\n#421 2026-10-07T07:30:48Z INFO events-db InnoDB: page cleaner flushed 187 pages, buffer pool hit rate 98.5%\n#467 2026-10-07T07:30:59Z INFO events-db InnoDB: page cleaner flushed 860 pages, buffer pool hit rate 99.2%\n#506 2026-10-07T07:31:08Z INFO events-db InnoDB: page cleaner flushed 353 pages, buffer pool hit rate 98.9%\n#566 2026-10-07T07:31:23Z INFO events-db InnoDB: page cleaner flushed 168 pages, buffer pool hit rate 98.5%\n#624 2026-10-07T07:31:37Z INFO events-db InnoDB: page cleaner flushed 155 pages, buffer pool hit rate 99.1%\n#670 2026-10-07T07:31:48Z INFO events-db InnoDB: page cleaner flushed 100 pages, buffer pool hit rate 99.9%\n#726 2026-10-07T07:32:02Z INFO events-db InnoDB: page cleaner flushed 192 pages, buffer pool hit rate 99.5%\n#774 2026-10-07T07:32:14Z INFO events-db InnoDB: page cleaner flushed 337 pages, buffer pool hit rate 98.9%\n#829 2026-10-07T07:32:27Z INFO events-db InnoDB: page cleaner flushed 445 pages, buffer pool hit rate 99%\n#875 2026-10-07T07:32:39Z INFO events-db InnoDB: page cleaner flushed 373 pages, buffer pool hit rate 98.5%\n#925 2026-10-07T07:32:52Z INFO events-db InnoDB: page cleaner flushed 676 pages, buffer pool hit rate 99%\n#960 2026-10-07T07:33:01Z INFO events-db InnoDB: page cleaner flushed 558 pages, buffer pool hit rate 99.7%\n#998 2026-10-07T07:33:12Z INFO events-db InnoDB: page cleaner flushed 673 pages, buffer pool hit rate 98.7%\n#1042 2026-10-07T07:33:23Z INFO events-db InnoDB: page cleaner flushed 539 pages, buffer pool hit rate 99.1%\n#1100 2026-10-07T07:33:37Z INFO events-db InnoDB: page cleaner flushed 274 pages, buffer pool hit rate 98.9%\n#1142 2026-10-07T07:33:48Z INFO events-db InnoDB: page cleaner flushed 536 pages, buffer pool hit rate 99%\n#1202 2026-10-07T07:34:03Z INFO events-db InnoDB: page cleaner flushed 896 pages, buffer pool hit rate 99.3%\n#1243 2026-10-07T07:34:14Z INFO events-db InnoDB: page cleaner flushed 436 pages, buffer pool hit rate 99.5%\n#1288 2026-10-07T07:34:25Z INFO events-db InnoDB: page cleaner flushed 439 pages, buffer pool hit rate 99%\n#1339 2026-10-07T07:34:39Z INFO events-db InnoDB: page cleaner flushed 453 pages, buffer pool hit rate 99.9%\n#1390 2026-10-07T07:34:53Z INFO events-db InnoDB: page cleaner flushed 399 pages, buffer pool hit rate 98.6%\n#1441 2026-10-07T07:35:05Z INFO events-db InnoDB: page cleaner flushed 292 pages, buffer pool hit rate 98.6%\n#1485 2026-10-07T07:35:16Z INFO events-db InnoDB: page cleaner flushed 833 pages, buffer pool hit rate 99.2%\n#1546 2026-10-07T07:35:31Z INFO events-db InnoDB: page cleaner flushed 679 pages, buffer pool hit rate 99.7%\n#1587 2026-10-07T07:35:42Z INFO events-db InnoDB: page cleaner flushed 874 pages, buffer pool hit rate 99.6%\n#1649 2026-10-07T07:35:56Z INFO events-db InnoDB: page cleaner flushed 818 pages, buffer pool hit rate 98.7%\n#1687 2026-10-07T07:36:07Z INFO events-db InnoDB: page cleaner flushed 704 pages, buffer pool hit rate 98.8%\n#1744 2026-10-07T07:36:20Z INFO events-db InnoDB: page cleaner flushed 869 pages, buffer pool hit rate 99.9%\n#1789 2026-10-07T07:36:33Z INFO events-db InnoDB: page cleaner flushed 282 pages, buffer pool hit rate 99.2%\n#1839 2026-10-07T07:36:46Z INFO events-db InnoDB: page cleaner flushed 406 pages, buffer pool hit rate 98.8%\n#1904 2026-10-07T07:37:00Z INFO events-db InnoDB: page cleaner flushed 133 pages, buffer pool hit rate 98.6%\n#1950 2026-10-07T07:37:12Z INFO events-db InnoDB: page cleaner flushed 816 pages, buffer pool hit rate 98.5%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "lock",
+          "since": "07:29:00",
+          "until": "07:44:00",
+          "limit": 30
+        },
+        "output": "4 match(es):\n#2062 2026-10-07T07:37:41Z INFO events-db schema migration 2026_11_07_add_index_events_created_at started: ALTER TABLE events ADD INDEX idx_events_created_at (created_at), ALGORITHM=INPLACE, LOCK=NONE\n#3059 2026-10-07T07:41:44Z INFO events-db TRANSACTION 82971, ACTIVE 102 sec, enrichment-svc-reconciler holding 1 row lock(s) on events, undo log entries 1\n#3382 2026-10-07T07:43:13Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)\n#3470 2026-10-07T07:43:43Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "checksum",
+          "limit": 5
+        },
+        "output": "19 match(es), showing first 5:\n#3384 2026-10-07T07:43:13Z ERROR billing-reconciler invoice_archive row inv-378757 violates checksum constraint, skipping (archive partition 2019-Q1)\n#3413 2026-10-07T07:43:22Z ERROR billing-reconciler invoice_archive row inv-138879 violates checksum constraint, skipping (archive partition 2019-Q1)\n#3547 2026-10-07T07:44:14Z ERROR billing-reconciler invoice_archive row inv-342331 violates checksum constraint, skipping (archive partition 2019-Q3)\n#3709 2026-10-07T07:45:13Z ERROR billing-reconciler invoice_archive row inv-174385 violates checksum constraint, skipping (archive partition 2019-Q3)\n#3807 2026-10-07T07:46:02Z ERROR billing-reconciler invoice_archive row inv-584573 violates checksum constraint, skipping (archive partition 2019-Q2)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "migrat",
+          "limit": 20
+        },
+        "output": "2 match(es):\n#2062 2026-10-07T07:37:41Z INFO events-db schema migration 2026_11_07_add_index_events_created_at started: ALTER TABLE events ADD INDEX idx_events_created_at (created_at), ALGORITHM=INPLACE, LOCK=NONE\n#2231 2026-10-07T07:38:20Z INFO events-db schema migration 2026_11_07_add_index_events_created_at applied in 9s; 0 pending"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "api key",
+          "limit": 20
+        },
+        "output": "1 match(es):\n#4052 2026-10-07T07:48:01Z ERROR auth-svc [t-3826] identity provider rejected request: 401 Unauthorized (invalid API key) POST https://idp.example/oauth2/token"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "reconciler",
+          "since": "07:36:00",
+          "until": "07:44:00",
+          "limit": 40
+        },
+        "output": "1 match(es):\n#3059 2026-10-07T07:41:44Z INFO events-db TRANSACTION 82971, ACTIVE 102 sec, enrichment-svc-reconciler holding 1 row lock(s) on events, undo log entries 1"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 3059,
+          "before": 8,
+          "after": 4
+        },
+        "output": "#3051 2026-10-07T07:41:42Z INFO ingest-api [t-3295] event e-7253 accepted, calling enrichment-svc POST /enrich\n#3052 2026-10-07T07:41:42Z INFO enrichment-svc [t-3295] POST /enrich e-7253 ok 58ms\n#3053 2026-10-07T07:41:42Z INFO ingest-gateway [t-3295] POST /v1/events 200 79ms\n#3054 2026-10-07T07:41:43Z INFO event-processor processed batch of 27 messages from events.raw (lag 243ms)\n#3055 2026-10-07T07:41:43Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2242 samples\n#3056 2026-10-07T07:41:44Z INFO ingest-api [t-3297] event e-7255 accepted, calling enrichment-svc POST /enrich\n#3057 2026-10-07T07:41:44Z INFO enrichment-svc [t-3297] POST /enrich e-7255 ok 80ms\n#3058 2026-10-07T07:41:44Z INFO ingest-gateway [t-3297] POST /v1/events 200 79ms\n#3059 2026-10-07T07:41:44Z INFO events-db TRANSACTION 82971, ACTIVE 102 sec, enrichment-svc-reconciler holding 1 row lock(s) on events, undo log entries 1\n#3060 2026-10-07T07:41:44Z INFO ingest-api [t-3301] event e-7257 accepted, calling enrichment-svc POST /enrich\n#3061 2026-10-07T07:41:45Z INFO enrichment-svc [t-3301] POST /enrich e-7257 ok 24ms\n#3062 2026-10-07T07:41:45Z INFO ingest-gateway [t-3301] POST /v1/events 200 95ms\n#3063 2026-10-07T07:41:45Z INFO accounts-db checkpoint complete: wrote 877 buffers (4.9%)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "enrichment-svc",
+          "since": "07:38:00",
+          "until": "07:43:00",
+          "query": "transaction",
+          "limit": 30
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "enrichment-svc",
+          "since": "07:39:30",
+          "until": "07:40:30",
+          "limit": 30
+        },
+        "output": "28 match(es):\n#2520 2026-10-07T07:39:30Z INFO enrichment-svc [t-2933] POST /enrich e-6976 ok 74ms\n#2525 2026-10-07T07:39:32Z INFO enrichment-svc [t-2941] POST /enrich e-6979 ok 46ms\n#2532 2026-10-07T07:39:33Z INFO enrichment-svc [t-2943] POST /enrich e-6980 ok 34ms\n#2536 2026-10-07T07:39:34Z DEBUG enrichment-svc GC pause 8ms (young), heap 36%\n#2542 2026-10-07T07:39:35Z INFO enrichment-svc [t-2951] POST /enrich e-6986 ok 38ms\n#2556 2026-10-07T07:39:38Z INFO enrichment-svc [t-2960] POST /enrich e-6993 ok 25ms\n#2562 2026-10-07T07:39:40Z INFO enrichment-svc [t-2961] POST /enrich e-6995 ok 43ms\n#2565 2026-10-07T07:39:41Z INFO enrichment-svc [t-2965] POST /enrich e-6997 ok 62ms\n#2573 2026-10-07T07:39:43Z INFO enrichment-svc [t-2967] POST /enrich e-7002 ok 64ms\n#2577 2026-10-07T07:39:44Z INFO enrichment-svc [t-2968] POST /enrich e-7003 ok 65ms\n#2590 2026-10-07T07:39:47Z DEBUG enrichment-svc GC pause 23ms (young), heap 35%\n#2592 2026-10-07T07:39:48Z INFO enrichment-svc [t-2975] POST /enrich e-7008 ok 20ms\n#2603 2026-10-07T07:39:50Z INFO enrichment-svc [t-2982] POST /enrich e-7015 ok 49ms\n#2608 2026-10-07T07:39:51Z INFO enrichment-svc [t-2986] POST /enrich e-7016 ok 67ms\n#2630 2026-10-07T07:39:57Z INFO enrichment-svc [t-3001] POST /enrich e-7029 ok 25ms\n#2646 2026-10-07T07:40:02Z INFO enrichment-svc [t-3008] POST /enrich e-7040 ok 50ms\n#2659 2026-10-07T07:40:04Z DEBUG enrichment-svc GC pause 5ms (young), heap 28%\n#2666 2026-10-07T07:40:06Z INFO enrichment-svc [t-3022] POST /enrich e-7048 ok 45ms\n#2682 2026-10-07T07:40:11Z INFO enrichment-svc [t-3034] POST /enrich e-7055 ok 77ms\n#2690 2026-10-07T07:40:12Z INFO enrichment-svc [t-3042] POST /enrich e-7061 ok 71ms\n#2714 2026-10-07T07:40:19Z INFO enrichment-svc [t-3062] POST /enrich e-7073 ok 36ms\n#2719 2026-10-07T07:40:21Z INFO enrichment-svc [t-3064] POST /enrich e-7076 ok 50ms\n#2723 2026-10-07T07:40:21Z DEBUG enrichment-svc GC pause 21ms (young), heap 41%\n#2727 2026-10-07T07:40:22Z INFO enrichment-svc [t-3071] POST /enrich e-7080 ok 35ms\n#2733 2026-10-07T07:40:23Z INFO enrichment-svc [t-3074] POST /enrich e-7083 ok 61ms\n#2740 2026-10-07T07:40:24Z INFO enrichment-svc [t-3077] POST /enrich e-7088 ok 84ms\n#2750 2026-10-07T07:40:27Z INFO enrichment-svc [t-3088] POST /enrich e-7098 ok 29ms\n#2756 2026-10-07T07:40:29Z INFO enrichment-svc [t-3091] POST /enrich e-7099 ok 86ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "enrichment-svc-reconciler",
+          "limit": 30
+        },
+        "output": "1 match(es):\n#3059 2026-10-07T07:41:44Z INFO events-db TRANSACTION 82971, ACTIVE 102 sec, enrichment-svc-reconciler holding 1 row lock(s) on events, undo log entries 1"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "invoice_archive",
+          "since": "07:29:00",
+          "until": "07:43:12",
+          "limit": 10
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "events-db",
+          "level": "WARN",
+          "limit": 30
+        },
+        "output": "3 match(es):\n#3382 2026-10-07T07:43:13Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)\n#3470 2026-10-07T07:43:43Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)\n#3594 2026-10-07T07:44:32Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "events-db",
+          "since": "07:40:00",
+          "until": "07:44:00",
+          "query": "TRANSACTION",
+          "limit": 30
+        },
+        "output": "3 match(es):\n#3059 2026-10-07T07:41:44Z INFO events-db TRANSACTION 82971, ACTIVE 102 sec, enrichment-svc-reconciler holding 1 row lock(s) on events, undo log entries 1\n#3382 2026-10-07T07:43:13Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)\n#3470 2026-10-07T07:43:43Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.8,
+              "evidenceLines": [
+                3059,
+                3382,
+                3470,
+                3488,
+                3732,
+                3497,
+                3567,
+                3740,
+                3799
+              ],
+              "reasoning": "Origin: an enrichment-svc-reconciler transaction (events-db TRANSACTION 82971) was open and holding a row lock on the events table, ACTIVE 102 sec as of 07:41:44 (#3059), so it began about 07:40:02 and was never committed. From 07:43:13 UPDATE events statements begin failing with lock wait timeouts (#3382, #3470), and enrichment-svc's event updates are cancelled by statement_timeout (#3488, #3732). Ingest-api then waits 15s on enrichment-svc and times out (#3497, #3567, #3740), and ingest-gateway returns 504s on POST /v1/events (#3799). The 504s, pool checkout timeouts and metrics-agent queue drops are downstream spread. Caveat: the holder's identity and the reason its transaction stayed open are only visible in one line, so the lock holder is not fully explained. The timing is consistent with the hung-lock dependency_timeout reading. A concurrent online index migration at 07:37:41-07:38:20 (#2062, #2231) finished before the lock-holder transaction began, so it is not the holder.",
+              "recommendation_placeholder": null
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.15,
+              "evidenceLines": [
+                3384,
+                3413,
+                3547
+              ],
+              "reasoning": "billing-reconciler reports invoice_archive rows violating checksum constraints in 2019 archive partitions (#3384, #3413, #3547). These are off the /v1/events request path and are a separate, pre-existing data problem, not the cause of the 504 spike.",
+              "recommendation_placeholder": null
+            }
+          ],
+          "recommendedAction": "Immediately find and terminate the open enrichment-svc-reconciler transaction (events-db transaction 82971) holding the row lock on events, and confirm that the lock is released. Fix the reconciler so it commits or rolls back promptly. Add a lock-wait and idle-in-transaction alert on events-db. Once the lock clears, ingest-api and the gateway should recover. Separately, track the billing invoice_archive checksum violations (2019 partitions) and the idp.example 401 invalid API key failures on auth-svc (#3949, #4052), which affect /login but not /v1/events. Note: the events-db holder identity is only visible in one log line, so confirm with a live processlist before acting."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 8,
+    "toolCalls": 16,
+    "usage": {
+      "inputTokens": 18,
+      "outputTokens": 3797,
+      "cacheReadTokens": 90510,
+      "cacheWriteTokens": 18784
+    },
+    "durationMs": 18120,
+    "stopReason": "tool_use"
+  }
+}

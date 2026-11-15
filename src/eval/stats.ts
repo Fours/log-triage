@@ -65,6 +65,8 @@ export const PAIRED_METRICS: Record<string, (s: IncidentScore) => number | null>
   top1Lenient: (s) => Number(s.top1Lenient),
   evidencePrecision: (s) => s.evidence.precision,
   evidenceRecall: (s) => s.evidence.recall,
+  /** Labeled herring lines cited (any hypothesis). On v2 this is how a model shows it took the bait. */
+  herringsCited: (s) => s.herringsCited ?? null,
   costUsd: (s) => s.costUsd,
   seconds: (s) => s.durationMs / 1000,
 };

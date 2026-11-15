@@ -1,0 +1,186 @@
+{
+  "score": {
+    "incidentId": "ht-003",
+    "difficulty": "medium",
+    "scenario": "bad_deploy/dependency-contract-change",
+    "truth": "bad_deploy",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "bad_deploy",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 6,
+      "precision": 0.8571428571428571,
+      "recall": 1,
+      "f1": 0.923076923076923
+    },
+    "herringsCited": 3,
+    "secondaryCited": 0,
+    "costUsd": 0.00292406,
+    "durationMs": 9616,
+    "iterations": 5,
+    "toolCalls": 8,
+    "tokens": {
+      "input": 12,
+      "output": 1889,
+      "cacheRead": 29986,
+      "cacheWrite": 13428
+    }
+  },
+  "result": {
+    "incidentId": "ht-003",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.9,
+          "evidenceLines": [
+            1539,
+            1582,
+            1601,
+            1671,
+            1755,
+            1804,
+            1686
+          ],
+          "reasoning": "payment-svc was rolled out to v1.10.0 at 02:16:24 (#1539). It started with 'response serializer v2 enabled' (#1582). Afterward its /charge replies carry keys id, state, updatedAt, with no 'status' field. order-service then fails to decode or map those replies (#1601 'cannot map status', #1671 'missing required field status', #1755 'required property status not found'). Each failed charge makes order-service return 502, and api-gateway surfaces that as POST /checkout 502s (#1686, #1700, #1808, #2201). The 502s start about a minute after the deploy and match the alert window. Before the deploy, checkout was 200 (#1545, #1551). Downstream queue and pool effects are not cited. Unrelated issues seen in the window: auth-svc connection refused from account-svc (#1372, #1477, #1574) causes /login 503s (#1379), and billing-reconciler checksum skips in invoice_archive (#1623) are a separate data issue. Neither is in the checkout path."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.1,
+          "evidenceLines": [
+            1623,
+            1669,
+            1748
+          ],
+          "reasoning": "billing-reconciler reports invoice_archive rows violating checksum constraints in archive partitions. This is a real data problem, but it does not touch the checkout path and does not explain the 502s on POST /checkout. It is a side issue to ticket separately."
+        }
+      ],
+      "recommendedAction": "Roll back payment-svc from v1.10.0 to v1.9.1 now. That restores the 'status' field that order-service expects and should clear the checkout 502s. Then fix the v2 response serializer so it keeps the 'status' field, or coordinate a compatible order-service change before re-rolling. Separately, investigate auth-svc being unreachable (connection refused at 10.33.162.6:8081), which is causing /login 503s, and the invoice_archive checksum violations in billing-reconciler."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "33 match(es):\n#630 2026-10-16T02:08:42Z WARN order-consumer msg-768737 from orders.events failed schema validation (missing field \"version\"), moved to orders.events.dlq\n#1372 2026-10-16T02:14:32Z ERROR account-svc [t-3995] AuthClient.issueToken failed: connect ECONNREFUSED 10.33.162.6:8081 (auth-svc.internal)\n#1379 2026-10-16T02:14:36Z ERROR edge-proxy [t-3997] POST /login 503 25711ms: upstream account-svc returned 503 Service Unavailable\n#1477 2026-10-16T02:15:44Z ERROR account-svc [t-4041] dial tcp 10.33.162.6:8081: connect: connection refused (calling auth-svc)\n#1574 2026-10-16T02:16:50Z ERROR account-svc [t-4091] POST /tokens to auth-svc.internal:8081 failed: Connection refused\n#1601 2026-10-16T02:17:06Z ERROR order-service [t-4103] PaymentClient.charge: unexpected payload for o-2446, cannot map status (present: id, state, updatedAt)\n#1623 2026-10-16T02:17:34Z ERROR billing-reconciler invoice_archive row inv-133495 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1624 2026-10-16T02:17:34Z ERROR edge-proxy [t-4108] POST /login 503 6920ms: upstream account-svc returned 503 Service Unavailable\n#1640 2026-10-16T02:17:51Z ERROR account-svc [t-4112] AuthClient.issueToken failed: connect ECONNREFUSED 10.33.162.6:8081 (auth-svc.internal)\n#1669 2026-10-16T02:18:16Z ERROR billing-reconciler invoice_archive row inv-731562 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1671 2026-10-16T02:18:18Z ERROR order-service [t-4121] failed to decode payment-svc POST /charge response for o-2457: missing required field \"status\" (got keys: id, state, updatedAt)\n#1686 2026-10-16T02:18:33Z ERROR api-gateway [t-4127] POST /checkout 502 22471ms: upstream order-service returned 502 Bad Gateway\n#1700 2026-10-16T02:18:48Z ERROR api-gateway [t-4128] POST /checkout 502 19226ms: upstream order-service returned 502 Bad Gateway\n#1748 2026-10-16T02:19:43Z ERROR billing-reconciler invoice_archive row inv-965602 violates checksum constraint, skipping (archive partition 2019-Q1)\n#1751 2026-10-16T02:19:48Z ERROR edge-proxy [t-4141] POST /login 503 8239ms: upstream account-svc returned 503 Service Unavailable\n#1755 2026-10-16T02:19:51Z ERROR order-service [t-4145] schema validation error on payment-svc reply (o-2466): required property 'status' not found\n#1804 2026-10-16T02:20:51Z ERROR order-service [t-4150] PaymentClient.charge: unexpected payload for o-2471, cannot map status (present: id, state, updatedAt)\n#1807 2026-10-16T02:20:52Z ERROR billing-reconciler invoice_archive row inv-982237 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1808 2026-10-16T02:20:53Z ERROR api-gateway [t-4154] POST /checkout 502 12888ms: upstream order-service returned 502 Bad Gateway\n#1834 2026-10-16T02:21:22Z ERROR edge-proxy [t-4161] POST /login 503 27892ms: upstream account-svc returned 503 Service Unavailable\n#1891 2026-10-16T02:22:23Z ERROR api-gateway [t-4170] POST /checkout 502 25224ms: upstream order-service returned 502 Bad Gateway\n#1895 2026-10-16T02:22:28Z ERROR billing-reconciler invoice_archive row inv-891179 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1911 2026-10-16T02:22:48Z ERROR billing-reconciler invoice_archive row inv-938941 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1929 2026-10-16T02:23:10Z ERROR edge-proxy [t-4176] POST /login 503 20034ms: upstream account-svc returned 503 Service Unavailable\n#2007 2026-10-16T02:24:39Z ERROR api-gateway [t-4194] POST /checkout 502 22338ms: upstream order-service returned 502 Bad Gateway\n#2022 2026-10-16T02:24:59Z ERROR billing-reconciler invoice_archive row inv-590718 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2039 2026-10-16T02:25:16Z ERROR billing-reconciler invoice_archive row inv-774218 violates checksum constraint, skipping (archive partition 2019-Q3)\n#2062 2026-10-16T02:25:48Z ERROR api-gateway [t-4200] POST /checkout 502 15550ms: upstream order-service returned 502 Bad Gateway\n#2086 2026-10-16T02:26:19Z ERROR edge-proxy [t-4202] POST /login 503 29047ms: upstream account-svc returned 503 Service Unavailable\n#2150 2026-10-16T02:27:30Z ERROR billing-reconciler invoice_archive row inv-762231 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2166 2026-10-16T02:27:50Z ERROR edge-proxy [t-4216] POST /login 503 21057ms: upstream account-svc returned 503 Service Unavailable\n#2201 2026-10-16T02:28:27Z ERROR api-gateway [t-4226] POST /checkout 502 13630ms: upstream order-service returned 502 Bad Gateway\n#2206 2026-10-16T02:28:31Z ERROR billing-reconciler invoice_archive row inv-237445 violates checksum constraint, skipping (archive partition 2019-Q2)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "billing-reconciler",
+          "level": "ERROR"
+        },
+        "output": "10 match(es):\n#1623 2026-10-16T02:17:34Z ERROR billing-reconciler invoice_archive row inv-133495 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1669 2026-10-16T02:18:16Z ERROR billing-reconciler invoice_archive row inv-731562 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1748 2026-10-16T02:19:43Z ERROR billing-reconciler invoice_archive row inv-965602 violates checksum constraint, skipping (archive partition 2019-Q1)\n#1807 2026-10-16T02:20:52Z ERROR billing-reconciler invoice_archive row inv-982237 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1895 2026-10-16T02:22:28Z ERROR billing-reconciler invoice_archive row inv-891179 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1911 2026-10-16T02:22:48Z ERROR billing-reconciler invoice_archive row inv-938941 violates checksum constraint, skipping (archive partition 2019-Q3)\n#2022 2026-10-16T02:24:59Z ERROR billing-reconciler invoice_archive row inv-590718 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2039 2026-10-16T02:25:16Z ERROR billing-reconciler invoice_archive row inv-774218 violates checksum constraint, skipping (archive partition 2019-Q3)\n#2150 2026-10-16T02:27:30Z ERROR billing-reconciler invoice_archive row inv-762231 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2206 2026-10-16T02:28:31Z ERROR billing-reconciler invoice_archive row inv-237445 violates checksum constraint, skipping (archive partition 2019-Q2)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "limit": 60,
+          "since": "02:04:00",
+          "until": "02:18:30"
+        },
+        "output": "tool error: since (02:04:00) is after until (02:18:30)",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "version",
+          "limit": 30
+        },
+        "output": "1 match(es):\n#630 2026-10-16T02:08:42Z WARN order-consumer msg-768737 from orders.events failed schema validation (missing field \"version\"), moved to orders.events.dlq"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "limit": 80
+        },
+        "output": "186 match(es), showing first 80:\n#4 2026-10-16T02:04:03Z INFO payment-svc [t-3158] POST /charge o-1675 ok 25ms\n#28 2026-10-16T02:04:13Z INFO payment-svc [t-3172] POST /charge o-1684 ok 54ms\n#36 2026-10-16T02:04:15Z INFO payment-svc [t-3173] POST /charge o-1687 ok 73ms\n#56 2026-10-16T02:04:26Z INFO payment-svc [t-3185] POST /charge o-1698 ok 48ms\n#69 2026-10-16T02:04:33Z DEBUG payment-svc GC pause 13ms (young), heap 37%\n#94 2026-10-16T02:04:45Z INFO payment-svc [t-3212] POST /charge o-1719 ok 57ms\n#108 2026-10-16T02:04:51Z INFO payment-svc [t-3219] POST /charge o-1726 ok 28ms\n#117 2026-10-16T02:04:53Z INFO payment-svc [t-3226] POST /charge o-1730 ok 77ms\n#131 2026-10-16T02:04:59Z INFO payment-svc [t-3238] POST /charge o-1736 ok 31ms\n#141 2026-10-16T02:05:04Z DEBUG payment-svc GC pause 11ms (young), heap 45%\n#143 2026-10-16T02:05:04Z INFO payment-svc [t-3243] POST /charge o-1743 ok 76ms\n#158 2026-10-16T02:05:09Z INFO payment-svc [t-3251] POST /charge o-1750 ok 62ms\n#169 2026-10-16T02:05:14Z INFO payment-svc [t-3260] POST /charge o-1758 ok 43ms\n#190 2026-10-16T02:05:23Z DEBUG payment-svc GC pause 12ms (young), heap 39%\n#197 2026-10-16T02:05:25Z INFO payment-svc [t-3272] POST /charge o-1771 ok 82ms\n#221 2026-10-16T02:05:36Z INFO payment-svc [t-3285] POST /charge o-1781 ok 59ms\n#226 2026-10-16T02:05:40Z INFO payment-svc [t-3287] POST /charge o-1784 ok 54ms\n#229 2026-10-16T02:05:41Z DEBUG payment-svc GC pause 4ms (young), heap 45%\n#235 2026-10-16T02:05:43Z INFO payment-svc [t-3293] POST /charge o-1789 ok 77ms\n#249 2026-10-16T02:05:49Z INFO payment-svc [t-3300] POST /charge o-1795 ok 78ms\n#280 2026-10-16T02:06:05Z DEBUG payment-svc GC pause 15ms (young), heap 42%\n#300 2026-10-16T02:06:16Z INFO payment-svc [t-3337] POST /charge o-1830 ok 31ms\n#314 2026-10-16T02:06:23Z INFO payment-svc [t-3347] POST /charge o-1837 ok 72ms\n#322 2026-10-16T02:06:25Z INFO payment-svc [t-3351] POST /charge o-1841 ok 35ms\n#337 2026-10-16T02:06:30Z INFO payment-svc [t-3359] POST /charge o-1847 ok 55ms\n#340 2026-10-16T02:06:33Z INFO payment-svc [t-3360] POST /charge o-1848 ok 83ms\n#349 2026-10-16T02:06:36Z DEBUG payment-svc GC pause 15ms (young), heap 45%\n#351 2026-10-16T02:06:37Z INFO payment-svc [t-3365] POST /charge o-1855 ok 59ms\n#390 2026-10-16T02:06:56Z DEBUG payment-svc GC pause 22ms (young), heap 30%\n#392 2026-10-16T02:06:56Z INFO payment-svc [t-3393] POST /charge o-1876 ok 61ms\n#400 2026-10-16T02:06:59Z INFO payment-svc [t-3396] POST /charge o-1881 ok 86ms\n#416 2026-10-16T02:07:07Z INFO payment-svc [t-3409] POST /charge o-1889 ok 86ms\n#425 2026-10-16T02:07:12Z INFO payment-svc [t-3416] POST /charge o-1894 ok 64ms\n#438 2026-10-16T02:07:17Z INFO payment-svc [t-3423] POST /charge o-1899 ok 58ms\n#458 2026-10-16T02:07:27Z INFO payment-svc [t-3434] POST /charge o-1908 ok 47ms\n#461 2026-10-16T02:07:28Z DEBUG payment-svc GC pause 11ms (young), heap 28%\n#472 2026-10-16T02:07:34Z INFO payment-svc [t-3445] POST /charge o-1915 ok 88ms\n#485 2026-10-16T02:07:37Z INFO payment-svc [t-3451] POST /charge o-1921 ok 26ms\n#489 2026-10-16T02:07:40Z INFO payment-svc [t-3453] POST /charge o-1922 ok 73ms\n#506 2026-10-16T02:07:48Z DEBUG payment-svc GC pause 12ms (young), heap 42%\n#509 2026-10-16T02:07:48Z INFO payment-svc [t-3463] POST /charge o-1932 ok 30ms\n#531 2026-10-16T02:07:59Z INFO payment-svc [t-3479] POST /charge o-1946 ok 89ms\n#538 2026-10-16T02:08:02Z INFO payment-svc [t-3482] POST /charge o-1950 ok 85ms\n#563 2026-10-16T02:08:12Z INFO payment-svc [t-3495] POST /charge o-1963 ok 72ms\n#579 2026-10-16T02:08:19Z DEBUG payment-svc GC pause 15ms (young), heap 45%\n#581 2026-10-16T02:08:20Z INFO payment-svc [t-3505] POST /charge o-1972 ok 75ms\n#593 2026-10-16T02:08:25Z INFO payment-svc [t-3512] POST /charge o-1980 ok 65ms\n#597 2026-10-16T02:08:28Z INFO payment-svc [t-3516] POST /charge o-1981 ok 46ms\n#617 2026-10-16T02:08:35Z INFO payment-svc [t-3532] POST /charge o-1991 ok 54ms\n#635 2026-10-16T02:08:44Z DEBUG payment-svc GC pause 14ms (young), heap 41%\n#644 2026-10-16T02:08:48Z INFO payment-svc [t-3551] POST /charge o-2005 ok 66ms\n#677 2026-10-16T02:09:05Z INFO payment-svc [t-3573] POST /charge o-2022 ok 37ms\n#679 2026-10-16T02:09:05Z DEBUG payment-svc GC pause 9ms (young), heap 39%\n#723 2026-10-16T02:09:25Z INFO payment-svc [t-3599] POST /charge o-2045 ok 47ms\n#729 2026-10-16T02:09:27Z INFO payment-svc [t-3603] POST /charge o-2049 ok 82ms\n#734 2026-10-16T02:09:31Z INFO payment-svc [t-3607] POST /charge o-2054 ok 84ms\n#742 2026-10-16T02:09:33Z DEBUG payment-svc GC pause 13ms (young), heap 39%\n#747 2026-10-16T02:09:35Z INFO payment-svc [t-3612] POST /charge o-2058 ok 84ms\n#751 2026-10-16T02:09:37Z INFO payment-svc [t-3616] POST /charge o-2059 ok 72ms\n#757 2026-10-16T02:09:39Z INFO payment-svc [t-3622] POST /charge o-2064 ok 57ms\n#765 2026-10-16T02:09:44Z INFO payment-svc [t-3625] POST /charge o-2067 ok 85ms\n#795 2026-10-16T02:09:58Z INFO payment-svc [t-3645] POST /charge o-2082 ok 88ms\n#802 2026-10-16T02:10:01Z DEBUG payment-svc GC pause 11ms (young), heap 43%\n#814 2026-10-16T02:10:07Z INFO payment-svc [t-3658] POST /charge o-2091 ok 47ms\n#821 2026-10-16T02:10:10Z INFO payment-svc [t-3661] POST /charge o-2095 ok 32ms\n#827 2026-10-16T02:10:13Z INFO payment-svc [t-3664] POST /charge o-2096 ok 33ms\n#846 2026-10-16T02:10:20Z INFO payment-svc [t-3674] POST /charge o-2105 ok 74ms\n#852 2026-10-16T02:10:23Z INFO payment-svc [t-3679] POST /charge o-2107 ok 54ms\n#859 2026-10-16T02:10:26Z DEBUG payment-svc GC pause 23ms (young), heap 39%\n#888 2026-10-16T02:10:40Z INFO payment-svc [t-3693] POST /charge o-2124 ok 57ms\n#900 2026-10-16T02:10:46Z INFO payment-svc [t-3701] POST /charge o-2131 ok 27ms\n#910 2026-10-16T02:10:51Z INFO payment-svc [t-3704] POST /charge o-2133 ok 76ms\n#921 2026-10-16T02:10:56Z DEBUG payment-svc GC pause 20ms (young), heap 36%\n#961 2026-10-16T02:11:17Z INFO payment-svc [t-3735] POST /charge o-2158 ok 63ms\n#967 2026-10-16T02:11:20Z INFO payment-svc [t-3741] POST /charge o-2162 ok 75ms\n#969 2026-10-16T02:11:21Z DEBUG payment-svc GC pause 18ms (young), heap 30%\n#993 2026-10-16T02:11:31Z INFO payment-svc [t-3757] POST /charge o-2172 ok 47ms\n#999 2026-10-16T02:11:34Z INFO payment-svc [t-3761] POST /charge o-2176 ok 60ms\n#1007 2026-10-16T02:11:37Z INFO payment-svc [t-3766] POST /charge o-2182 ok 62ms\n#1016 2026-10-16T02:11:41Z INFO payment-svc [t-3772] POST /charge o-2186 ok 61ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 30
+        },
+        "output": "1 match(es):\n#1539 2026-10-16T02:16:24Z INFO payment-svc deploy: rolling out payment-svc v1.10.0 (build a00564b), replacing v1.9.1"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1539,
+          "before": 3,
+          "after": 12
+        },
+        "output": "#1536 2026-10-16T02:16:22Z INFO postgres checkpoint complete: wrote 856 buffers (7.4%)\n#1537 2026-10-16T02:16:23Z INFO redis stats: hits=11996 misses=216 evicted=0 connected_clients=36\n#1538 2026-10-16T02:16:24Z INFO order-consumer processed batch of 79 messages from orders.events (lag 44ms)\n#1539 2026-10-16T02:16:24Z INFO payment-svc deploy: rolling out payment-svc v1.10.0 (build a00564b), replacing v1.9.1\n#1540 2026-10-16T02:16:25Z INFO billing-reconciler reconciled 551 current-period invoices, 0 discrepancies\n#1541 2026-10-16T02:16:25Z DEBUG payment-svc GC pause 19ms (young), heap 31%\n#1542 2026-10-16T02:16:26Z INFO audit-consumer processed batch of 35 messages from audit.events (lag 397ms)\n#1543 2026-10-16T02:16:26Z INFO order-service [t-4073] order o-2426 accepted, calling payment-svc POST /charge\n#1544 2026-10-16T02:16:27Z INFO payment-svc [t-4073] POST /charge o-2426 ok 72ms\n#1545 2026-10-16T02:16:27Z INFO api-gateway [t-4073] POST /checkout 200 143ms\n#1546 2026-10-16T02:16:28Z DEBUG auth-svc GC pause 15ms (young), heap 32%\n#1547 2026-10-16T02:16:29Z INFO order-consumer processed batch of 78 messages from orders.events (lag 157ms)\n#1548 2026-10-16T02:16:31Z INFO order-service [t-4075] order o-2429 accepted, calling payment-svc POST /charge\n#1549 2026-10-16T02:16:31Z INFO flag-sync synced 94 feature flags from flag service (etag 9aa7e26)\n#1550 2026-10-16T02:16:31Z INFO payment-svc [t-4075] POST /charge o-2429 ok 20ms\n#1551 2026-10-16T02:16:31Z INFO api-gateway [t-4075] POST /checkout 200 231ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "since": "02:16:24",
+          "limit": 15
+        },
+        "output": "51 match(es), showing first 15:\n#1539 2026-10-16T02:16:24Z INFO payment-svc deploy: rolling out payment-svc v1.10.0 (build a00564b), replacing v1.9.1\n#1541 2026-10-16T02:16:25Z DEBUG payment-svc GC pause 19ms (young), heap 31%\n#1544 2026-10-16T02:16:27Z INFO payment-svc [t-4073] POST /charge o-2426 ok 72ms\n#1550 2026-10-16T02:16:31Z INFO payment-svc [t-4075] POST /charge o-2429 ok 20ms\n#1566 2026-10-16T02:16:45Z INFO payment-svc [t-4086] POST /charge o-2436 ok 29ms\n#1569 2026-10-16T02:16:46Z DEBUG payment-svc GC pause 16ms (young), heap 34%\n#1576 2026-10-16T02:16:51Z INFO payment-svc [t-4093] POST /charge o-2438 ok 41ms\n#1580 2026-10-16T02:16:54Z INFO payment-svc [t-4095] POST /charge o-2440 ok 60ms\n#1582 2026-10-16T02:16:54Z INFO payment-svc started payment-svc v1.10.0: response serializer v2 enabled\n#1589 2026-10-16T02:16:58Z INFO payment-svc [t-4096] POST /charge o-2442 ok 71ms\n#1599 2026-10-16T02:17:02Z INFO payment-svc [t-4100] POST /charge o-2443 ok 55ms\n#1611 2026-10-16T02:17:18Z DEBUG payment-svc GC pause 11ms (young), heap 29%\n#1613 2026-10-16T02:17:21Z INFO payment-svc [t-4104] POST /charge o-2447 ok 86ms\n#1627 2026-10-16T02:17:36Z DEBUG payment-svc GC pause 22ms (young), heap 37%\n#1634 2026-10-16T02:17:42Z INFO payment-svc [t-4111] POST /charge o-2450 ok 66ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.9,
+              "evidenceLines": [
+                1539,
+                1582,
+                1601,
+                1671,
+                1755,
+                1804,
+                1686
+              ],
+              "reasoning": "payment-svc was rolled out to v1.10.0 at 02:16:24 (#1539). It started with 'response serializer v2 enabled' (#1582). Afterward its /charge replies carry keys id, state, updatedAt, with no 'status' field. order-service then fails to decode or map those replies (#1601 'cannot map status', #1671 'missing required field status', #1755 'required property status not found'). Each failed charge makes order-service return 502, and api-gateway surfaces that as POST /checkout 502s (#1686, #1700, #1808, #2201). The 502s start about a minute after the deploy and match the alert window. Before the deploy, checkout was 200 (#1545, #1551). Downstream queue and pool effects are not cited. Unrelated issues seen in the window: auth-svc connection refused from account-svc (#1372, #1477, #1574) causes /login 503s (#1379), and billing-reconciler checksum skips in invoice_archive (#1623) are a separate data issue. Neither is in the checkout path.",
+              "rootCause_note": "see reasoning"
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.1,
+              "evidenceLines": [
+                1623,
+                1669,
+                1748
+              ],
+              "reasoning": "billing-reconciler reports invoice_archive rows violating checksum constraints in archive partitions. This is a real data problem, but it does not touch the checkout path and does not explain the 502s on POST /checkout. It is a side issue to ticket separately.",
+              "rootCause_note": "side issue"
+            }
+          ],
+          "recommendedAction": "Roll back payment-svc from v1.10.0 to v1.9.1 now. That restores the 'status' field that order-service expects and should clear the checkout 502s. Then fix the v2 response serializer so it keeps the 'status' field, or coordinate a compatible order-service change before re-rolling. Separately, investigate auth-svc being unreachable (connection refused at 10.33.162.6:8081), which is causing /login 503s, and the invoice_archive checksum violations in billing-reconciler."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 8,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1889,
+      "cacheReadTokens": 29986,
+      "cacheWriteTokens": 13428
+    },
+    "durationMs": 9616,
+    "stopReason": "tool_use"
+  }
+}

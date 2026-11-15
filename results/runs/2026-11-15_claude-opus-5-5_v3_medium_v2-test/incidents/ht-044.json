@@ -1,0 +1,184 @@
+{
+  "score": {
+    "incidentId": "ht-044",
+    "difficulty": "hard",
+    "scenario": "config_error/rotated-credential",
+    "truth": "config_error",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "config_error",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 5,
+      "precision": 0.8333333333333334,
+      "recall": 1,
+      "f1": 0.9090909090909091
+    },
+    "herringsCited": 2,
+    "secondaryCited": 0,
+    "costUsd": 0.09666960000000001,
+    "durationMs": 22160,
+    "iterations": 6,
+    "toolCalls": 7,
+    "tokens": {
+      "input": 14,
+      "output": 1589,
+      "cacheRead": 44968,
+      "cacheWrite": 11168
+    }
+  },
+  "result": {
+    "incidentId": "ht-044",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "config_error",
+          "confidence": 0.88,
+          "evidenceLines": [
+            2172,
+            2374,
+            2457,
+            2610,
+            2695,
+            2463
+          ],
+          "reasoning": "At 21:27:58 payment-svc reloaded CARDPROC_API_KEY from the secrets store (version 23, with version 22 revoked) (#2172). Charges still succeeded just before the reload (#2170). From 21:29:01 on, every call to the card processor gets a 401 for an invalid or revoked API key (#2374, #2457, #2610, #2695). payment-svc then returns 502 to order-service (#2463), and order-service returns 502 to the gateway on POST /checkout, which is what paged. The credential rotation left payment-svc with a key the processor won't accept, so this is a credential problem outside any release. Things I ruled out: catalog-svc's S3 503s only break the search path (search-api and web-bff /search 500s), not checkout. The status-poller's legacy-inventory timeouts hit a deprecated endpoint and are noise. Customer webhook 502s come from third-party receivers. The order-consumer deploy at 21:26 has no errors and isn't on the checkout path. One gap: I couldn't follow a single request end to end, because each trace id only showed up in one service's logs. The link from 401 to payment 502 to checkout 502 rests on matching timing and error messages."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.08,
+          "evidenceLines": [
+            1303,
+            2374
+          ],
+          "reasoning": "Another reading is that the card processor itself had a problem (there was a connection reset at #1303) or revoked keys on its side. But the 401s start right after the local secret rotation, which points to the key, not to the processor being down."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.04,
+          "evidenceLines": [
+            1698
+          ],
+          "reasoning": "The order-consumer v2.12.8 rollout at 21:26 lines up roughly with the onset, but order-consumer logs no errors and isn't on the synchronous checkout path."
+        }
+      ],
+      "recommendedAction": "Check CARDPROC_API_KEY version 23 against the card processor dashboard. Either put a valid key into the secrets store and reload payment-svc, or, if v22 can be reinstated, roll back to it. After that, fix the rotation process: confirm the processor accepts the new key before revoking the old one. Track the catalog-svc S3 503s (search path) as a separate incident."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 80
+        },
+        "output": "73 match(es):\n#625 2026-10-06T21:21:35Z ERROR webhook-dispatcher customer webhook https://hooks.acme-36.example/ingest returned 502 Bad Gateway (attempt 1/10)\n#1059 2026-10-06T21:23:24Z ERROR webhook-dispatcher customer webhook https://hooks.acme-26.example/ingest returned 502 Bad Gateway (attempt 2/10)\n#1203 2026-10-06T21:24:01Z ERROR webhook-dispatcher customer webhook https://hooks.acme-13.example/ingest returned 502 Bad Gateway (attempt 3/10)\n#1514 2026-10-06T21:25:18Z ERROR webhook-dispatcher customer webhook https://hooks.acme-26.example/ingest returned 502 Bad Gateway (attempt 4/10)\n#1741 2026-10-06T21:26:15Z ERROR webhook-dispatcher customer webhook https://hooks.acme-19.example/ingest returned 502 Bad Gateway (attempt 5/10)\n#1851 2026-10-06T21:26:42Z ERROR webhook-dispatcher customer webhook https://hooks.acme-73.example/ingest returned 502 Bad Gateway (attempt 6/10)\n#2199 2026-10-06T21:28:04Z ERROR catalog-svc [t-5573] S3 upload of p-6396.json returned 503 ServiceUnavailable (us-east-1, 631EBBA)\n#2297 2026-10-06T21:28:31Z ERROR webhook-dispatcher customer webhook https://hooks.acme-84.example/ingest returned 502 Bad Gateway (attempt 7/10)\n#2338 2026-10-06T21:28:43Z ERROR search-api [t-5664] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#2345 2026-10-06T21:28:46Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2374 2026-10-06T21:29:01Z ERROR payment-svc [t-5681] the card processor denied the request with status 401: API key invalid or revoked\n#2389 2026-10-06T21:29:07Z ERROR web-bff [t-5687] GET /search 500 8551ms: upstream search-api returned 500 Internal Server Error\n#2390 2026-10-06T21:29:10Z ERROR webhook-dispatcher customer webhook https://hooks.acme-91.example/ingest returned 502 Bad Gateway (attempt 8/10)\n#2397 2026-10-06T21:29:14Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2410 2026-10-06T21:29:19Z ERROR api-gateway [t-5693] POST /checkout 502 18091ms: upstream order-service returned 502 Bad Gateway\n#2447 2026-10-06T21:29:41Z ERROR web-bff [t-5702] GET /search 500 18708ms: upstream search-api returned 500 Internal Server Error\n#2457 2026-10-06T21:29:46Z ERROR payment-svc [t-5708] card processor rejected request: 401 Unauthorized (invalid API key) POST https://api.cardproc.example/v1/charges\n#2458 2026-10-06T21:29:46Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2463 2026-10-06T21:29:49Z ERROR order-service [t-5709] PaymentClient.charge failed: payment-svc returned 502 (upstream card processor error)\n#2472 2026-10-06T21:29:53Z ERROR catalog-svc [t-5714] aws-sdk PutObjectCommand failed for key p-6494.json: InternalError (HTTP 500), requestId=CC6DA91\n#2480 2026-10-06T21:30:01Z ERROR webhook-dispatcher customer webhook https://hooks.acme-43.example/ingest returned 502 Bad Gateway (attempt 9/10)\n#2490 2026-10-06T21:30:04Z ERROR api-gateway [t-5718] POST /checkout 502 28534ms: upstream order-service returned 502 Bad Gateway\n#2495 2026-10-06T21:30:08Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2501 2026-10-06T21:30:13Z ERROR catalog-svc [t-5724] PutObject s3://search-artifacts-prod/p-6500.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 8E7DCB0)\n#2555 2026-10-06T21:30:42Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2578 2026-10-06T21:30:55Z ERROR api-gateway [t-5743] POST /checkout 502 26840ms: upstream order-service returned 502 Bad Gateway\n#2588 2026-10-06T21:31:05Z ERROR order-service [t-5744] PaymentClient.charge failed: payment-svc returned 502 (upstream card processor error)\n#2603 2026-10-06T21:31:12Z ERROR catalog-svc [t-5753] S3 upload of p-6518.json returned 503 ServiceUnavailable (us-east-1, 84C530D)\n#2605 2026-10-06T21:31:12Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2610 2026-10-06T21:31:17Z ERROR payment-svc [t-5755] POST /v1/charges -> 401 {\"error\":\"invalid_api_key\"}\n#2615 2026-10-06T21:31:19Z ERROR api-gateway [t-5761] POST /checkout 502 20788ms: upstream order-service returned 502 Bad Gateway\n#2621 2026-10-06T21:31:21Z ERROR webhook-dispatcher customer webhook https://hooks.acme-90.example/ingest returned 502 Bad Gateway (attempt 10/10)\n#2628 2026-10-06T21:31:23Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2658 2026-10-06T21:31:45Z ERROR search-api [t-5770] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#2660 2026-10-06T21:31:46Z ERROR web-bff [t-5774] GET /search 500 26954ms: upstream search-api returned 500 Internal Server Error\n#2681 2026-10-06T21:32:02Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2695 2026-10-06T21:32:09Z ERROR payment-svc [t-5781] card processor auth failed: HTTP 401, credentials not accepted by api.cardproc.example\n#2699 2026-10-06T21:32:10Z ERROR api-gateway [t-5783] POST /checkout 502 15883ms: upstream order-service returned 502 Bad Gateway\n#2725 2026-10-06T21:32:25Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2732 2026-10-06T21:32:28Z ERROR order-service [t-5797] PaymentClient.charge failed: payment-svc returned 502 (upstream card processor error)\n#2768 2026-10-06T21:32:42Z ERROR webhook-dispatcher customer webhook https://hooks.acme-62.example/ingest returned 502 Bad Gateway (attempt 1/10)\n#2778 2026-10-06T21:32:47Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2788 2026-10-06T21:32:52Z ERROR web-bff [t-5815] GET /search 500 7677ms: upstream search-api returned 500 Internal Server Error\n#2808 2026-10-06T21:33:05Z ERROR api-gateway [t-5822] POST /checkout 502 10689ms: upstream order-service returned 502 Bad Gateway\n#2821 2026-10-06T21:33:16Z ERROR webhook-dispatcher customer webhook https://hooks.acme-94.example/ingest returned 502 Bad Gateway (attempt 2/10)\n#2828 2026-10-06T21:33:20Z ERROR search-api [t-5825] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#2834 2026-10-06T21:33:25Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2850 2026-10-06T21:33:33Z ERROR api-gateway [t-5832] POST /checkout 502 27174ms: upstream order-service returned 502 Bad Gateway\n#2877 2026-10-06T21:33:55Z ERROR web-bff [t-5834] GET /search 500 17269ms: upstream search-api returned 500 Internal Server Error\n#2880 2026-10-06T21:33:58Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2902 2026-10-06T21:34:13Z ERROR order-service [t-5843] PaymentClient.charge failed: payment-svc returned 502 (upstream card processor error)\n#2931 2026-10-06T21:34:23Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2940 2026-10-06T21:34:30Z ERROR api-gateway [t-5856] POST /checkout 502 28654ms: upstream order-service returned 502 Bad Gateway\n#2967 2026-10-06T21:34:43Z ERROR webhook-dispatcher customer webhook https://hooks.acme-62.example/ingest returned 502 Bad Gateway (attempt 3/10)\n#2995 2026-10-06T21:34:58Z ERROR api-gateway [t-5879] POST /checkout 502 28371ms: upstream order-service returned 502 Bad Gateway\n#3000 2026-10-06T21:34:59Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3021 2026-10-06T21:35:12Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3029 2026-10-06T21:35:18Z ERROR web-bff [t-5886] GET /search 500 24597ms: upstream search-api returned 500 Internal Server Error\n#3056 2026-10-06T21:35:32Z ERROR search-api [t-5896] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#3061 2026-10-06T21:35:37Z ERROR order-service [t-5900] PaymentClient.charge failed: payment-svc returned 502 (upstream card processor error)\n#3070 2026-10-06T21:35:41Z ERROR api-gateway [t-5907] POST /checkout 502 5359ms: upstream order-service returned 502 Bad Gateway\n#3083 2026-10-06T21:35:48Z ERROR webhook-dispatcher customer webhook https://hooks.acme-87.example/ingest returned 502 Bad Gateway (attempt 4/10)\n#3111 2026-10-06T21:36:00Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3139 2026-10-06T21:36:15Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3168 2026-10-06T21:36:30Z ERROR api-gateway [t-5944] POST /checkout 502 7495ms: upstream order-service returned 502 Bad Gateway\n#3178 2026-10-06T21:36:36Z ERROR order-service [t-5951] PaymentClient.charge failed: payment-svc returned 502 (upstream card processor error)\n#3182 2026-10-06T21:36:37Z ERROR webhook-dispatcher customer webhook https://hooks.acme-10.example/ingest returned 502 Bad Gateway (attempt 5/10)\n#3212 2026-10-06T21:36:55Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3223 2026-10-06T21:37:01Z ERROR webhook-dispatcher customer webhook https://hooks.acme-90.example/ingest returned 502 Bad Gateway (attempt 6/10)\n#3233 2026-10-06T21:37:06Z ERROR web-bff [t-5969] GET /search 500 28951ms: upstream search-api returned 500 Internal Server Error\n#3248 2026-10-06T21:37:15Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3265 2026-10-06T21:37:28Z ERROR api-gateway [t-5975] POST /checkout 502 14101ms: upstream order-service returned 502 Bad Gateway\n#3301 2026-10-06T21:37:53Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "level": "WARN",
+          "limit": 30
+        },
+        "output": "5 match(es):\n#1303 2026-10-06T21:24:27Z WARN payment-svc [t-4995] card processor call failed: connection reset by peer POST https://api.cardproc.example/v1/charges, retry 1/3\n#2374 2026-10-06T21:29:01Z ERROR payment-svc [t-5681] the card processor denied the request with status 401: API key invalid or revoked\n#2457 2026-10-06T21:29:46Z ERROR payment-svc [t-5708] card processor rejected request: 401 Unauthorized (invalid API key) POST https://api.cardproc.example/v1/charges\n#2610 2026-10-06T21:31:17Z ERROR payment-svc [t-5755] POST /v1/charges -> 401 {\"error\":\"invalid_api_key\"}\n#2695 2026-10-06T21:32:09Z ERROR payment-svc [t-5781] card processor auth failed: HTTP 401, credentials not accepted by api.cardproc.example"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "key",
+          "until": "21:29:05",
+          "limit": 30
+        },
+        "output": "2 match(es):\n#2172 2026-10-06T21:27:58Z DEBUG payment-svc secrets: reloaded CARDPROC_API_KEY from secrets store (version 23, previous 22 revoked)\n#2374 2026-10-06T21:29:01Z ERROR payment-svc [t-5681] the card processor denied the request with status 401: API key invalid or revoked"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 20
+        },
+        "output": "1 match(es):\n#1698 2026-10-06T21:26:04Z INFO order-consumer deploy: rolling out order-consumer v2.12.8 (build c935bca)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 2172,
+          "before": 5,
+          "after": 5
+        },
+        "output": "#2167 2026-10-06T21:27:57Z INFO redis-cache stats: hits=13050 misses=566 evicted=0 connected_clients=53\n#2168 2026-10-06T21:27:57Z INFO redis stats: hits=11600 misses=220 evicted=0 connected_clients=44\n#2169 2026-10-06T21:27:58Z INFO order-service [t-5560] order o-6378 accepted, calling payment-svc POST /charge\n#2170 2026-10-06T21:27:58Z INFO payment-svc [t-5560] POST /charge o-6378 ok 68ms\n#2171 2026-10-06T21:27:58Z INFO api-gateway [t-5560] POST /checkout 200 231ms\n#2172 2026-10-06T21:27:58Z DEBUG payment-svc secrets: reloaded CARDPROC_API_KEY from secrets store (version 23, previous 22 revoked)\n#2173 2026-10-06T21:27:58Z INFO webhook-dispatcher delivered 137 webhooks (p95 503ms)\n#2174 2026-10-06T21:27:58Z INFO index-worker processed batch of 54 messages from catalog.updates (lag 400ms)\n#2175 2026-10-06T21:27:58Z DEBUG catalog-svc GC pause 23ms (young), heap 42%\n#2176 2026-10-06T21:27:58Z INFO order-service [t-5562] order o-6381 accepted, calling payment-svc POST /charge\n#2177 2026-10-06T21:27:58Z INFO api-gateway [t-5562] POST /checkout 200 129ms"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-5693"
+        },
+        "output": "1 line(s) for t-5693:\n#2410 2026-10-06T21:29:19Z ERROR api-gateway [t-5693] POST /checkout 502 18091ms: upstream order-service returned 502 Bad Gateway"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-5709"
+        },
+        "output": "1 line(s) for t-5709:\n#2463 2026-10-06T21:29:49Z ERROR order-service [t-5709] PaymentClient.charge failed: payment-svc returned 502 (upstream card processor error)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "config_error",
+              "confidence": 0.88,
+              "evidenceLines": [
+                2172,
+                2374,
+                2457,
+                2610,
+                2695,
+                2463
+              ],
+              "reasoning": "At 21:27:58 payment-svc reloaded CARDPROC_API_KEY from the secrets store (version 23, with version 22 revoked) (#2172). Charges still succeeded just before the reload (#2170). From 21:29:01 on, every call to the card processor gets a 401 for an invalid or revoked API key (#2374, #2457, #2610, #2695). payment-svc then returns 502 to order-service (#2463), and order-service returns 502 to the gateway on POST /checkout, which is what paged. The credential rotation left payment-svc with a key the processor won't accept, so this is a credential problem outside any release. Things I ruled out: catalog-svc's S3 503s only break the search path (search-api and web-bff /search 500s), not checkout. The status-poller's legacy-inventory timeouts hit a deprecated endpoint and are noise. Customer webhook 502s come from third-party receivers. The order-consumer deploy at 21:26 has no errors and isn't on the checkout path. One gap: I couldn't follow a single request end to end, because each trace id only showed up in one service's logs. The link from 401 to payment 502 to checkout 502 rests on matching timing and error messages."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.08,
+              "evidenceLines": [
+                1303,
+                2374
+              ],
+              "reasoning": "Another reading is that the card processor itself had a problem (there was a connection reset at #1303) or revoked keys on its side. But the 401s start right after the local secret rotation, which points to the key, not to the processor being down."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.04,
+              "evidenceLines": [
+                1698
+              ],
+              "reasoning": "The order-consumer v2.12.8 rollout at 21:26 lines up roughly with the onset, but order-consumer logs no errors and isn't on the synchronous checkout path."
+            }
+          ],
+          "recommendedAction": "Check CARDPROC_API_KEY version 23 against the card processor dashboard. Either put a valid key into the secrets store and reload payment-svc, or, if v22 can be reinstated, roll back to it. After that, fix the rotation process: confirm the processor accepts the new key before revoking the old one. Track the catalog-svc S3 503s (search path) as a separate incident."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 7,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 1589,
+      "cacheReadTokens": 44968,
+      "cacheWriteTokens": 11168
+    },
+    "durationMs": 22160,
+    "stopReason": "tool_use"
+  }
+}

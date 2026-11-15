@@ -1,0 +1,197 @@
+{
+  "score": {
+    "incidentId": "ht-027",
+    "difficulty": "hard",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 9,
+      "correct": 8,
+      "precision": 0.8888888888888888,
+      "recall": 0.8,
+      "f1": 0.8421052631578948
+    },
+    "herringsCited": 0,
+    "secondaryCited": 3,
+    "costUsd": 0.1343828,
+    "durationMs": 19825,
+    "iterations": 5,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 12,
+      "output": 1783,
+      "cacheRead": 40599,
+      "cacheWrite": 18111
+    }
+  },
+  "result": {
+    "incidentId": "ht-027",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.85,
+          "evidenceLines": [
+            2698,
+            2720,
+            2752,
+            2834,
+            2942,
+            2809,
+            2811,
+            2867,
+            3025
+          ],
+          "reasoning": "The trigger was small: at 00:25:22 payment-svc started a rolling deploy of v4.4.0 (#2698), and payment-svc-2 drained, leaving 3 of 4 instances (#2720). The order-service RetryPolicy for payment-svc retries immediately, up to 4 times, with backoff and jitter turned off (#2752, #2834, #2942). The short capacity dip set off those retries and the load multiplied. Payment-svc returned to 4/4 at 00:26:14 (#2809), but one second later its load shedder was active with inflight=843 at 3.2x the expected rate (#2811). The rate later reached 4.1x and 5x (#3025, #3221), and payment-svc kept rejecting /charge with 503 (#2867). Each rejection caused more immediate retries, so the loop kept itself going after capacity came back. That is why the gateway's /checkout 503s do not recover. Payment-svc served /charge in under 90ms until the rollout, so it was not slow on its own. Ruled out as unrelated: the report-cron pandas error (an earlier image), catalog-svc's third-party translation API 502/503 (affects the search path only), metrics-agent exporter drops, and a slow postgres audit_log query."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.1,
+          "evidenceLines": [
+            2698,
+            2720,
+            2811
+          ],
+          "reasoning": "The payment-svc v4.4.0 rollout lines up with the onset, so new code could have reduced capacity. But /charge calls still succeeded during the rollout (#2738, #2754), and the shedding messages blame inbound rate (3–5x baseline), not errors in the new version. That points to retry amplification rather than a faulty release."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.05,
+          "evidenceLines": [
+            2567,
+            2706,
+            2824
+          ],
+          "reasoning": "The third-party translation API returned 502/503 and catalog-svc opened its circuit breaker. This only affects the search path, not POST /checkout."
+        }
+      ],
+      "recommendedAction": "Stop the retry storm. Turn on exponential backoff with jitter in order-service's payment-svc RetryPolicy (or turn its retries off for now) and add a retry budget or circuit breaker. To clear the backlog quickly, temporarily scale payment-svc out and/or rate-limit /checkout at the gateway. Hold further payment-svc rollouts until retries are fixed, and do future rollouts with surge capacity so instances aren't drained under load."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "86 match(es), showing first 60:\n#1319 2026-10-08T00:19:36Z WARN api-gateway disk usage 78% on /var/log (threshold 75%)\n#1446 2026-10-08T00:20:05Z WARN order-service heap usage 82% of 4096MiB (threshold 80%), starting concurrent mark cycle\n#1451 2026-10-08T00:20:06Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1691 2026-10-08T00:21:05Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2084 2026-10-08T00:22:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2249 2026-10-08T00:23:24Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2549 2026-10-08T00:24:38Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2567 2026-10-08T00:24:42Z ERROR catalog-svc [t-6251] translation API -> HTTP 502 (request fb65e2f)\n#2596 2026-10-08T00:24:50Z ERROR web-bff [t-6271] GET /search 503 11747ms: upstream search-api returned 503 Service Unavailable\n#2660 2026-10-08T00:25:09Z WARN order-consumer GC pause 865ms (G1 Old Gen), heap 62% after collection\n#2674 2026-10-08T00:25:14Z ERROR catalog-svc [t-6327] translation API error response: status=503 body=\"Bad Gateway\" id=86ba397\n#2706 2026-10-08T00:25:23Z ERROR catalog-svc [t-6344] translation API returned 502 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id 750f0be)\n#2752 2026-10-08T00:25:41Z WARN order-service [t-6372] RetryPolicy(payment-svc): immediate retry #2, max 4, jitter and backoff off\n#2763 2026-10-08T00:25:45Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2764 2026-10-08T00:25:45Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2173 samples\n#2769 2026-10-08T00:25:48Z ERROR catalog-svc [t-6376] translation API -> HTTP 503 (request 01ebcc2)\n#2811 2026-10-08T00:26:15Z WARN payment-svc load shedder active, inflight=843, rate=3.2x of expected\n#2821 2026-10-08T00:26:20Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 282 samples\n#2824 2026-10-08T00:26:22Z WARN catalog-svc circuit breaker OPEN for api.translate.example (failure rate 87% over 20 calls), failing fast for 30s\n#2831 2026-10-08T00:26:25Z WARN postgres slow query 1253ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#2833 2026-10-08T00:26:25Z ERROR api-gateway [t-6396] POST /checkout 503 21791ms: upstream order-service returned 503 (retries exhausted)\n#2834 2026-10-08T00:26:26Z WARN order-service [t-6399] PaymentClient.charge got 503, retrying immediately (attempt 3/4, backoff disabled)\n#2862 2026-10-08T00:26:39Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2867 2026-10-08T00:26:43Z ERROR payment-svc [t-6417] load shed: rejected POST /charge with 503 (queue full)\n#2912 2026-10-08T00:27:02Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1023 samples\n#2929 2026-10-08T00:27:09Z ERROR web-bff [t-6437] GET /search 503 18781ms: upstream search-api returned 503 Service Unavailable\n#2942 2026-10-08T00:27:17Z WARN order-service [t-6446] retry 4/4 for POST /charge after 503 from payment-svc (delay 0ms)\n#2968 2026-10-08T00:27:28Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1081 samples\n#2982 2026-10-08T00:27:37Z ERROR api-gateway [t-6462] POST /checkout 503 11679ms: upstream order-service returned 503 (retries exhausted)\n#3007 2026-10-08T00:27:50Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3025 2026-10-08T00:28:01Z WARN payment-svc inbound request rate 4.1x baseline (inflight 725), shedding load with 503\n#3040 2026-10-08T00:28:06Z ERROR api-gateway [t-6481] POST /checkout 503 7331ms: upstream order-service returned 503 (retries exhausted)\n#3052 2026-10-08T00:28:12Z ERROR search-api [t-6488] CatalogClient.getBatch failed: catalog-svc returned 503 (circuit open)\n#3064 2026-10-08T00:28:18Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2287 samples\n#3070 2026-10-08T00:28:19Z WARN order-service [t-6501] payment-svc unavailable (503), re-sending at once: attempt 2 of 4, no backoff policy\n#3088 2026-10-08T00:28:28Z ERROR payment-svc [t-6508] load shed: rejected POST /charge with 503 (queue full)\n#3091 2026-10-08T00:28:31Z ERROR web-bff [t-6510] GET /search 503 7845ms: upstream search-api returned 503 Service Unavailable\n#3107 2026-10-08T00:28:39Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3113 2026-10-08T00:28:40Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 439 samples\n#3167 2026-10-08T00:29:11Z ERROR api-gateway [t-6533] POST /checkout 503 18623ms: upstream order-service returned 503 (retries exhausted)\n#3182 2026-10-08T00:29:18Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1795 samples\n#3216 2026-10-08T00:29:31Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3221 2026-10-08T00:29:34Z WARN payment-svc admission control: 428 requests in flight (5.0x normal), rejecting new work\n#3233 2026-10-08T00:29:43Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1671 samples\n#3261 2026-10-08T00:29:58Z ERROR web-bff [t-6561] GET /search 503 9331ms: upstream search-api returned 503 Service Unavailable\n#3285 2026-10-08T00:30:10Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3286 2026-10-08T00:30:10Z ERROR payment-svc [t-6568] load shed: rejected POST /charge with 503 (queue full)\n#3294 2026-10-08T00:30:15Z ERROR search-api [t-6574] CatalogClient.getBatch failed: catalog-svc returned 503 (circuit open)\n#3299 2026-10-08T00:30:17Z ERROR api-gateway [t-6575] POST /checkout 503 10552ms: upstream order-service returned 503 (retries exhausted)\n#3307 2026-10-08T00:30:23Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 583 samples\n#3351 2026-10-08T00:30:43Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2386 samples\n#3391 2026-10-08T00:31:02Z WARN catalog-svc circuit breaker half-open probe to api.translate.example failed: 503, re-opening\n#3404 2026-10-08T00:31:10Z ERROR api-gateway [t-6623] POST /checkout 503 16650ms: upstream order-service returned 503 (retries exhausted)\n#3415 2026-10-08T00:31:16Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3416 2026-10-08T00:31:17Z ERROR payment-svc [t-6624] load shed: rejected POST /charge with 503 (queue full)\n#3448 2026-10-08T00:31:38Z ERROR api-gateway [t-6631] POST /checkout 503 29513ms: upstream order-service returned 503 (retries exhausted)\n#3450 2026-10-08T00:31:40Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1576 samples\n#3510 2026-10-08T00:32:12Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 361 samples\n#3536 2026-10-08T00:32:24Z ERROR payment-svc [t-6665] load shed: rejected POST /charge with 503 (queue full)\n#3566 2026-10-08T00:32:38Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "since": "00:22:00",
+          "until": "00:26:20",
+          "limit": 80
+        },
+        "output": "102 match(es), showing first 80:\n#1911 2026-10-08T00:22:01Z INFO payment-svc [t-5782] POST /charge o-2103 ok 70ms\n#1920 2026-10-08T00:22:02Z INFO payment-svc [t-5790] POST /charge o-2107 ok 88ms\n#1924 2026-10-08T00:22:03Z DEBUG payment-svc GC pause 11ms (young), heap 37%\n#1947 2026-10-08T00:22:09Z INFO payment-svc [t-5811] POST /charge o-2122 ok 63ms\n#1960 2026-10-08T00:22:14Z DEBUG payment-svc GC pause 25ms (young), heap 28%\n#1974 2026-10-08T00:22:17Z INFO payment-svc [t-5835] POST /charge o-2140 ok 69ms\n#1981 2026-10-08T00:22:18Z INFO payment-svc [t-5840] POST /charge o-2146 ok 39ms\n#1986 2026-10-08T00:22:19Z INFO payment-svc [t-5843] POST /charge o-2149 ok 85ms\n#1992 2026-10-08T00:22:21Z INFO payment-svc [t-5844] POST /charge o-2150 ok 63ms\n#2022 2026-10-08T00:22:29Z DEBUG payment-svc GC pause 16ms (young), heap 29%\n#2037 2026-10-08T00:22:33Z INFO payment-svc [t-5882] POST /charge o-2174 ok 54ms\n#2043 2026-10-08T00:22:34Z INFO payment-svc [t-5886] POST /charge o-2176 ok 20ms\n#2050 2026-10-08T00:22:35Z INFO payment-svc [t-5889] POST /charge o-2179 ok 23ms\n#2057 2026-10-08T00:22:37Z INFO payment-svc [t-5894] POST /charge o-2183 ok 36ms\n#2066 2026-10-08T00:22:39Z INFO payment-svc [t-5906] POST /charge o-2189 ok 84ms\n#2069 2026-10-08T00:22:40Z DEBUG payment-svc GC pause 16ms (young), heap 31%\n#2072 2026-10-08T00:22:41Z INFO payment-svc [t-5910] POST /charge o-2190 ok 83ms\n#2089 2026-10-08T00:22:45Z INFO payment-svc [t-5920] POST /charge o-2198 ok 87ms\n#2095 2026-10-08T00:22:46Z INFO payment-svc [t-5927] POST /charge o-2200 ok 83ms\n#2101 2026-10-08T00:22:47Z INFO payment-svc [t-5931] POST /charge o-2203 ok 64ms\n#2105 2026-10-08T00:22:48Z INFO payment-svc [t-5933] POST /charge o-2205 ok 31ms\n#2109 2026-10-08T00:22:50Z INFO payment-svc [t-5936] POST /charge o-2206 ok 36ms\n#2113 2026-10-08T00:22:50Z DEBUG payment-svc GC pause 11ms (young), heap 45%\n#2117 2026-10-08T00:22:51Z INFO payment-svc [t-5942] POST /charge o-2208 ok 68ms\n#2123 2026-10-08T00:22:52Z INFO payment-svc [t-5949] POST /charge o-2214 ok 87ms\n#2135 2026-10-08T00:22:55Z INFO payment-svc [t-5959] POST /charge o-2220 ok 39ms\n#2142 2026-10-08T00:22:56Z INFO payment-svc [t-5960] POST /charge o-2222 ok 30ms\n#2162 2026-10-08T00:23:03Z INFO payment-svc [t-5974] POST /charge o-2234 ok 80ms\n#2170 2026-10-08T00:23:04Z INFO payment-svc [t-5977] POST /charge o-2238 ok 36ms\n#2179 2026-10-08T00:23:07Z INFO payment-svc [t-5982] POST /charge o-2243 ok 31ms\n#2183 2026-10-08T00:23:08Z DEBUG payment-svc GC pause 24ms (young), heap 43%\n#2189 2026-10-08T00:23:10Z INFO payment-svc [t-5988] POST /charge o-2249 ok 63ms\n#2196 2026-10-08T00:23:11Z INFO payment-svc [t-5992] POST /charge o-2253 ok 79ms\n#2206 2026-10-08T00:23:14Z INFO payment-svc [t-6000] POST /charge o-2261 ok 56ms\n#2210 2026-10-08T00:23:15Z INFO payment-svc [t-6004] POST /charge o-2264 ok 38ms\n#2226 2026-10-08T00:23:19Z INFO payment-svc [t-6016] POST /charge o-2272 ok 21ms\n#2236 2026-10-08T00:23:21Z INFO payment-svc [t-6022] POST /charge o-2276 ok 78ms\n#2252 2026-10-08T00:23:25Z DEBUG payment-svc GC pause 22ms (young), heap 37%\n#2262 2026-10-08T00:23:28Z INFO payment-svc [t-6042] POST /charge o-2293 ok 80ms\n#2272 2026-10-08T00:23:30Z INFO payment-svc [t-6046] POST /charge o-2295 ok 62ms\n#2282 2026-10-08T00:23:32Z INFO payment-svc [t-6052] POST /charge o-2301 ok 37ms\n#2292 2026-10-08T00:23:34Z INFO payment-svc [t-6060] POST /charge o-2309 ok 61ms\n#2297 2026-10-08T00:23:36Z INFO payment-svc [t-6063] POST /charge o-2311 ok 74ms\n#2298 2026-10-08T00:23:36Z DEBUG payment-svc GC pause 16ms (young), heap 32%\n#2306 2026-10-08T00:23:37Z INFO payment-svc [t-6067] POST /charge o-2316 ok 81ms\n#2315 2026-10-08T00:23:40Z INFO payment-svc [t-6076] POST /charge o-2322 ok 80ms\n#2321 2026-10-08T00:23:42Z INFO payment-svc [t-6078] POST /charge o-2324 ok 32ms\n#2338 2026-10-08T00:23:45Z INFO payment-svc [t-6088] POST /charge o-2330 ok 76ms\n#2346 2026-10-08T00:23:48Z INFO payment-svc [t-6093] POST /charge o-2336 ok 61ms\n#2351 2026-10-08T00:23:50Z INFO payment-svc [t-6095] POST /charge o-2339 ok 67ms\n#2361 2026-10-08T00:23:53Z INFO payment-svc [t-6101] POST /charge o-2345 ok 28ms\n#2363 2026-10-08T00:23:53Z DEBUG payment-svc GC pause 10ms (young), heap 43%\n#2370 2026-10-08T00:23:55Z INFO payment-svc [t-6105] POST /charge o-2350 ok 43ms\n#2377 2026-10-08T00:23:56Z INFO payment-svc [t-6110] POST /charge o-2355 ok 43ms\n#2383 2026-10-08T00:23:56Z INFO payment-svc [t-6114] POST /charge o-2356 ok 30ms\n#2395 2026-10-08T00:23:59Z INFO payment-svc [t-6126] POST /charge o-2363 ok 86ms\n#2400 2026-10-08T00:24:00Z INFO payment-svc [t-6129] POST /charge o-2366 ok 73ms\n#2404 2026-10-08T00:24:01Z INFO payment-svc [t-6133] POST /charge o-2369 ok 76ms\n#2416 2026-10-08T00:24:04Z INFO payment-svc [t-6145] POST /charge o-2376 ok 60ms\n#2422 2026-10-08T00:24:05Z INFO payment-svc [t-6149] POST /charge o-2378 ok 31ms\n#2426 2026-10-08T00:24:07Z DEBUG payment-svc GC pause 13ms (young), heap 45%\n#2433 2026-10-08T00:24:08Z INFO payment-svc [t-6154] POST /charge o-2384 ok 45ms\n#2452 2026-10-08T00:24:13Z INFO payment-svc [t-6170] POST /charge o-2396 ok 69ms\n#2466 2026-10-08T00:24:15Z INFO payment-svc [t-6180] POST /charge o-2404 ok 74ms\n#2476 2026-10-08T00:24:18Z DEBUG payment-svc GC pause 6ms (young), heap 30%\n#2485 2026-10-08T00:24:20Z INFO payment-svc [t-6196] POST /charge o-2416 ok 64ms\n#2488 2026-10-08T00:24:22Z INFO payment-svc [t-6199] POST /charge o-2418 ok 70ms\n#2495 2026-10-08T00:24:23Z INFO payment-svc [t-6205] POST /charge o-2422 ok 87ms\n#2531 2026-10-08T00:24:32Z INFO payment-svc [t-6230] POST /charge o-2444 ok 69ms\n#2540 2026-10-08T00:24:35Z INFO payment-svc [t-6234] POST /charge o-2447 ok 60ms\n#2542 2026-10-08T00:24:36Z DEBUG payment-svc GC pause 8ms (young), heap 40%\n#2545 2026-10-08T00:24:37Z INFO payment-svc [t-6237] POST /charge o-2450 ok 72ms\n#2553 2026-10-08T00:24:38Z INFO payment-svc [t-6241] POST /charge o-2455 ok 51ms\n#2565 2026-10-08T00:24:42Z INFO payment-svc [t-6249] POST /charge o-2462 ok 53ms\n#2569 2026-10-08T00:24:43Z INFO payment-svc [t-6253] POST /charge o-2465 ok 63ms\n#2582 2026-10-08T00:24:47Z INFO payment-svc [t-6260] POST /charge o-2471 ok 62ms\n#2585 2026-10-08T00:24:47Z INFO payment-svc [t-6263] POST /charge o-2472 ok 81ms\n#2589 2026-10-08T00:24:48Z DEBUG payment-svc GC pause 16ms (young), heap 30%\n#2590 2026-10-08T00:24:48Z INFO payment-svc [t-6267] POST /charge o-2475 ok 38ms\n#2604 2026-10-08T00:24:52Z INFO payment-svc [t-6280] POST /charge o-2484 ok 30ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "retry",
+          "service": "order-service",
+          "limit": 10
+        },
+        "output": "3 match(es):\n#2752 2026-10-08T00:25:41Z WARN order-service [t-6372] RetryPolicy(payment-svc): immediate retry #2, max 4, jitter and backoff off\n#2834 2026-10-08T00:26:26Z WARN order-service [t-6399] PaymentClient.charge got 503, retrying immediately (attempt 3/4, backoff disabled)\n#2942 2026-10-08T00:27:17Z WARN order-service [t-6446] retry 4/4 for POST /charge after 503 from payment-svc (delay 0ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "since": "00:24:52",
+          "until": "00:26:20",
+          "limit": 50
+        },
+        "output": "23 match(es):\n#2604 2026-10-08T00:24:52Z INFO payment-svc [t-6280] POST /charge o-2484 ok 30ms\n#2610 2026-10-08T00:24:54Z INFO payment-svc [t-6284] POST /charge o-2487 ok 42ms\n#2613 2026-10-08T00:24:55Z INFO payment-svc [t-6288] POST /charge o-2489 ok 69ms\n#2618 2026-10-08T00:24:56Z INFO payment-svc [t-6290] POST /charge o-2490 ok 38ms\n#2623 2026-10-08T00:24:58Z INFO payment-svc [t-6294] POST /charge o-2493 ok 25ms\n#2633 2026-10-08T00:25:01Z DEBUG payment-svc GC pause 6ms (young), heap 40%\n#2647 2026-10-08T00:25:05Z INFO payment-svc [t-6310] POST /charge o-2506 ok 87ms\n#2652 2026-10-08T00:25:07Z INFO payment-svc [t-6313] POST /charge o-2508 ok 31ms\n#2670 2026-10-08T00:25:13Z INFO payment-svc [t-6323] POST /charge o-2518 ok 32ms\n#2681 2026-10-08T00:25:16Z DEBUG payment-svc GC pause 11ms (young), heap 38%\n#2690 2026-10-08T00:25:19Z INFO payment-svc [t-6337] POST /charge o-2526 ok 67ms\n#2694 2026-10-08T00:25:20Z INFO payment-svc [t-6338] POST /charge o-2529 ok 34ms\n#2698 2026-10-08T00:25:22Z INFO payment-svc deploy: rolling out payment-svc v4.4.0 (build 2f2c0a1), 1 of 4 instances at a time\n#2720 2026-10-08T00:25:27Z INFO payment-svc instance payment-svc-2 draining for rollout, capacity 3/4\n#2728 2026-10-08T00:25:32Z DEBUG payment-svc GC pause 20ms (young), heap 31%\n#2738 2026-10-08T00:25:36Z INFO payment-svc [t-6368] POST /charge o-2549 ok 59ms\n#2754 2026-10-08T00:25:42Z INFO payment-svc [t-6374] POST /charge o-2555 ok 23ms\n#2768 2026-10-08T00:25:47Z DEBUG payment-svc GC pause 6ms (young), heap 35%\n#2779 2026-10-08T00:25:54Z INFO payment-svc [t-6381] POST /charge o-2558 ok 28ms\n#2787 2026-10-08T00:25:59Z DEBUG payment-svc GC pause 4ms (young), heap 34%\n#2803 2026-10-08T00:26:09Z DEBUG payment-svc GC pause 16ms (young), heap 41%\n#2809 2026-10-08T00:26:14Z INFO payment-svc instance payment-svc-2 ready, capacity 4/4\n#2811 2026-10-08T00:26:15Z WARN payment-svc load shedder active, inflight=843, rate=3.2x of expected"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "order-service",
+          "since": "00:24:30",
+          "until": "00:25:45",
+          "limit": 50
+        },
+        "output": "58 match(es), showing first 50:\n#2523 2026-10-08T00:24:30Z INFO order-service [t-6227] order o-2439 accepted, calling payment-svc POST /charge\n#2525 2026-10-08T00:24:30Z INFO order-service [t-6228] order o-2441 accepted, calling payment-svc POST /charge\n#2530 2026-10-08T00:24:32Z INFO order-service [t-6230] order o-2444 accepted, calling payment-svc POST /charge\n#2534 2026-10-08T00:24:33Z INFO order-service [t-6231] order o-2446 accepted, calling payment-svc POST /charge\n#2538 2026-10-08T00:24:35Z DEBUG order-service GC pause 13ms (young), heap 48%\n#2539 2026-10-08T00:24:35Z INFO order-service [t-6234] order o-2447 accepted, calling payment-svc POST /charge\n#2543 2026-10-08T00:24:37Z INFO order-service [t-6237] order o-2450 accepted, calling payment-svc POST /charge\n#2547 2026-10-08T00:24:37Z INFO order-service [t-6240] order o-2453 accepted, calling payment-svc POST /charge\n#2552 2026-10-08T00:24:38Z INFO order-service [t-6241] order o-2455 accepted, calling payment-svc POST /charge\n#2559 2026-10-08T00:24:40Z INFO order-service [t-6245] order o-2456 accepted, calling payment-svc POST /charge\n#2564 2026-10-08T00:24:42Z INFO order-service [t-6249] order o-2462 accepted, calling payment-svc POST /charge\n#2568 2026-10-08T00:24:43Z INFO order-service [t-6253] order o-2465 accepted, calling payment-svc POST /charge\n#2571 2026-10-08T00:24:44Z INFO order-service [t-6255] order o-2468 accepted, calling payment-svc POST /charge\n#2575 2026-10-08T00:24:45Z INFO order-service [t-6259] order o-2469 accepted, calling payment-svc POST /charge\n#2579 2026-10-08T00:24:46Z DEBUG order-service GC pause 11ms (young), heap 47%\n#2581 2026-10-08T00:24:46Z INFO order-service [t-6260] order o-2471 accepted, calling payment-svc POST /charge\n#2584 2026-10-08T00:24:47Z INFO order-service [t-6263] order o-2472 accepted, calling payment-svc POST /charge\n#2587 2026-10-08T00:24:48Z INFO order-service [t-6267] order o-2475 accepted, calling payment-svc POST /charge\n#2594 2026-10-08T00:24:49Z INFO order-service [t-6269] order o-2476 accepted, calling payment-svc POST /charge\n#2597 2026-10-08T00:24:50Z INFO order-service [t-6274] order o-2478 accepted, calling payment-svc POST /charge\n#2599 2026-10-08T00:24:51Z INFO order-service [t-6276] order o-2481 accepted, calling payment-svc POST /charge\n#2603 2026-10-08T00:24:52Z INFO order-service [t-6280] order o-2484 accepted, calling payment-svc POST /charge\n#2608 2026-10-08T00:24:54Z INFO order-service [t-6284] order o-2487 accepted, calling payment-svc POST /charge\n#2612 2026-10-08T00:24:55Z INFO order-service [t-6288] order o-2489 accepted, calling payment-svc POST /charge\n#2617 2026-10-08T00:24:56Z INFO order-service [t-6290] order o-2490 accepted, calling payment-svc POST /charge\n#2622 2026-10-08T00:24:58Z INFO order-service [t-6294] order o-2493 accepted, calling payment-svc POST /charge\n#2627 2026-10-08T00:24:59Z INFO order-service [t-6297] order o-2496 accepted, calling payment-svc POST /charge\n#2630 2026-10-08T00:25:00Z DEBUG order-service GC pause 25ms (young), heap 48%\n#2631 2026-10-08T00:25:01Z INFO order-service [t-6301] order o-2499 accepted, calling payment-svc POST /charge\n#2635 2026-10-08T00:25:01Z INFO order-service [t-6303] order o-2501 accepted, calling payment-svc POST /charge\n#2639 2026-10-08T00:25:03Z INFO order-service [t-6306] order o-2504 accepted, calling payment-svc POST /charge\n#2644 2026-10-08T00:25:04Z INFO order-service [t-6307] order o-2505 accepted, calling payment-svc POST /charge\n#2646 2026-10-08T00:25:05Z INFO order-service [t-6310] order o-2506 accepted, calling payment-svc POST /charge\n#2651 2026-10-08T00:25:07Z INFO order-service [t-6313] order o-2508 accepted, calling payment-svc POST /charge\n#2655 2026-10-08T00:25:08Z INFO order-service [t-6316] order o-2511 accepted, calling payment-svc POST /charge\n#2658 2026-10-08T00:25:09Z INFO order-service [t-6319] order o-2514 accepted, calling payment-svc POST /charge\n#2663 2026-10-08T00:25:10Z INFO order-service [t-6321] order o-2515 accepted, calling payment-svc POST /charge\n#2667 2026-10-08T00:25:12Z INFO order-service [t-6322] order o-2517 accepted, calling payment-svc POST /charge\n#2669 2026-10-08T00:25:13Z INFO order-service [t-6323] order o-2518 accepted, calling payment-svc POST /charge\n#2675 2026-10-08T00:25:15Z INFO order-service [t-6331] order o-2519 accepted, calling payment-svc POST /charge\n#2679 2026-10-08T00:25:16Z INFO order-service [t-6333] order o-2521 accepted, calling payment-svc POST /charge\n#2682 2026-10-08T00:25:17Z INFO order-service [t-6336] order o-2524 accepted, calling payment-svc POST /charge\n#2683 2026-10-08T00:25:17Z DEBUG order-service GC pause 19ms (young), heap 33%\n#2689 2026-10-08T00:25:19Z INFO order-service [t-6337] order o-2526 accepted, calling payment-svc POST /charge\n#2693 2026-10-08T00:25:20Z INFO order-service [t-6338] order o-2529 accepted, calling payment-svc POST /charge\n#2699 2026-10-08T00:25:22Z INFO order-service [t-6340] order o-2531 accepted, calling payment-svc POST /charge\n#2704 2026-10-08T00:25:22Z INFO order-service [t-6343] order o-2533 accepted, calling payment-svc POST /charge\n#2710 2026-10-08T00:25:23Z INFO order-service [t-6351] order o-2537 accepted, calling payment-svc POST /charge\n#2715 2026-10-08T00:25:24Z INFO order-service [t-6355] order o-2539 accepted, calling payment-svc POST /charge\n#2718 2026-10-08T00:25:26Z INFO order-service [t-6358] order o-2541 accepted, calling payment-svc POST /charge"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 2752,
+          "before": 25,
+          "after": 5
+        },
+        "output": "#2727 2026-10-08T00:25:31Z INFO api-gateway [t-6362] POST /checkout 200 181ms\n#2728 2026-10-08T00:25:32Z DEBUG payment-svc GC pause 20ms (young), heap 31%\n#2729 2026-10-08T00:25:33Z INFO metrics-agent flushed 7298 series to remote-write in 86ms\n#2730 2026-10-08T00:25:33Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 24\n#2731 2026-10-08T00:25:34Z INFO index-worker processed batch of 34 messages from catalog.updates (lag 217ms)\n#2732 2026-10-08T00:25:34Z INFO order-service [t-6366] order o-2546 accepted, calling payment-svc POST /charge\n#2733 2026-10-08T00:25:34Z INFO redis-cache stats: hits=12059 misses=418 evicted=0 connected_clients=53\n#2734 2026-10-08T00:25:34Z INFO status-poller poll cycle complete: 39 targets checked in 899ms\n#2735 2026-10-08T00:25:34Z INFO api-gateway [t-6366] POST /checkout 200 212ms\n#2736 2026-10-08T00:25:35Z DEBUG order-service GC pause 20ms (young), heap 37%\n#2737 2026-10-08T00:25:35Z INFO order-service [t-6368] order o-2549 accepted, calling payment-svc POST /charge\n#2738 2026-10-08T00:25:36Z INFO payment-svc [t-6368] POST /charge o-2549 ok 59ms\n#2739 2026-10-08T00:25:36Z INFO api-gateway [t-6368] POST /checkout 200 148ms\n#2740 2026-10-08T00:25:36Z INFO order-consumer processed batch of 105 messages from orders.events (lag 253ms)\n#2741 2026-10-08T00:25:36Z INFO report-cron scheduler heartbeat: 6 jobs registered, next run in 237s\n#2742 2026-10-08T00:25:36Z INFO redis stats: hits=10409 misses=693 evicted=0 connected_clients=44\n#2743 2026-10-08T00:25:36Z INFO order-service [t-6369] order o-2550 accepted, calling payment-svc POST /charge\n#2744 2026-10-08T00:25:37Z INFO api-gateway [t-6369] POST /checkout 200 189ms\n#2745 2026-10-08T00:25:39Z INFO metrics-agent flushed 4229 series to remote-write in 68ms\n#2746 2026-10-08T00:25:39Z INFO search-api [t-6370] product p-2552 accepted, calling catalog-svc GET /products/batch\n#2747 2026-10-08T00:25:39Z INFO web-bff [t-6370] GET /search 200 124ms\n#2748 2026-10-08T00:25:40Z INFO order-service [t-6371] order o-2553 accepted, calling payment-svc POST /charge\n#2749 2026-10-08T00:25:40Z INFO api-gateway [t-6371] POST /checkout 200 164ms\n#2750 2026-10-08T00:25:40Z INFO order-consumer processed batch of 108 messages from orders.events (lag 359ms)\n#2751 2026-10-08T00:25:41Z INFO index-worker processed batch of 55 messages from catalog.updates (lag 296ms)\n#2752 2026-10-08T00:25:41Z WARN order-service [t-6372] RetryPolicy(payment-svc): immediate retry #2, max 4, jitter and backoff off\n#2753 2026-10-08T00:25:41Z INFO order-service [t-6374] order o-2555 accepted, calling payment-svc POST /charge\n#2754 2026-10-08T00:25:42Z INFO payment-svc [t-6374] POST /charge o-2555 ok 23ms\n#2755 2026-10-08T00:25:42Z INFO api-gateway [t-6374] POST /checkout 200 195ms\n#2756 2026-10-08T00:25:43Z DEBUG catalog-svc GC pause 11ms (young), heap 30%\n#2757 2026-10-08T00:25:43Z INFO report-cron scheduler heartbeat: 12 jobs registered, next run in 245s"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.85,
+              "evidenceLines": [
+                2698,
+                2720,
+                2752,
+                2834,
+                2942,
+                2809,
+                2811,
+                2867,
+                3025
+              ],
+              "reasoning": "The trigger was small: at 00:25:22 payment-svc started a rolling deploy of v4.4.0 (#2698), and payment-svc-2 drained, leaving 3 of 4 instances (#2720). The order-service RetryPolicy for payment-svc retries immediately, up to 4 times, with backoff and jitter turned off (#2752, #2834, #2942). The short capacity dip set off those retries and the load multiplied. Payment-svc returned to 4/4 at 00:26:14 (#2809), but one second later its load shedder was active with inflight=843 at 3.2x the expected rate (#2811). The rate later reached 4.1x and 5x (#3025, #3221), and payment-svc kept rejecting /charge with 503 (#2867). Each rejection caused more immediate retries, so the loop kept itself going after capacity came back. That is why the gateway's /checkout 503s do not recover. Payment-svc served /charge in under 90ms until the rollout, so it was not slow on its own. Ruled out as unrelated: the report-cron pandas error (an earlier image), catalog-svc's third-party translation API 502/503 (affects the search path only), metrics-agent exporter drops, and a slow postgres audit_log query."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.1,
+              "evidenceLines": [
+                2698,
+                2720,
+                2811
+              ],
+              "reasoning": "The payment-svc v4.4.0 rollout lines up with the onset, so new code could have reduced capacity. But /charge calls still succeeded during the rollout (#2738, #2754), and the shedding messages blame inbound rate (3–5x baseline), not errors in the new version. That points to retry amplification rather than a faulty release."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.05,
+              "evidenceLines": [
+                2567,
+                2706,
+                2824
+              ],
+              "reasoning": "The third-party translation API returned 502/503 and catalog-svc opened its circuit breaker. This only affects the search path, not POST /checkout."
+            }
+          ],
+          "recommendedAction": "Stop the retry storm. Turn on exponential backoff with jitter in order-service's payment-svc RetryPolicy (or turn its retries off for now) and add a retry budget or circuit breaker. To clear the backlog quickly, temporarily scale payment-svc out and/or rate-limit /checkout at the gateway. Hold further payment-svc rollouts until retries are fixed, and do future rollouts with surge capacity so instances aren't drained under load."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1783,
+      "cacheReadTokens": 40599,
+      "cacheWriteTokens": 18111
+    },
+    "durationMs": 19825,
+    "stopReason": "tool_use"
+  }
+}

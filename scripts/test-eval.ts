@@ -211,6 +211,18 @@ check("paired comparison: zero for a run against itself; pairs by incident id; f
   assert.throws(() => pairedDiff(a, [mk("other", true, 1)]), /share no incidents/);
 });
 
+check("paired comparison reports herrings cited, per incident, and flags a model that cites more of them", () => {
+  const mk = (id: string, herringsCited: number) => ({ ...fakeScore(true, 0.9), incidentId: id, costUsd: 0.01, herringsCited }) as IncidentScore;
+  const a = Array.from({ length: 40 }, (_, i) => mk(`i${i}`, i % 4 === 0 ? 1 : 0));
+  const b = a.map((s) => ({ ...s, herringsCited: s.herringsCited + 2 }));
+  const d = pairedDiff(a, b).find((x) => x.metric === "herringsCited")!;
+  assert.ok(d, "herringsCited is a paired metric");
+  assert.equal(d.diff, 2);
+  assert.ok(d.significant);
+  const self = pairedDiff(a, a).find((x) => x.metric === "herringsCited")!;
+  assert.equal(self.diff, 0);
+});
+
 check("summaries carry intervals and reports print them", () => {
   const scores = [scoreIncident(incident, result([hyp("config_error", [3, 4])])), scoreIncident(incident, result([hyp("bad_deploy", [3])]))];
   const s = summarize(scores);

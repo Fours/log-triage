@@ -1,0 +1,155 @@
+{
+  "score": {
+    "incidentId": "ht-013",
+    "difficulty": "easy",
+    "scenario": "poison_message/redelivery-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "poison_message",
+    "confidence": 0.93,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 2,
+    "costUsd": 0.066724,
+    "durationMs": 12819,
+    "iterations": 5,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 12,
+      "output": 1195,
+      "cacheRead": 20430,
+      "cacheWrite": 7738
+    }
+  },
+  "result": {
+    "incidentId": "ht-013",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.93,
+          "evidenceLines": [
+            1069,
+            1070,
+            1171,
+            1172,
+            1303,
+            1305
+          ],
+          "reasoning": "audit-consumer was processing normally up to 18:21:32. Then message msg-273662 (audit.events partition 0, offset 584855) began failing JSON parsing because it contains a NUL byte (\\u0000) at position 1436. It is nacked and redelivered over and over (attempts 7, 10, 14...), and no max-retries or DLQ is configured, so it blocks partition 0. That explains why lag grows (629 to 5204 messages) while CPU stays normal. The account-svc 'downstream confirmation' timeouts that start at 18:25 are a downstream effect of the stalled consumer. The billing-reconciler checksum errors are on old 2019 archive rows, have been happening steadily since 18:15, and are unrelated."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.04,
+          "evidenceLines": [
+            559,
+            668
+          ],
+          "reasoning": "The corrupt payload could be described as a data integrity problem, and billing-reconciler is also logging checksum violations. But those are on archive partitions and don't affect the audit queue."
+        }
+      ],
+      "recommendedAction": "Move msg-273662 (audit.events p0 offset 584855) to a dead-letter queue, or skip past it, so partition 0 can drain. Set max-retries and a DLQ on audit-consumer. Find the producer that wrote a NUL byte into the payload and fix it."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "audit-consumer",
+          "level": "WARN",
+          "limit": 50
+        },
+        "output": "10 match(es):\n#1069 2026-11-05T18:22:24Z ERROR audit-consumer SyntaxError: Unexpected token \\u0000 in JSON at position 1436 (message msg-273662, audit.events[0]@584855)\n#1070 2026-11-05T18:22:25Z WARN audit-consumer nack msg-273662, redelivering (attempt 7, no max-retries configured)\n#1171 2026-11-05T18:23:59Z ERROR audit-consumer failed to process msg-273662 (partition 0, offset 584855): JSON parse error: unexpected token '\\u0000' at position 1436\n#1172 2026-11-05T18:24:00Z WARN audit-consumer nack msg-273662, redelivering (attempt 10, no max-retries configured)\n#1211 2026-11-05T18:24:32Z WARN audit-consumer consumer lag on audit.events partition 0: 629 messages behind (57s)\n#1293 2026-11-05T18:25:51Z WARN audit-consumer consumer lag on audit.events partition 0: 2132 messages behind (108s)\n#1303 2026-11-05T18:26:03Z ERROR audit-consumer SyntaxError: Unexpected token \\u0000 in JSON at position 1436 (message msg-273662, audit.events[0]@584855)\n#1305 2026-11-05T18:26:03Z WARN audit-consumer nack msg-273662, redelivering (attempt 14, no max-retries configured)\n#1455 2026-11-05T18:28:29Z WARN audit-consumer consumer lag on audit.events partition 0: 2583 messages behind (234s)\n#1567 2026-11-05T18:30:22Z WARN audit-consumer consumer lag on audit.events partition 0: 5204 messages behind (228s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "msg-273662",
+          "limit": 5
+        },
+        "output": "6 match(es), showing first 5:\n#1069 2026-11-05T18:22:24Z ERROR audit-consumer SyntaxError: Unexpected token \\u0000 in JSON at position 1436 (message msg-273662, audit.events[0]@584855)\n#1070 2026-11-05T18:22:25Z WARN audit-consumer nack msg-273662, redelivering (attempt 7, no max-retries configured)\n#1171 2026-11-05T18:23:59Z ERROR audit-consumer failed to process msg-273662 (partition 0, offset 584855): JSON parse error: unexpected token '\\u0000' at position 1436\n#1172 2026-11-05T18:24:00Z WARN audit-consumer nack msg-273662, redelivering (attempt 10, no max-retries configured)\n#1303 2026-11-05T18:26:03Z ERROR audit-consumer SyntaxError: Unexpected token \\u0000 in JSON at position 1436 (message msg-273662, audit.events[0]@584855)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "billing-reconciler",
+          "level": "ERROR",
+          "limit": 5
+        },
+        "output": "10 match(es), showing first 5:\n#559 2026-11-05T18:15:25Z ERROR billing-reconciler invoice_archive row inv-281242 violates checksum constraint, skipping (archive partition 2019-Q3)\n#668 2026-11-05T18:16:48Z ERROR billing-reconciler invoice_archive row inv-752230 violates checksum constraint, skipping (archive partition 2019-Q4)\n#821 2026-11-05T18:18:54Z ERROR billing-reconciler invoice_archive row inv-738362 violates checksum constraint, skipping (archive partition 2019-Q4)\n#953 2026-11-05T18:20:46Z ERROR billing-reconciler invoice_archive row inv-725575 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1042 2026-11-05T18:22:00Z ERROR billing-reconciler invoice_archive row inv-776132 violates checksum constraint, skipping (archive partition 2019-Q3)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "audit-consumer",
+          "since": "18:18:00",
+          "until": "18:22:30",
+          "limit": 40
+        },
+        "output": "42 match(es), showing first 40:\n#759 2026-11-05T18:18:02Z INFO audit-consumer processed batch of 35 messages from audit.events (lag 336ms)\n#766 2026-11-05T18:18:08Z INFO audit-consumer processed batch of 96 messages from audit.events (lag 325ms)\n#771 2026-11-05T18:18:12Z INFO audit-consumer processed batch of 101 messages from audit.events (lag 170ms)\n#779 2026-11-05T18:18:17Z INFO audit-consumer processed batch of 84 messages from audit.events (lag 259ms)\n#785 2026-11-05T18:18:23Z INFO audit-consumer processed batch of 56 messages from audit.events (lag 177ms)\n#792 2026-11-05T18:18:29Z INFO audit-consumer processed batch of 24 messages from audit.events (lag 54ms)\n#799 2026-11-05T18:18:34Z INFO audit-consumer processed batch of 58 messages from audit.events (lag 75ms)\n#804 2026-11-05T18:18:40Z INFO audit-consumer processed batch of 32 messages from audit.events (lag 244ms)\n#810 2026-11-05T18:18:44Z INFO audit-consumer processed batch of 21 messages from audit.events (lag 200ms)\n#813 2026-11-05T18:18:48Z INFO audit-consumer processed batch of 55 messages from audit.events (lag 50ms)\n#822 2026-11-05T18:18:54Z INFO audit-consumer processed batch of 98 messages from audit.events (lag 89ms)\n#831 2026-11-05T18:19:01Z INFO audit-consumer processed batch of 20 messages from audit.events (lag 237ms)\n#840 2026-11-05T18:19:05Z INFO audit-consumer processed batch of 70 messages from audit.events (lag 101ms)\n#843 2026-11-05T18:19:11Z INFO audit-consumer processed batch of 82 messages from audit.events (lag 143ms)\n#851 2026-11-05T18:19:18Z INFO audit-consumer processed batch of 51 messages from audit.events (lag 364ms)\n#857 2026-11-05T18:19:21Z INFO audit-consumer processed batch of 72 messages from audit.events (lag 115ms)\n#862 2026-11-05T18:19:28Z INFO audit-consumer processed batch of 55 messages from audit.events (lag 67ms)\n#871 2026-11-05T18:19:34Z INFO audit-consumer processed batch of 109 messages from audit.events (lag 116ms)\n#874 2026-11-05T18:19:38Z INFO audit-consumer processed batch of 58 messages from audit.events (lag 230ms)\n#879 2026-11-05T18:19:42Z INFO audit-consumer processed batch of 33 messages from audit.events (lag 85ms)\n#886 2026-11-05T18:19:48Z INFO audit-consumer processed batch of 25 messages from audit.events (lag 371ms)\n#892 2026-11-05T18:19:53Z INFO audit-consumer processed batch of 117 messages from audit.events (lag 119ms)\n#897 2026-11-05T18:19:56Z INFO audit-consumer processed batch of 92 messages from audit.events (lag 235ms)\n#900 2026-11-05T18:20:00Z INFO audit-consumer processed batch of 29 messages from audit.events (lag 198ms)\n#912 2026-11-05T18:20:07Z INFO audit-consumer processed batch of 58 messages from audit.events (lag 315ms)\n#919 2026-11-05T18:20:14Z INFO audit-consumer processed batch of 30 messages from audit.events (lag 340ms)\n#927 2026-11-05T18:20:20Z INFO audit-consumer processed batch of 96 messages from audit.events (lag 58ms)\n#932 2026-11-05T18:20:23Z INFO audit-consumer processed batch of 119 messages from audit.events (lag 299ms)\n#935 2026-11-05T18:20:28Z INFO audit-consumer processed batch of 24 messages from audit.events (lag 294ms)\n#941 2026-11-05T18:20:34Z INFO audit-consumer processed batch of 24 messages from audit.events (lag 123ms)\n#948 2026-11-05T18:20:41Z INFO audit-consumer processed batch of 101 messages from audit.events (lag 203ms)\n#952 2026-11-05T18:20:46Z INFO audit-consumer processed batch of 38 messages from audit.events (lag 342ms)\n#962 2026-11-05T18:20:52Z INFO audit-consumer processed batch of 28 messages from audit.events (lag 52ms)\n#972 2026-11-05T18:20:57Z INFO audit-consumer processed batch of 78 messages from audit.events (lag 87ms)\n#978 2026-11-05T18:21:03Z INFO audit-consumer processed batch of 33 messages from audit.events (lag 111ms)\n#984 2026-11-05T18:21:09Z INFO audit-consumer processed batch of 82 messages from audit.events (lag 55ms)\n#994 2026-11-05T18:21:16Z INFO audit-consumer processed batch of 50 messages from audit.events (lag 72ms)\n#1003 2026-11-05T18:21:22Z INFO audit-consumer processed batch of 117 messages from audit.events (lag 247ms)\n#1007 2026-11-05T18:21:27Z INFO audit-consumer processed batch of 117 messages from audit.events (lag 116ms)\n#1011 2026-11-05T18:21:32Z INFO audit-consumer processed batch of 101 messages from audit.events (lag 49ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "account-svc",
+          "level": "WARN",
+          "limit": 10
+        },
+        "output": "3 match(es):\n#1259 2026-11-05T18:25:21Z ERROR account-svc [t-8332] user u-2912 timed out waiting for downstream confirmation (120s), marked failed\n#1367 2026-11-05T18:27:04Z ERROR account-svc [t-8393] user u-2970 timed out waiting for downstream confirmation (120s), marked failed\n#1578 2026-11-05T18:30:31Z ERROR account-svc [t-8515] user u-3085 timed out waiting for downstream confirmation (120s), marked failed"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.93,
+              "reasoning": "audit-consumer was processing normally up to 18:21:32. Then message msg-273662 (audit.events partition 0, offset 584855) began failing JSON parsing because it contains a NUL byte (\\u0000) at position 1436. It is nacked and redelivered over and over (attempts 7, 10, 14...), and no max-retries or DLQ is configured, so it blocks partition 0. That explains why lag grows (629 to 5204 messages) while CPU stays normal. The account-svc 'downstream confirmation' timeouts that start at 18:25 are a downstream effect of the stalled consumer. The billing-reconciler checksum errors are on old 2019 archive rows, have been happening steadily since 18:15, and are unrelated.",
+              "evidenceLines": [
+                1069,
+                1070,
+                1171,
+                1172,
+                1303,
+                1305
+              ]
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.04,
+              "reasoning": "The corrupt payload could be described as a data integrity problem, and billing-reconciler is also logging checksum violations. But those are on archive partitions and don't affect the audit queue.",
+              "evidenceLines": [
+                559,
+                668
+              ]
+            }
+          ],
+          "recommendedAction": "Move msg-273662 (audit.events p0 offset 584855) to a dead-letter queue, or skip past it, so partition 0 can drain. Set max-retries and a DLQ on audit-consumer. Find the producer that wrote a NUL byte into the payload and fix it."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1195,
+      "cacheReadTokens": 20430,
+      "cacheWriteTokens": 7738
+    },
+    "durationMs": 12819,
+    "stopReason": "tool_use"
+  }
+}

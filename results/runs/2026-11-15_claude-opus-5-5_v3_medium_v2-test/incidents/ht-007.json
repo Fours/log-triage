@@ -1,0 +1,171 @@
+{
+  "score": {
+    "incidentId": "ht-007",
+    "difficulty": "medium",
+    "scenario": "config_error/rotated-credential",
+    "truth": "config_error",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "config_error",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 4,
+      "precision": 0.6666666666666666,
+      "recall": 0.8,
+      "f1": 0.7272727272727272
+    },
+    "herringsCited": 0,
+    "secondaryCited": 2,
+    "costUsd": 0.089766,
+    "durationMs": 14283,
+    "iterations": 5,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 12,
+      "output": 1301,
+      "cacheRead": 32315,
+      "cacheWrite": 11447
+    }
+  },
+  "result": {
+    "incidentId": "ht-007",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "config_error",
+          "confidence": 0.88,
+          "evidenceLines": [
+            1542,
+            1633,
+            1707,
+            1802,
+            1660,
+            1856
+          ],
+          "reasoning": "At 14:51:54 enrichment-svc reloaded GEOIP_API_KEY (version 15, with version 14 revoked). Before that, every /enrich call succeeded. From 14:52:52 on, every call to the geo-IP provider gets 401 invalid_api_key, so the new or rotated credential is not accepted. enrichment-svc then returns 502 to ingest-api (EnrichClient.enrich failed), and ingest-gateway passes that on as a 502 on POST /v1/events, which is what paged. The provider is fine; it is rejecting our credential, so this is a credential problem and not a provider outage."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.07,
+          "evidenceLines": [
+            1633,
+            1707
+          ],
+          "reasoning": "The geo-IP provider is a third party returning errors. But the errors are 401 auth rejections that start right after our own key rotation, which points to config_error instead."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.05,
+          "evidenceLines": [
+            1571,
+            1618
+          ],
+          "reasoning": "notification-svc v5.24.0 has a TypeError at message-formatter.ts:207, which causes 500s on /v1/notify through api-gateway. This is a separate concurrent problem: it does not touch the POST /v1/events path that alerted."
+        }
+      ],
+      "recommendedAction": "Fix the GEOIP_API_KEY credential in enrichment-svc. Check that secret version 15 is valid and has been activated with api.geoip.example. If it is not, temporarily restore v14 if the provider allows it, or issue a new key, then reload. Confirm /enrich calls succeed again and the ingest-gateway 502 rate drops. Separately, roll back notification-svc v5.24.0 to fix the 'currency' TypeError on /v1/notify."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "41 match(es):\n#593 2026-11-02T14:44:31Z WARN events-db slow query 2099ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#1495 2026-11-02T14:51:31Z ERROR api-gateway [t-5870] POST /v1/notify 500 14648ms: upstream notification-svc returned 500 Internal Server Error\n#1571 2026-11-02T14:52:08Z ERROR notification-svc [t-5927] request m-2832 failed in v5.24.0: cannot access 'currency' of undefined, stack: format @ message-formatter.ts:207\n#1618 2026-11-02T14:52:40Z ERROR notification-svc [t-5956] unhandled error in POST /v1/notify (m-2852): TypeError: Cannot read properties of undefined (reading 'currency') at format (message-formatter.ts:207) [v5.24.0]\n#1632 2026-11-02T14:52:51Z ERROR webhook-dispatcher customer webhook https://hooks.acme-65.example/ingest returned 502 Bad Gateway (attempt 1/10)\n#1633 2026-11-02T14:52:52Z ERROR enrichment-svc [t-5968] geo-IP provider auth failed: HTTP 401, credentials not accepted by api.geoip.example\n#1641 2026-11-02T14:53:01Z ERROR webhook-dispatcher customer webhook https://hooks.acme-75.example/ingest returned 502 Bad Gateway (attempt 2/10)\n#1660 2026-11-02T14:53:13Z ERROR ingest-api [t-5979] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#1707 2026-11-02T14:53:48Z ERROR enrichment-svc [t-5996] geo-IP provider rejected request: 401 Unauthorized (invalid API key) POST https://api.geoip.example/v1/lookup\n#1716 2026-11-02T14:53:58Z ERROR webhook-dispatcher customer webhook https://hooks.acme-59.example/ingest returned 502 Bad Gateway (attempt 3/10)\n#1718 2026-11-02T14:53:58Z ERROR notification-svc [t-6003] [v5.24.0] POST /v1/notify m-2877 -> 500: TypeError: undefined has no property 'currency'\n#1719 2026-11-02T14:54:00Z ERROR ingest-gateway [t-6005] POST /v1/events 502 8639ms: upstream ingest-api returned 502 Bad Gateway\n#1773 2026-11-02T14:54:41Z ERROR notification-svc [t-6025] request m-2898 failed in v5.24.0: cannot access 'currency' of undefined, stack: format @ message-formatter.ts:207\n#1788 2026-11-02T14:55:01Z ERROR api-gateway [t-6031] POST /v1/notify 500 18434ms: upstream notification-svc returned 500 Internal Server Error\n#1794 2026-11-02T14:55:03Z ERROR webhook-dispatcher customer webhook https://hooks.acme-62.example/ingest returned 502 Bad Gateway (attempt 4/10)\n#1800 2026-11-02T14:55:07Z ERROR ingest-gateway [t-6039] POST /v1/events 502 6514ms: upstream ingest-api returned 502 Bad Gateway\n#1802 2026-11-02T14:55:08Z ERROR enrichment-svc [t-6040] POST /v1/lookup -> 401 {\"error\":\"invalid_api_key\"}\n#1843 2026-11-02T14:55:39Z ERROR enrichment-svc [t-6054] geo-IP provider auth failed: HTTP 401, credentials not accepted by api.geoip.example\n#1850 2026-11-02T14:55:46Z ERROR api-gateway [t-6056] POST /v1/notify 500 25495ms: upstream notification-svc returned 500 Internal Server Error\n#1856 2026-11-02T14:55:50Z ERROR ingest-api [t-6060] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#1862 2026-11-02T14:55:57Z ERROR webhook-dispatcher customer webhook https://hooks.acme-58.example/ingest returned 502 Bad Gateway (attempt 5/10)\n#1891 2026-11-02T14:56:18Z ERROR ingest-gateway [t-6071] POST /v1/events 502 26039ms: upstream ingest-api returned 502 Bad Gateway\n#1953 2026-11-02T14:57:09Z ERROR webhook-dispatcher customer webhook https://hooks.acme-76.example/ingest returned 502 Bad Gateway (attempt 6/10)\n#1996 2026-11-02T14:57:51Z ERROR webhook-dispatcher customer webhook https://hooks.acme-87.example/ingest returned 502 Bad Gateway (attempt 7/10)\n#2018 2026-11-02T14:58:11Z ERROR ingest-gateway [t-6120] POST /v1/events 502 7699ms: upstream ingest-api returned 502 Bad Gateway\n#2031 2026-11-02T14:58:20Z ERROR api-gateway [t-6127] POST /v1/notify 500 7541ms: upstream notification-svc returned 500 Internal Server Error\n#2088 2026-11-02T14:59:03Z ERROR webhook-dispatcher customer webhook https://hooks.acme-22.example/ingest returned 502 Bad Gateway (attempt 8/10)\n#2136 2026-11-02T14:59:44Z ERROR webhook-dispatcher customer webhook https://hooks.acme-75.example/ingest returned 502 Bad Gateway (attempt 9/10)\n#2182 2026-11-02T15:00:24Z ERROR api-gateway [t-6176] POST /v1/notify 500 18696ms: upstream notification-svc returned 500 Internal Server Error\n#2222 2026-11-02T15:00:57Z ERROR ingest-gateway [t-6194] POST /v1/events 502 18955ms: upstream ingest-api returned 502 Bad Gateway\n#2231 2026-11-02T15:01:04Z ERROR ingest-api [t-6201] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#2235 2026-11-02T15:01:07Z ERROR webhook-dispatcher customer webhook https://hooks.acme-63.example/ingest returned 502 Bad Gateway (attempt 10/10)\n#2256 2026-11-02T15:01:18Z ERROR api-gateway [t-6217] POST /v1/notify 500 16604ms: upstream notification-svc returned 500 Internal Server Error\n#2293 2026-11-02T15:01:51Z ERROR webhook-dispatcher customer webhook https://hooks.acme-72.example/ingest returned 502 Bad Gateway (attempt 1/10)\n#2315 2026-11-02T15:02:10Z ERROR ingest-gateway [t-6237] POST /v1/events 502 11284ms: upstream ingest-api returned 502 Bad Gateway\n#2367 2026-11-02T15:03:02Z ERROR webhook-dispatcher customer webhook https://hooks.acme-48.example/ingest returned 502 Bad Gateway (attempt 2/10)\n#2404 2026-11-02T15:03:30Z ERROR webhook-dispatcher customer webhook https://hooks.acme-64.example/ingest returned 502 Bad Gateway (attempt 3/10)\n#2412 2026-11-02T15:03:40Z ERROR ingest-gateway [t-6275] POST /v1/events 502 8618ms: upstream ingest-api returned 502 Bad Gateway\n#2427 2026-11-02T15:03:54Z ERROR ingest-api [t-6280] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#2440 2026-11-02T15:04:05Z ERROR webhook-dispatcher customer webhook https://hooks.acme-93.example/ingest returned 502 Bad Gateway (attempt 4/10)\n#2449 2026-11-02T15:04:12Z ERROR api-gateway [t-6290] POST /v1/notify 500 12524ms: upstream notification-svc returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "enrichment-svc",
+          "since": "14:46:00",
+          "until": "14:53:00",
+          "limit": 60
+        },
+        "output": "70 match(es), showing first 60:\n#793 2026-11-02T14:46:05Z INFO enrichment-svc [t-5428] POST /enrich e-2433 ok 86ms\n#804 2026-11-02T14:46:10Z INFO enrichment-svc [t-5436] POST /enrich e-2438 ok 83ms\n#822 2026-11-02T14:46:19Z DEBUG enrichment-svc GC pause 5ms (young), heap 34%\n#824 2026-11-02T14:46:19Z INFO enrichment-svc [t-5447] POST /enrich e-2449 ok 67ms\n#848 2026-11-02T14:46:30Z INFO enrichment-svc [t-5464] POST /enrich e-2458 ok 70ms\n#854 2026-11-02T14:46:35Z INFO enrichment-svc [t-5469] POST /enrich e-2462 ok 44ms\n#868 2026-11-02T14:46:39Z INFO enrichment-svc [t-5477] POST /enrich e-2470 ok 71ms\n#876 2026-11-02T14:46:43Z INFO enrichment-svc [t-5483] POST /enrich e-2475 ok 30ms\n#885 2026-11-02T14:46:47Z DEBUG enrichment-svc GC pause 21ms (young), heap 32%\n#909 2026-11-02T14:46:58Z INFO enrichment-svc [t-5505] POST /enrich e-2496 ok 75ms\n#918 2026-11-02T14:47:03Z INFO enrichment-svc [t-5507] POST /enrich e-2500 ok 74ms\n#931 2026-11-02T14:47:08Z INFO enrichment-svc [t-5515] POST /enrich e-2503 ok 26ms\n#936 2026-11-02T14:47:09Z DEBUG enrichment-svc GC pause 18ms (young), heap 33%\n#951 2026-11-02T14:47:18Z INFO enrichment-svc [t-5529] POST /enrich e-2516 ok 70ms\n#972 2026-11-02T14:47:29Z DEBUG enrichment-svc GC pause 25ms (young), heap 29%\n#989 2026-11-02T14:47:36Z INFO enrichment-svc [t-5551] POST /enrich e-2539 ok 41ms\n#998 2026-11-02T14:47:40Z INFO enrichment-svc [t-5557] POST /enrich e-2545 ok 70ms\n#1006 2026-11-02T14:47:45Z INFO enrichment-svc [t-5565] POST /enrich e-2548 ok 25ms\n#1037 2026-11-02T14:47:59Z INFO enrichment-svc [t-5590] POST /enrich e-2564 ok 37ms\n#1050 2026-11-02T14:48:04Z DEBUG enrichment-svc GC pause 17ms (young), heap 43%\n#1062 2026-11-02T14:48:10Z INFO enrichment-svc [t-5604] POST /enrich e-2575 ok 24ms\n#1086 2026-11-02T14:48:23Z INFO enrichment-svc [t-5616] POST /enrich e-2589 ok 69ms\n#1104 2026-11-02T14:48:32Z DEBUG enrichment-svc GC pause 16ms (young), heap 40%\n#1123 2026-11-02T14:48:41Z INFO enrichment-svc [t-5640] POST /enrich e-2612 ok 37ms\n#1134 2026-11-02T14:48:47Z INFO enrichment-svc [t-5650] POST /enrich e-2620 ok 48ms\n#1149 2026-11-02T14:48:51Z INFO enrichment-svc [t-5654] POST /enrich e-2625 ok 78ms\n#1155 2026-11-02T14:48:54Z INFO enrichment-svc [t-5658] POST /enrich e-2628 ok 82ms\n#1163 2026-11-02T14:48:58Z INFO enrichment-svc [t-5666] POST /enrich e-2630 ok 81ms\n#1165 2026-11-02T14:48:59Z DEBUG enrichment-svc GC pause 25ms (young), heap 38%\n#1170 2026-11-02T14:49:02Z INFO enrichment-svc [t-5671] POST /enrich e-2634 ok 31ms\n#1181 2026-11-02T14:49:05Z INFO enrichment-svc [t-5674] POST /enrich e-2638 ok 73ms\n#1189 2026-11-02T14:49:07Z INFO enrichment-svc [t-5678] POST /enrich e-2642 ok 79ms\n#1209 2026-11-02T14:49:18Z DEBUG enrichment-svc GC pause 23ms (young), heap 40%\n#1212 2026-11-02T14:49:19Z INFO enrichment-svc [t-5697] POST /enrich e-2657 ok 51ms\n#1221 2026-11-02T14:49:23Z INFO enrichment-svc [t-5701] POST /enrich e-2662 ok 77ms\n#1252 2026-11-02T14:49:39Z INFO enrichment-svc [t-5724] POST /enrich e-2679 ok 79ms\n#1260 2026-11-02T14:49:42Z INFO enrichment-svc [t-5731] POST /enrich e-2683 ok 45ms\n#1265 2026-11-02T14:49:44Z INFO enrichment-svc [t-5732] POST /enrich e-2684 ok 81ms\n#1272 2026-11-02T14:49:47Z DEBUG enrichment-svc GC pause 5ms (young), heap 28%\n#1277 2026-11-02T14:49:49Z INFO enrichment-svc [t-5739] POST /enrich e-2688 ok 53ms\n#1291 2026-11-02T14:49:57Z INFO enrichment-svc [t-5744] POST /enrich e-2697 ok 41ms\n#1314 2026-11-02T14:50:05Z INFO enrichment-svc [t-5757] POST /enrich e-2705 ok 30ms\n#1319 2026-11-02T14:50:09Z INFO enrichment-svc [t-5761] POST /enrich e-2707 ok 71ms\n#1326 2026-11-02T14:50:12Z DEBUG enrichment-svc GC pause 17ms (young), heap 43%\n#1328 2026-11-02T14:50:14Z INFO enrichment-svc [t-5764] POST /enrich e-2709 ok 46ms\n#1343 2026-11-02T14:50:20Z INFO enrichment-svc [t-5776] POST /enrich e-2719 ok 64ms\n#1351 2026-11-02T14:50:22Z INFO enrichment-svc [t-5781] POST /enrich e-2723 ok 52ms\n#1362 2026-11-02T14:50:27Z INFO enrichment-svc [t-5790] POST /enrich e-2727 ok 64ms\n#1372 2026-11-02T14:50:31Z INFO enrichment-svc [t-5795] POST /enrich e-2729 ok 69ms\n#1393 2026-11-02T14:50:42Z INFO enrichment-svc [t-5813] POST /enrich e-2741 ok 36ms\n#1399 2026-11-02T14:50:45Z DEBUG enrichment-svc GC pause 11ms (young), heap 29%\n#1418 2026-11-02T14:50:55Z INFO enrichment-svc [t-5827] POST /enrich e-2754 ok 66ms\n#1428 2026-11-02T14:50:58Z INFO enrichment-svc [t-5829] POST /enrich e-2760 ok 74ms\n#1433 2026-11-02T14:51:01Z INFO enrichment-svc [t-5836] POST /enrich e-2764 ok 24ms\n#1451 2026-11-02T14:51:08Z INFO enrichment-svc [t-5844] POST /enrich e-2774 ok 89ms\n#1456 2026-11-02T14:51:11Z INFO enrichment-svc [t-5846] POST /enrich e-2777 ok 71ms\n#1473 2026-11-02T14:51:19Z DEBUG enrichment-svc GC pause 11ms (young), heap 38%\n#1486 2026-11-02T14:51:25Z INFO enrichment-svc [t-5864] POST /enrich e-2793 ok 21ms\n#1491 2026-11-02T14:51:29Z INFO enrichment-svc [t-5866] POST /enrich e-2795 ok 26ms\n#1505 2026-11-02T14:51:36Z INFO enrichment-svc [t-5880] POST /enrich e-2801 ok 27ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "enrichment-svc",
+          "since": "14:51:37",
+          "until": "14:53:00"
+        },
+        "output": "10 match(es):\n#1509 2026-11-02T14:51:38Z INFO enrichment-svc [t-5883] POST /enrich e-2804 ok 61ms\n#1536 2026-11-02T14:51:52Z DEBUG enrichment-svc GC pause 25ms (young), heap 36%\n#1542 2026-11-02T14:51:54Z INFO enrichment-svc secrets: reloaded GEOIP_API_KEY from secrets store (version 15, previous 14 revoked)\n#1549 2026-11-02T14:51:58Z INFO enrichment-svc [t-5913] POST /enrich e-2824 ok 70ms\n#1561 2026-11-02T14:52:02Z INFO enrichment-svc [t-5920] POST /enrich e-2829 ok 24ms\n#1573 2026-11-02T14:52:10Z INFO enrichment-svc [t-5929] POST /enrich e-2834 ok 51ms\n#1580 2026-11-02T14:52:15Z INFO enrichment-svc [t-5934] POST /enrich e-2838 ok 24ms\n#1582 2026-11-02T14:52:15Z DEBUG enrichment-svc GC pause 13ms (young), heap 30%\n#1611 2026-11-02T14:52:35Z DEBUG enrichment-svc GC pause 5ms (young), heap 35%\n#1633 2026-11-02T14:52:52Z ERROR enrichment-svc [t-5968] geo-IP provider auth failed: HTTP 401, credentials not accepted by api.geoip.example"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "key",
+          "limit": 40
+        },
+        "output": "3 match(es):\n#1542 2026-11-02T14:51:54Z INFO enrichment-svc secrets: reloaded GEOIP_API_KEY from secrets store (version 15, previous 14 revoked)\n#1707 2026-11-02T14:53:48Z ERROR enrichment-svc [t-5996] geo-IP provider rejected request: 401 Unauthorized (invalid API key) POST https://api.geoip.example/v1/lookup\n#1802 2026-11-02T14:55:08Z ERROR enrichment-svc [t-6040] POST /v1/lookup -> 401 {\"error\":\"invalid_api_key\"}"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-5979"
+        },
+        "output": "1 line(s) for t-5979:\n#1660 2026-11-02T14:53:13Z ERROR ingest-api [t-5979] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "config_error",
+              "confidence": 0.88,
+              "evidenceLines": [
+                1542,
+                1633,
+                1707,
+                1802,
+                1660,
+                1856
+              ],
+              "reasoning": "At 14:51:54 enrichment-svc reloaded GEOIP_API_KEY (version 15, with version 14 revoked). Before that, every /enrich call succeeded. From 14:52:52 on, every call to the geo-IP provider gets 401 invalid_api_key, so the new or rotated credential is not accepted. enrichment-svc then returns 502 to ingest-api (EnrichClient.enrich failed), and ingest-gateway passes that on as a 502 on POST /v1/events, which is what paged. The provider is fine; it is rejecting our credential, so this is a credential problem and not a provider outage."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.07,
+              "evidenceLines": [
+                1633,
+                1707
+              ],
+              "reasoning": "The geo-IP provider is a third party returning errors. But the errors are 401 auth rejections that start right after our own key rotation, which points to config_error instead."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.05,
+              "evidenceLines": [
+                1571,
+                1618
+              ],
+              "reasoning": "notification-svc v5.24.0 has a TypeError at message-formatter.ts:207, which causes 500s on /v1/notify through api-gateway. This is a separate concurrent problem: it does not touch the POST /v1/events path that alerted."
+            }
+          ],
+          "recommendedAction": "Fix the GEOIP_API_KEY credential in enrichment-svc. Check that secret version 15 is valid and has been activated with api.geoip.example. If it is not, temporarily restore v14 if the provider allows it, or issue a new key, then reload. Confirm /enrich calls succeed again and the ingest-gateway 502 rate drops. Separately, roll back notification-svc v5.24.0 to fix the 'currency' TypeError on /v1/notify."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1301,
+      "cacheReadTokens": 32315,
+      "cacheWriteTokens": 11447
+    },
+    "durationMs": 14283,
+    "stopReason": "tool_use"
+  }
+}

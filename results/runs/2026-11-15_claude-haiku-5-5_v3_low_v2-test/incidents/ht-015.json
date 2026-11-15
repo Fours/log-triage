@@ -1,0 +1,140 @@
+{
+  "score": {
+    "incidentId": "ht-015",
+    "difficulty": "easy",
+    "scenario": "config_error/rotated-credential",
+    "truth": "config_error",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "config_error",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 4,
+      "correct": 4,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.001429685,
+    "durationMs": 5617,
+    "iterations": 3,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 8,
+      "output": 1048,
+      "cacheRead": 8651,
+      "cacheWrite": 6547
+    }
+  },
+  "result": {
+    "incidentId": "ht-015",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "config_error",
+          "confidence": 0.9,
+          "evidenceLines": [
+            755,
+            792,
+            863,
+            917
+          ],
+          "reasoning": "At 05:07:22Z template-svc reloaded MAILER_API_KEY from the secrets store (version 6), and the previous version 5 was revoked. From 05:08:04Z the email provider rejects every call from template-svc with 401 invalid_api_key. This is the earliest fault in the chain. template-svc's render failures then surface as 502s in notification-svc (#828, #1045), and as /v1/notify 502s at api-gateway (#789, #918, #937, #1031). The webhook-dispatcher 502 retries (#385 onward) are customer-side and secondary. Notif-worker, redis, notif-db and status-poller show no errors. The gateway 5xx and dispatcher retries are symptoms, not the cause. The likely root cause is that the rotated key was not propagated to the email provider, or that the reload picked up a revoked or wrong key."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.1,
+          "evidenceLines": [
+            792,
+            917
+          ],
+          "reasoning": "The email provider could be rejecting requests on its own side. However, the 401 says invalid key, and the key was rotated just before onset, so a config problem is more likely."
+        }
+      ],
+      "recommendedAction": "Roll back template-svc to MAILER_API_KEY version 5, or confirm that version 6 is valid and active with the email provider (api.mailer.example). Re-issue or correct the key in the secrets store and restart or reload template-svc. Once it is valid, the notify 502s should stop. Then replay the failed notifications and check the webhook-dispatcher retries that have hit 502s from customer endpoints."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "17 match(es):\n#385 2026-10-02T05:02:21Z ERROR webhook-dispatcher customer webhook https://hooks.acme-76.example/ingest returned 502 Bad Gateway (attempt 1/10)\n#566 2026-10-02T05:04:51Z ERROR webhook-dispatcher customer webhook https://hooks.acme-34.example/ingest returned 502 Bad Gateway (attempt 2/10)\n#697 2026-10-02T05:06:35Z ERROR webhook-dispatcher customer webhook https://hooks.acme-56.example/ingest returned 502 Bad Gateway (attempt 3/10)\n#732 2026-10-02T05:07:03Z ERROR webhook-dispatcher customer webhook https://hooks.acme-12.example/ingest returned 502 Bad Gateway (attempt 4/10)\n#789 2026-10-02T05:07:59Z ERROR api-gateway [t-2757] POST /v1/notify 502 29675ms: upstream notification-svc returned 502 Bad Gateway\n#792 2026-10-02T05:08:04Z ERROR template-svc [t-2759] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#828 2026-10-02T05:08:59Z ERROR notification-svc [t-2760] TemplateClient.render failed: template-svc returned 502 (upstream email provider error)\n#858 2026-10-02T05:09:35Z ERROR webhook-dispatcher customer webhook https://hooks.acme-29.example/ingest returned 502 Bad Gateway (attempt 5/10)\n#863 2026-10-02T05:09:44Z ERROR template-svc [t-2762] POST /v3/send -> 401 {\"error\":\"invalid_api_key\"}\n#913 2026-10-02T05:10:52Z ERROR webhook-dispatcher customer webhook https://hooks.acme-23.example/ingest returned 502 Bad Gateway (attempt 6/10)\n#917 2026-10-02T05:10:56Z ERROR template-svc [t-2768] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#918 2026-10-02T05:10:56Z ERROR api-gateway [t-2771] POST /v1/notify 502 25716ms: upstream notification-svc returned 502 Bad Gateway\n#937 2026-10-02T05:11:26Z ERROR api-gateway [t-2772] POST /v1/notify 502 16683ms: upstream notification-svc returned 502 Bad Gateway\n#986 2026-10-02T05:12:39Z ERROR webhook-dispatcher customer webhook https://hooks.acme-53.example/ingest returned 502 Bad Gateway (attempt 7/10)\n#1026 2026-10-02T05:13:41Z ERROR webhook-dispatcher customer webhook https://hooks.acme-79.example/ingest returned 502 Bad Gateway (attempt 8/10)\n#1031 2026-10-02T05:13:45Z ERROR api-gateway [t-2776] POST /v1/notify 502 12184ms: upstream notification-svc returned 502 Bad Gateway\n#1045 2026-10-02T05:14:10Z ERROR notification-svc [t-2777] TemplateClient.render failed: template-svc returned 502 (upstream email provider error)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "error",
+          "limit": 40
+        },
+        "output": "3 match(es):\n#828 2026-10-02T05:08:59Z ERROR notification-svc [t-2760] TemplateClient.render failed: template-svc returned 502 (upstream email provider error)\n#863 2026-10-02T05:09:44Z ERROR template-svc [t-2762] POST /v3/send -> 401 {\"error\":\"invalid_api_key\"}\n#1045 2026-10-02T05:14:10Z ERROR notification-svc [t-2777] TemplateClient.render failed: template-svc returned 502 (upstream email provider error)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "key",
+          "limit": 40
+        },
+        "output": "4 match(es):\n#755 2026-10-02T05:07:22Z INFO template-svc secrets: reloaded MAILER_API_KEY from secrets store (version 6, previous 5 revoked)\n#792 2026-10-02T05:08:04Z ERROR template-svc [t-2759] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#863 2026-10-02T05:09:44Z ERROR template-svc [t-2762] POST /v3/send -> 401 {\"error\":\"invalid_api_key\"}\n#917 2026-10-02T05:10:56Z ERROR template-svc [t-2768] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 792,
+          "before": 12,
+          "after": 3
+        },
+        "output": "#780 2026-10-02T05:07:48Z INFO notif-worker processed batch of 109 messages from notifications.outbound (lag 181ms)\n#781 2026-10-02T05:07:52Z INFO status-poller poll cycle complete: 38 targets checked in 638ms\n#782 2026-10-02T05:07:52Z INFO notif-db InnoDB: page cleaner flushed 515 pages, buffer pool hit rate 98.6%\n#783 2026-10-02T05:07:53Z INFO notif-worker processed batch of 52 messages from notifications.outbound (lag 190ms)\n#784 2026-10-02T05:07:54Z DEBUG template-svc GC pause 18ms (young), heap 44%\n#785 2026-10-02T05:07:54Z INFO redis stats: hits=17829 misses=364 evicted=0 connected_clients=53\n#786 2026-10-02T05:07:55Z INFO webhook-dispatcher delivered 50 webhooks (p95 352ms)\n#787 2026-10-02T05:07:57Z DEBUG notification-svc GC pause 19ms (young), heap 39%\n#788 2026-10-02T05:07:57Z INFO notif-worker processed batch of 80 messages from notifications.outbound (lag 261ms)\n#789 2026-10-02T05:07:59Z ERROR api-gateway [t-2757] POST /v1/notify 502 29675ms: upstream notification-svc returned 502 Bad Gateway\n#790 2026-10-02T05:08:03Z INFO redis stats: hits=13586 misses=519 evicted=0 connected_clients=58\n#791 2026-10-02T05:08:03Z INFO notif-worker processed batch of 44 messages from notifications.outbound (lag 395ms)\n#792 2026-10-02T05:08:04Z ERROR template-svc [t-2759] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#793 2026-10-02T05:08:06Z INFO status-poller poll cycle complete: 19 targets checked in 822ms\n#794 2026-10-02T05:08:08Z INFO notif-worker processed batch of 115 messages from notifications.outbound (lag 251ms)\n#795 2026-10-02T05:08:08Z INFO notif-db InnoDB: page cleaner flushed 592 pages, buffer pool hit rate 98.9%"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "config_error",
+              "confidence": 0.9,
+              "evidenceLines": [
+                755,
+                792,
+                863,
+                917
+              ],
+              "reasoning": "At 05:07:22Z template-svc reloaded MAILER_API_KEY from the secrets store (version 6), and the previous version 5 was revoked. From 05:08:04Z the email provider rejects every call from template-svc with 401 invalid_api_key. This is the earliest fault in the chain. template-svc's render failures then surface as 502s in notification-svc (#828, #1045), and as /v1/notify 502s at api-gateway (#789, #918, #937, #1031). The webhook-dispatcher 502 retries (#385 onward) are customer-side and secondary. Notif-worker, redis, notif-db and status-poller show no errors. The gateway 5xx and dispatcher retries are symptoms, not the cause. The likely root cause is that the rotated key was not propagated to the email provider, or that the reload picked up a revoked or wrong key.",
+              "reasoning_short": "n/a"
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.1,
+              "evidenceLines": [
+                792,
+                917
+              ],
+              "reasoning": "The email provider could be rejecting requests on its own side. However, the 401 says invalid key, and the key was rotated just before onset, so a config problem is more likely."
+            }
+          ],
+          "recommendedAction": "Roll back template-svc to MAILER_API_KEY version 5, or confirm that version 6 is valid and active with the email provider (api.mailer.example). Re-issue or correct the key in the secrets store and restart or reload template-svc. Once it is valid, the notify 502s should stop. Then replay the failed notifications and check the webhook-dispatcher retries that have hit 502s from customer endpoints."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 1048,
+      "cacheReadTokens": 8651,
+      "cacheWriteTokens": 6547
+    },
+    "durationMs": 5617,
+    "stopReason": "tool_use"
+  }
+}

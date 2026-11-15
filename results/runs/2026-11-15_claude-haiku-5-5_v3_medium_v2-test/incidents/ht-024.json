@@ -1,0 +1,173 @@
+{
+  "score": {
+    "incidentId": "ht-024",
+    "difficulty": "easy",
+    "scenario": "data_integrity/partial-migration",
+    "truth": "data_integrity",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.92,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 5,
+      "precision": 0.7142857142857143,
+      "recall": 0.8333333333333334,
+      "f1": 0.7692307692307692
+    },
+    "herringsCited": 0,
+    "costUsd": 0.002443075,
+    "durationMs": 11298,
+    "iterations": 5,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 12,
+      "output": 2394,
+      "cacheRead": 22350,
+      "cacheWrite": 8171
+    }
+  },
+  "result": {
+    "incidentId": "ht-024",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.92,
+          "evidenceLines": [
+            904,
+            909,
+            929,
+            1000,
+            1030,
+            1116,
+            1159
+          ],
+          "reasoning": "Migration 0082_add_status_v2 in account-svc ran as 3 steps against accounts-db. Step 1 (rename accounts.status_v2 -> status_v2_old) committed at #909. Step 2 failed at #929 with a lock timeout on accounts. The DDL is non-transactional, so step 1 was not rolled back, leaving the schema half-applied. From about 04:59 onward, accounts-db and account-svc queries referencing accounts.status_v2 fail with 'column does not exist' (#1000, #1030, #1116, #1159). account-svc then returns 500 on login, and edge-proxy reports POST /login 500s (#979, #1141, #1202) with rising latency. Those edge 5xx lines are downstream impact, not the cause. The report-cron pandas ModuleNotFoundError is an unrelated, pre-existing failure. auth-svc, session-cache, audit-consumer and flag-sync show no errors, which fits a fault confined to the accounts schema. I did not find the lock holder behind the step 2 lock timeout, but that does not change the classification."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.25,
+          "evidenceLines": [
+            929
+          ],
+          "reasoning": "Step 2 of the migration hit a lock timeout on accounts, which could point to a lock held by another transaction. However, no lock-holder or blocking-query lines appear in the logs, and the observed failure mode is the missing column, not hung calls. This is a weaker reading of the same line."
+        }
+      ],
+      "recommendedAction": "Stop the bad migration path and do not retry 0082 blindly. Restore the accounts.status_v2 column by renaming status_v2_old back to status_v2 (or finish steps 2 and 3 in a controlled way once the lock is clear), then verify with a test query on accounts. Confirm that /login 500s drop in edge-proxy. For future DDL, set lock_timeout and use a transactional or staged approach. Find the session that held the accounts lock at about 04:58:31 to prevent a repeat. Separately, fix report-cron image report-cron:2026.10.2 by restoring the missing pandas dependency."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "since": "04:46:00",
+          "until": "04:50:00",
+          "limit": 60
+        },
+        "output": "tool error: since (04:46:00) is after until (04:50:00)",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 50
+        },
+        "output": "18 match(es):\n#557 2026-10-05T04:53:34Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#686 2026-10-05T04:55:19Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#867 2026-10-05T04:57:46Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#929 2026-10-05T04:58:31Z ERROR account-svc migrate: 0082_add_status_v2 step 2/3 failed: lock timeout on accounts; step 1 already committed (non-transactional DDL), not rolled back\n#979 2026-10-05T04:59:26Z ERROR edge-proxy [t-3585] POST /login 500 5407ms: upstream account-svc returned 500 Internal Server Error\n#999 2026-10-05T04:59:50Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1000 2026-10-05T04:59:51Z ERROR accounts-db ERROR:  column accounts.status_v2 does not exist (SQLSTATE 42703)\n#1030 2026-10-05T05:00:33Z ERROR accounts-db column \"status_v2\" of relation \"accounts\" does not exist at character 108\n#1065 2026-10-05T05:01:23Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1075 2026-10-05T05:01:39Z ERROR accounts-db ERROR:  column accounts.status_v2 does not exist (SQLSTATE 42703)\n#1104 2026-10-05T05:02:22Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1116 2026-10-05T05:02:41Z ERROR account-svc [t-3593] query on accounts failed for u-3619: column \"status_v2\" does not exist\n#1141 2026-10-05T05:03:10Z ERROR edge-proxy [t-3603] POST /login 500 15948ms: upstream account-svc returned 500 Internal Server Error\n#1159 2026-10-05T05:03:36Z ERROR account-svc [t-3605] query on accounts failed for u-3623: column \"status_v2\" does not exist\n#1202 2026-10-05T05:04:38Z ERROR edge-proxy [t-3609] POST /login 500 25426ms: upstream account-svc returned 500 Internal Server Error\n#1247 2026-10-05T05:05:50Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1256 2026-10-05T05:06:03Z ERROR edge-proxy [t-3615] POST /login 500 15735ms: upstream account-svc returned 500 Internal Server Error\n#1286 2026-10-05T05:06:42Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "migrat",
+          "limit": 50
+        },
+        "output": "3 match(es):\n#904 2026-10-05T04:58:14Z INFO account-svc migrate: applying 0082_add_status_v2 (3 steps) to accounts-db\n#909 2026-10-05T04:58:16Z INFO account-svc migrate: 0082_add_status_v2 step 1/3 ok: renamed column accounts.status_v2 -> status_v2_old\n#929 2026-10-05T04:58:31Z ERROR account-svc migrate: 0082_add_status_v2 step 2/3 failed: lock timeout on accounts; step 1 already committed (non-transactional DDL), not rolled back"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 929,
+          "before": 12,
+          "after": 3
+        },
+        "output": "#917 2026-10-05T04:58:22Z DEBUG account-svc GC pause 24ms (young), heap 41%\n#918 2026-10-05T04:58:23Z INFO accounts-db checkpoint complete: wrote 560 buffers (2.0%)\n#919 2026-10-05T04:58:25Z INFO audit-consumer processed batch of 25 messages from audit.events (lag 364ms)\n#920 2026-10-05T04:58:25Z INFO account-svc [t-3564] user u-3593 accepted, calling auth-svc POST /tokens\n#921 2026-10-05T04:58:25Z INFO auth-svc [t-3564] POST /tokens u-3593 ok 72ms\n#922 2026-10-05T04:58:25Z INFO edge-proxy [t-3564] POST /login 200 167ms\n#923 2026-10-05T04:58:29Z INFO audit-consumer processed batch of 104 messages from audit.events (lag 334ms)\n#924 2026-10-05T04:58:29Z INFO flag-sync synced 107 feature flags from flag service (etag 1a40fc0)\n#925 2026-10-05T04:58:29Z INFO report-cron scheduler heartbeat: 8 jobs registered, next run in 90s\n#926 2026-10-05T04:58:30Z INFO session-cache stats: hits=19241 misses=614 evicted=0 connected_clients=51\n#927 2026-10-05T04:58:30Z DEBUG auth-svc GC pause 23ms (young), heap 44%\n#928 2026-10-05T04:58:31Z INFO account-svc [t-3566] user u-3595 accepted, calling auth-svc POST /tokens\n#929 2026-10-05T04:58:31Z ERROR account-svc migrate: 0082_add_status_v2 step 2/3 failed: lock timeout on accounts; step 1 already committed (non-transactional DDL), not rolled back\n#930 2026-10-05T04:58:31Z INFO edge-proxy [t-3566] POST /login 200 112ms\n#931 2026-10-05T04:58:35Z INFO audit-consumer processed batch of 39 messages from audit.events (lag 299ms)\n#932 2026-10-05T04:58:36Z INFO account-svc [t-3568] user u-3596 accepted, calling auth-svc POST /tokens"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "lock",
+          "limit": 30
+        },
+        "output": "1 match(es):\n#929 2026-10-05T04:58:31Z ERROR account-svc migrate: 0082_add_status_v2 step 2/3 failed: lock timeout on accounts; step 1 already committed (non-transactional DDL), not rolled back"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "status_v2",
+          "limit": 10
+        },
+        "output": "8 match(es):\n#904 2026-10-05T04:58:14Z INFO account-svc migrate: applying 0082_add_status_v2 (3 steps) to accounts-db\n#909 2026-10-05T04:58:16Z INFO account-svc migrate: 0082_add_status_v2 step 1/3 ok: renamed column accounts.status_v2 -> status_v2_old\n#929 2026-10-05T04:58:31Z ERROR account-svc migrate: 0082_add_status_v2 step 2/3 failed: lock timeout on accounts; step 1 already committed (non-transactional DDL), not rolled back\n#1000 2026-10-05T04:59:51Z ERROR accounts-db ERROR:  column accounts.status_v2 does not exist (SQLSTATE 42703)\n#1030 2026-10-05T05:00:33Z ERROR accounts-db column \"status_v2\" of relation \"accounts\" does not exist at character 108\n#1075 2026-10-05T05:01:39Z ERROR accounts-db ERROR:  column accounts.status_v2 does not exist (SQLSTATE 42703)\n#1116 2026-10-05T05:02:41Z ERROR account-svc [t-3593] query on accounts failed for u-3619: column \"status_v2\" does not exist\n#1159 2026-10-05T05:03:36Z ERROR account-svc [t-3605] query on accounts failed for u-3623: column \"status_v2\" does not exist"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"data_integrity\",\"confidence\":0.92,\"evidenceLines\":[904,909,929,1000,1030,1116,1159],\"reasoning\":\"Migration 0082_add_status_v2 in account-svc ran as 3 steps against accounts-db. Step 1 (rename accounts.status_v2 -> status_v2_old) committed at #909. Step 2 failed at #929 with a lock timeout on accounts. The DDL is non-transactional, so step 1 was not rolled back, leaving the schema half-applied. From ~04:59 onward, accounts-db and account-svc queries referencing accounts.status_v2 fail with 'column does not exist' (#1000, #1030, #1116, #1159). account-svc then returns 500 on login, and edge-proxy reports POST /login 500s (#979, #1141, #1202) with rising latency. Those edge 5xx lines are downstream impact, not cause. The report-cron pandas ModuleNotFoundError is an unrelated, pre-existing failure. auth-svc, session-cache, audit-consumer and flag-sync show no errors, which fits a fault confined to the accounts schema. I did not find the lock holder that caused the step 2 lock timeout, but that does not change the classification.\",\"},{\"rootCause\":\"dependency_timeout\",\"confidence\":0.25,\"evidenceLines\":[929],\"reasoning\":\"Step 2 of the migration hit a lock timeout on accounts, which could point to a lock held by another transaction. However, no lock-holder or blocking-query lines appear in the logs, and the observed failure mode is the missing column, not hung calls. This is a weaker reading of the same line.\"}]",
+          "recommendedAction": "Stop the bad migration path and do not retry 0082 blindly. Restore the accounts.status_v2 column by renaming status_v2_old back to status_v2 (or finish step 2/3 and step 3 manually in a controlled way once the lock is clear), and verify with a test query on accounts. Then confirm /login 500s drop in edge-proxy. Add a lock_timeout and a transactional or staged approach for future DDL. Find the session that held the accounts lock at about 04:58:31 to prevent a repeat. Separately, fix report-cron image report-cron:2026.10.2 by restoring the missing pandas dependency."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.92,
+              "evidenceLines": [
+                904,
+                909,
+                929,
+                1000,
+                1030,
+                1116,
+                1159
+              ],
+              "reasoning": "Migration 0082_add_status_v2 in account-svc ran as 3 steps against accounts-db. Step 1 (rename accounts.status_v2 -> status_v2_old) committed at #909. Step 2 failed at #929 with a lock timeout on accounts. The DDL is non-transactional, so step 1 was not rolled back, leaving the schema half-applied. From about 04:59 onward, accounts-db and account-svc queries referencing accounts.status_v2 fail with 'column does not exist' (#1000, #1030, #1116, #1159). account-svc then returns 500 on login, and edge-proxy reports POST /login 500s (#979, #1141, #1202) with rising latency. Those edge 5xx lines are downstream impact, not the cause. The report-cron pandas ModuleNotFoundError is an unrelated, pre-existing failure. auth-svc, session-cache, audit-consumer and flag-sync show no errors, which fits a fault confined to the accounts schema. I did not find the lock holder behind the step 2 lock timeout, but that does not change the classification."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.25,
+              "evidenceLines": [
+                929
+              ],
+              "reasoning": "Step 2 of the migration hit a lock timeout on accounts, which could point to a lock held by another transaction. However, no lock-holder or blocking-query lines appear in the logs, and the observed failure mode is the missing column, not hung calls. This is a weaker reading of the same line."
+            }
+          ],
+          "recommendedAction": "Stop the bad migration path and do not retry 0082 blindly. Restore the accounts.status_v2 column by renaming status_v2_old back to status_v2 (or finish steps 2 and 3 in a controlled way once the lock is clear), then verify with a test query on accounts. Confirm that /login 500s drop in edge-proxy. For future DDL, set lock_timeout and use a transactional or staged approach. Find the session that held the accounts lock at about 04:58:31 to prevent a repeat. Separately, fix report-cron image report-cron:2026.10.2 by restoring the missing pandas dependency."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 2394,
+      "cacheReadTokens": 22350,
+      "cacheWriteTokens": 8171
+    },
+    "durationMs": 11298,
+    "stopReason": "tool_use"
+  }
+}

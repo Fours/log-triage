@@ -1,0 +1,148 @@
+{
+  "score": {
+    "incidentId": "ht-017",
+    "difficulty": "easy",
+    "scenario": "data_integrity/sequence-collision",
+    "truth": "data_integrity",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 3,
+      "precision": 0.375,
+      "recall": 0.75,
+      "f1": 0.5
+    },
+    "herringsCited": 2,
+    "costUsd": 0.001845055,
+    "durationMs": 7405,
+    "iterations": 4,
+    "toolCalls": 3,
+    "tokens": {
+      "input": 10,
+      "output": 1627,
+      "cacheRead": 15243,
+      "cacheWrite": 7025
+    }
+  },
+  "result": {
+    "incidentId": "ht-017",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.9,
+          "evidenceLines": [
+            875,
+            1058,
+            1149,
+            1357,
+            1528,
+            1202,
+            1387,
+            1867
+          ],
+          "reasoning": "At 09:08:39 catalog-db logged a snapshot restore that reloaded the products table (979231 rows) but left the products_id_seq sequence at 965985, below the table's actual max id. Subsequent inserts draw IDs already in use, so catalog-db rejects them with unique_violation on products_pkey (#1058, #1149). search-api maps these to 409 (#1357, #1528), and web-bff surfaces them as GET /search 500 'create failed' (#1202, #1387, #1867), which is the alert and the customer 'could not save' symptom. The status-poller legacy-inventory timeouts are unrelated noise (deprecated endpoint, no effect on the write path). The failure began right after the restore, so the restore is the origin."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.1,
+          "evidenceLines": [
+            553,
+            1044
+          ],
+          "reasoning": "Alternative reading: the status-poller checks a deprecated legacy-inventory endpoint that times out. This is a real misconfiguration but it does not touch the product create path and does not explain the duplicate-key errors, so it is ranked low."
+        }
+      ],
+      "recommendedAction": "Immediately reset products_id_seq to above MAX(id) in catalog-db (e.g. setval to max(id)+1, about 979232), then verify new product inserts succeed and retry failed creates. Find out who ran the snapshot restore at 09:08:39 and why, and add a post-restore sequence check to the restore runbook. Separately, retire the deprecated legacy-inventory healthcheck in status-poller."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "17 match(es):\n#553 2026-11-01T09:04:28Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#799 2026-11-01T09:07:39Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#875 2026-11-01T09:08:39Z WARN catalog-db restore: table products reloaded from snapshot (979231 rows); sequence products_id_seq left at 965985\n#1044 2026-11-01T09:11:03Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1058 2026-11-01T09:11:15Z ERROR catalog-db duplicate key value violates unique constraint \"products_pkey\" DETAIL: Key (id)=(976166) already exists.\n#1149 2026-11-01T09:12:51Z ERROR catalog-db ERROR: 23505 unique_violation on products (id 976171 is already present)\n#1202 2026-11-01T09:13:53Z ERROR web-bff [t-8398] GET /search 500 7562ms: upstream search-api returned 500 (create failed)\n#1233 2026-11-01T09:14:24Z ERROR catalog-db duplicate key value violates unique constraint \"products_pkey\" DETAIL: Key (id)=(976176) already exists.\n#1245 2026-11-01T09:14:36Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1357 2026-11-01T09:16:31Z ERROR search-api [t-8461] create product failed: unique violation on products.id, returning 409\n#1387 2026-11-01T09:16:59Z ERROR web-bff [t-8474] GET /search 500 22865ms: upstream search-api returned 500 (create failed)\n#1438 2026-11-01T09:17:54Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1528 2026-11-01T09:19:31Z ERROR search-api [t-8522] create product failed: unique violation on products.id, returning 409\n#1561 2026-11-01T09:20:08Z ERROR web-bff [t-8532] GET /search 500 5015ms: upstream search-api returned 500 (create failed)\n#1655 2026-11-01T09:21:49Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1765 2026-11-01T09:23:49Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1867 2026-11-01T09:25:26Z ERROR web-bff [t-8641] GET /search 500 21341ms: upstream search-api returned 500 (create failed)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "status-poller",
+          "level": "ERROR"
+        },
+        "output": "7 match(es):\n#553 2026-11-01T09:04:28Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#799 2026-11-01T09:07:39Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1044 2026-11-01T09:11:03Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1245 2026-11-01T09:14:36Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1438 2026-11-01T09:17:54Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1655 2026-11-01T09:21:49Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1765 2026-11-01T09:23:49Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 875,
+          "before": 8,
+          "after": 6
+        },
+        "output": "#867 2026-11-01T09:08:33Z INFO index-worker processed batch of 71 messages from catalog.updates (lag 197ms)\n#868 2026-11-01T09:08:34Z INFO search-api [t-8265] product p-7303 accepted, calling catalog-svc GET /products/batch\n#869 2026-11-01T09:08:34Z INFO web-bff [t-8265] GET /search 200 107ms\n#870 2026-11-01T09:08:37Z INFO redis-cache stats: hits=15666 misses=843 evicted=0 connected_clients=56\n#871 2026-11-01T09:08:37Z INFO status-poller poll cycle complete: 36 targets checked in 881ms\n#872 2026-11-01T09:08:38Z INFO search-api [t-8268] product p-7305 accepted, calling catalog-svc GET /products/batch\n#873 2026-11-01T09:08:38Z INFO catalog-svc [t-8268] GET /products/batch p-7305 ok 53ms\n#874 2026-11-01T09:08:38Z INFO web-bff [t-8268] GET /search 200 88ms\n#875 2026-11-01T09:08:39Z WARN catalog-db restore: table products reloaded from snapshot (979231 rows); sequence products_id_seq left at 965985\n#876 2026-11-01T09:08:40Z INFO index-worker processed batch of 30 messages from catalog.updates (lag 103ms)\n#877 2026-11-01T09:08:41Z INFO catalog-db checkpoint complete: wrote 909 buffers (6.2%)\n#878 2026-11-01T09:08:42Z INFO search-api [t-8271] product p-7308 accepted, calling catalog-svc GET /products/batch\n#879 2026-11-01T09:08:42Z INFO web-bff [t-8271] GET /search 200 89ms\n#880 2026-11-01T09:08:43Z DEBUG catalog-svc GC pause 25ms (young), heap 38%\n#881 2026-11-01T09:08:44Z INFO flag-sync synced 80 feature flags from flag service (etag 8e81140)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"data_integrity\",\"confidence\":0.9,\"evidenceLines\":[875,1058,1149,1357,1528,1202,1387,1867],\"reasoning\":\"At 09:08:39 catalog-db logged a snapshot restore that reloaded the products table (979231 rows) but left the products_id_seq sequence at 965985, below the table's actual max id. Subsequent inserts draw IDs already in use, so catalog-db rejects them with unique_violation on products_pkey (#1058, #1149). search-api maps these to 409 (#1357, #1528), and web-bff surfaces them as GET /search 500 'create failed' (#1202, #1387, #1867), which is the alert and the customer 'could not save' symptom. The status-poller legacy-inventory timeouts are unrelated noise (deprecated endpoint, no effect on the write path). The failure began right after the restore, so the restore is the origin.\",\"}, {\"rootCause\":\"config_error\",\"confidence\":0.1,\"evidenceLines\":[553,1044],\"reasoning\":\"Alternative reading: the status-poller checks a deprecated legacy-inventory endpoint that times out. This is a real misconfiguration but it does not touch the product create path and does not explain the duplicate-key errors, so it is ranked low.\"}]",
+          "recommendedAction": "Immediately reset products_id_seq to above MAX(id) in catalog-db (e.g. setval to max(id)+1, about 979232), then verify new product inserts succeed and retry failed creates. Find out who ran the snapshot restore at 09:08:39 and why, and add a post-restore sequence check to the restore runbook. Separately, retire the deprecated legacy-inventory healthcheck in status-poller."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                875,
+                1058,
+                1149,
+                1357,
+                1528,
+                1202,
+                1387,
+                1867
+              ],
+              "reasoning": "At 09:08:39 catalog-db logged a snapshot restore that reloaded the products table (979231 rows) but left the products_id_seq sequence at 965985, below the table's actual max id. Subsequent inserts draw IDs already in use, so catalog-db rejects them with unique_violation on products_pkey (#1058, #1149). search-api maps these to 409 (#1357, #1528), and web-bff surfaces them as GET /search 500 'create failed' (#1202, #1387, #1867), which is the alert and the customer 'could not save' symptom. The status-poller legacy-inventory timeouts are unrelated noise (deprecated endpoint, no effect on the write path). The failure began right after the restore, so the restore is the origin."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.1,
+              "evidenceLines": [
+                553,
+                1044
+              ],
+              "reasoning": "Alternative reading: the status-poller checks a deprecated legacy-inventory endpoint that times out. This is a real misconfiguration but it does not touch the product create path and does not explain the duplicate-key errors, so it is ranked low."
+            }
+          ],
+          "recommendedAction": "Immediately reset products_id_seq to above MAX(id) in catalog-db (e.g. setval to max(id)+1, about 979232), then verify new product inserts succeed and retry failed creates. Find out who ran the snapshot restore at 09:08:39 and why, and add a post-restore sequence check to the restore runbook. Separately, retire the deprecated legacy-inventory healthcheck in status-poller."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 3,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1627,
+      "cacheReadTokens": 15243,
+      "cacheWriteTokens": 7025
+    },
+    "durationMs": 7405,
+    "stopReason": "tool_use"
+  }
+}

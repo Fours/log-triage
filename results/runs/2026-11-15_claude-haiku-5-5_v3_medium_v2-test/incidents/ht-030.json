@@ -1,0 +1,235 @@
+{
+  "score": {
+    "incidentId": "ht-030",
+    "difficulty": "medium",
+    "scenario": "config_error/wrong-endpoint",
+    "truth": "config_error",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "config_error",
+    "confidence": 0.87,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 5,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "secondaryCited": 3,
+    "costUsd": 0.00597226,
+    "durationMs": 15283,
+    "iterations": 8,
+    "toolCalls": 14,
+    "tokens": {
+      "input": 18,
+      "output": 3036,
+      "cacheRead": 119271,
+      "cacheWrite": 26078
+    }
+  },
+  "result": {
+    "incidentId": "ht-030",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "config_error",
+          "confidence": 0.87,
+          "evidenceLines": [
+            1793,
+            1875,
+            1905,
+            1978,
+            2063
+          ],
+          "reasoning": "At 01:15:00Z search-api reloaded config (revision 747) and CATALOG_SVC_URL changed to http://catalog-svc.internal:8081. Immediately after, search-api's catalog calls begin failing with 'connection refused' to 10.23.138.197:8081 (#1875 at 01:16:03, #1905, #1978, #2063 repeat it). Before the reload, search-api was calling catalog-svc successfully (e.g. #1797, #1814, #1823 at 01:15:02-01:15:17), and catalog-svc kept logging GC and some successful batch requests through the window, so the service itself was not down. The refused connections point to a wrong endpoint/port in the changed config rather than a crashed catalog-svc. The gateway-level failures (web-bff 503 on GET /search, e.g. #1920, #2046) and edge-proxy login 500s are downstream symptoms and are not cited. The S3 PutObject 500/503 errors in auth-svc and the legacy-inventory healthcheck timeouts in status-poller are real but separate, and do not explain the /search collapse, which starts at the config reload."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.05,
+          "evidenceLines": [
+            1549,
+            1714,
+            1727
+          ],
+          "reasoning": "Alternative: auth-svc's S3 storage failures (500/503 and retry quota exhausted) cause account-svc token failures and /login 500s. This does not explain GET /search, which depends on search-api and catalog-svc, not auth, so it is a parallel problem rather than the origin of the search outage."
+        }
+      ],
+      "recommendedAction": "Roll back search-api's CATALOG_SVC_URL to the previous value (revision before 747), or correct it to catalog-svc's actual listening address/port, and confirm the config reload is applied. Then verify search-api can reach catalog-svc (GET /products/batch succeeds) and watch the /search success rate recover. Separately, investigate auth-svc's S3 PutObject failures (accounts-artifacts-prod, us-east-1) and the legacy-inventory healthcheck timeouts in status-poller, which are not part of the /search outage."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "42 match(es):\n#876 2026-11-27T01:07:38Z WARN index-worker msg-735501 from catalog.updates failed schema validation (missing field \"version\"), moved to catalog.updates.dlq\n#1549 2026-11-27T01:12:41Z ERROR auth-svc [t-8026] PutObject s3://accounts-artifacts-prod/u-8142.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id 50329D7)\n#1647 2026-11-27T01:13:34Z ERROR edge-proxy [t-8085] POST /login 500 21533ms: upstream account-svc returned 500 Internal Server Error\n#1714 2026-11-27T01:14:19Z ERROR auth-svc [t-8119] S3 upload of u-8212.json returned 503 ServiceUnavailable (us-east-1, A20C513)\n#1727 2026-11-27T01:14:24Z WARN auth-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (54 failed attempts in 60s)\n#1772 2026-11-27T01:14:48Z ERROR auth-svc [t-8160] aws-sdk PutObjectCommand failed for key u-8245.json: InternalError (HTTP 500), requestId=CD3F422\n#1812 2026-11-27T01:15:11Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1863 2026-11-27T01:15:51Z ERROR account-svc [t-8203] AuthClient.issueToken failed: auth-svc returned 500 (storage write failed)\n#1875 2026-11-27T01:16:03Z ERROR search-api [t-8206] dial tcp 10.23.138.197:8081: connect: connection refused (calling catalog-svc)\n#1905 2026-11-27T01:16:25Z ERROR search-api [t-8223] GET /products/batch to catalog-svc.internal:8081 failed: Connection refused\n#1911 2026-11-27T01:16:29Z ERROR auth-svc [t-8228] PutObject s3://accounts-artifacts-prod/u-8291.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 3280A93)\n#1918 2026-11-27T01:16:33Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1920 2026-11-27T01:16:35Z ERROR web-bff [t-8233] GET /search 503 13821ms: upstream search-api returned 503 Service Unavailable\n#1933 2026-11-27T01:16:47Z ERROR edge-proxy [t-8238] POST /login 500 28899ms: upstream account-svc returned 500 Internal Server Error\n#1969 2026-11-27T01:17:19Z ERROR edge-proxy [t-8251] POST /login 500 26912ms: upstream account-svc returned 500 Internal Server Error\n#1978 2026-11-27T01:17:26Z ERROR search-api [t-8253] CatalogClient.getBatch failed: connect ECONNREFUSED 10.23.138.197:8081 (catalog-svc.internal)\n#2002 2026-11-27T01:17:39Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2017 2026-11-27T01:17:56Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2046 2026-11-27T01:18:25Z ERROR web-bff [t-8276] GET /search 503 26731ms: upstream search-api returned 503 Service Unavailable\n#2063 2026-11-27T01:18:38Z ERROR search-api [t-8282] dial tcp 10.23.138.197:8081: connect: connection refused (calling catalog-svc)\n#2082 2026-11-27T01:18:58Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2091 2026-11-27T01:19:06Z ERROR account-svc [t-8291] AuthClient.issueToken failed: auth-svc returned 500 (storage write failed)\n#2123 2026-11-27T01:19:34Z ERROR web-bff [t-8306] GET /search 503 14209ms: upstream search-api returned 503 Service Unavailable\n#2146 2026-11-27T01:19:53Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2158 2026-11-27T01:20:04Z ERROR edge-proxy [t-8318] POST /login 500 23724ms: upstream account-svc returned 500 Internal Server Error\n#2204 2026-11-27T01:20:47Z ERROR web-bff [t-8331] GET /search 503 23802ms: upstream search-api returned 503 Service Unavailable\n#2250 2026-11-27T01:21:25Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2265 2026-11-27T01:21:38Z ERROR edge-proxy [t-8353] POST /login 500 12421ms: upstream account-svc returned 500 Internal Server Error\n#2293 2026-11-27T01:22:09Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2311 2026-11-27T01:22:29Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2347 2026-11-27T01:23:00Z ERROR web-bff [t-8372] GET /search 503 28678ms: upstream search-api returned 503 Service Unavailable\n#2368 2026-11-27T01:23:17Z ERROR account-svc [t-8381] AuthClient.issueToken failed: auth-svc returned 500 (storage write failed)\n#2402 2026-11-27T01:23:52Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2471 2026-11-27T01:24:53Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2488 2026-11-27T01:25:09Z ERROR edge-proxy [t-8416] POST /login 500 28495ms: upstream account-svc returned 500 Internal Server Error\n#2490 2026-11-27T01:25:10Z ERROR web-bff [t-8420] GET /search 503 11586ms: upstream search-api returned 503 Service Unavailable\n#2508 2026-11-27T01:25:25Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2554 2026-11-27T01:26:10Z ERROR account-svc [t-8440] AuthClient.issueToken failed: auth-svc returned 500 (storage write failed)\n#2558 2026-11-27T01:26:17Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2566 2026-11-27T01:26:23Z ERROR edge-proxy [t-8444] POST /login 500 9992ms: upstream account-svc returned 500 Internal Server Error\n#2571 2026-11-27T01:26:30Z ERROR web-bff [t-8445] GET /search 503 18027ms: upstream search-api returned 503 Service Unavailable\n#2651 2026-11-27T01:27:49Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "search-api",
+          "level": "WARN",
+          "limit": 30
+        },
+        "output": "4 match(es):\n#1875 2026-11-27T01:16:03Z ERROR search-api [t-8206] dial tcp 10.23.138.197:8081: connect: connection refused (calling catalog-svc)\n#1905 2026-11-27T01:16:25Z ERROR search-api [t-8223] GET /products/batch to catalog-svc.internal:8081 failed: Connection refused\n#1978 2026-11-27T01:17:26Z ERROR search-api [t-8253] CatalogClient.getBatch failed: connect ECONNREFUSED 10.23.138.197:8081 (catalog-svc.internal)\n#2063 2026-11-27T01:18:38Z ERROR search-api [t-8282] dial tcp 10.23.138.197:8081: connect: connection refused (calling catalog-svc)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-svc",
+          "limit": 200
+        },
+        "output": "172 match(es):\n#12 2026-11-27T01:01:05Z INFO catalog-svc [t-7089] GET /products/batch p-7392 ok 34ms\n#45 2026-11-27T01:01:20Z INFO catalog-svc [t-7109] GET /products/batch p-7407 ok 24ms\n#51 2026-11-27T01:01:22Z INFO catalog-svc [t-7112] GET /products/batch p-7413 ok 45ms\n#62 2026-11-27T01:01:27Z INFO catalog-svc [t-7121] GET /products/batch p-7419 ok 43ms\n#65 2026-11-27T01:01:29Z DEBUG catalog-svc GC pause 12ms (young), heap 33%\n#69 2026-11-27T01:01:31Z INFO catalog-svc [t-7128] GET /products/batch p-7422 ok 72ms\n#99 2026-11-27T01:01:45Z INFO catalog-svc [t-7142] GET /products/batch p-7433 ok 45ms\n#108 2026-11-27T01:01:50Z DEBUG catalog-svc GC pause 25ms (young), heap 45%\n#129 2026-11-27T01:01:59Z INFO catalog-svc [t-7162] GET /products/batch p-7450 ok 37ms\n#153 2026-11-27T01:02:12Z DEBUG catalog-svc GC pause 24ms (young), heap 42%\n#193 2026-11-27T01:02:32Z DEBUG catalog-svc GC pause 14ms (young), heap 34%\n#207 2026-11-27T01:02:38Z INFO catalog-svc [t-7215] GET /products/batch p-7492 ok 40ms\n#225 2026-11-27T01:02:44Z INFO catalog-svc [t-7227] GET /products/batch p-7500 ok 88ms\n#229 2026-11-27T01:02:47Z INFO catalog-svc [t-7228] GET /products/batch p-7502 ok 33ms\n#237 2026-11-27T01:02:50Z INFO catalog-svc [t-7231] GET /products/batch p-7507 ok 48ms\n#247 2026-11-27T01:02:54Z INFO catalog-svc [t-7238] GET /products/batch p-7510 ok 26ms\n#260 2026-11-27T01:03:02Z INFO catalog-svc [t-7243] GET /products/batch p-7516 ok 84ms\n#266 2026-11-27T01:03:05Z INFO catalog-svc [t-7247] GET /products/batch p-7519 ok 33ms\n#271 2026-11-27T01:03:05Z DEBUG catalog-svc GC pause 11ms (young), heap 38%\n#280 2026-11-27T01:03:09Z INFO catalog-svc [t-7253] GET /products/batch p-7525 ok 29ms\n#298 2026-11-27T01:03:17Z INFO catalog-svc [t-7265] GET /products/batch p-7537 ok 37ms\n#306 2026-11-27T01:03:20Z INFO catalog-svc [t-7273] GET /products/batch p-7543 ok 78ms\n#320 2026-11-27T01:03:27Z DEBUG catalog-svc GC pause 7ms (young), heap 44%\n#328 2026-11-27T01:03:30Z INFO catalog-svc [t-7283] GET /products/batch p-7555 ok 86ms\n#346 2026-11-27T01:03:39Z INFO catalog-svc [t-7297] GET /products/batch p-7563 ok 24ms\n#352 2026-11-27T01:03:42Z INFO catalog-svc [t-7299] GET /products/batch p-7564 ok 28ms\n#368 2026-11-27T01:03:50Z INFO catalog-svc [t-7306] GET /products/batch p-7568 ok 44ms\n#375 2026-11-27T01:03:52Z INFO catalog-svc [t-7312] GET /products/batch p-7572 ok 81ms\n#377 2026-11-27T01:03:54Z DEBUG catalog-svc GC pause 15ms (young), heap 44%\n#384 2026-11-27T01:03:57Z INFO catalog-svc [t-7320] GET /products/batch p-7576 ok 31ms\n#391 2026-11-27T01:04:00Z INFO catalog-svc [t-7322] GET /products/batch p-7579 ok 26ms\n#399 2026-11-27T01:04:03Z INFO catalog-svc [t-7326] GET /products/batch p-7583 ok 53ms\n#415 2026-11-27T01:04:10Z INFO catalog-svc [t-7337] GET /products/batch p-7592 ok 87ms\n#438 2026-11-27T01:04:23Z DEBUG catalog-svc GC pause 22ms (young), heap 42%\n#445 2026-11-27T01:04:27Z INFO catalog-svc [t-7352] GET /products/batch p-7607 ok 87ms\n#456 2026-11-27T01:04:31Z INFO catalog-svc [t-7362] GET /products/batch p-7612 ok 56ms\n#487 2026-11-27T01:04:45Z INFO catalog-svc [t-7384] GET /products/batch p-7629 ok 75ms\n#496 2026-11-27T01:04:49Z INFO catalog-svc [t-7389] GET /products/batch p-7633 ok 69ms\n#502 2026-11-27T01:04:52Z INFO catalog-svc [t-7395] GET /products/batch p-7638 ok 33ms\n#504 2026-11-27T01:04:52Z DEBUG catalog-svc GC pause 14ms (young), heap 43%\n#512 2026-11-27T01:04:55Z INFO catalog-svc [t-7398] GET /products/batch p-7642 ok 40ms\n#518 2026-11-27T01:04:57Z INFO catalog-svc [t-7401] GET /products/batch p-7647 ok 28ms\n#547 2026-11-27T01:05:09Z INFO catalog-svc [t-7423] GET /products/batch p-7660 ok 54ms\n#554 2026-11-27T01:05:14Z INFO catalog-svc [t-7425] GET /products/batch p-7664 ok 30ms\n#566 2026-11-27T01:05:18Z DEBUG catalog-svc GC pause 21ms (young), heap 43%\n#571 2026-11-27T01:05:22Z INFO catalog-svc [t-7434] GET /products/batch p-7673 ok 21ms\n#577 2026-11-27T01:05:24Z INFO catalog-svc [t-7435] GET /products/batch p-7674 ok 62ms\n#585 2026-11-27T01:05:30Z INFO catalog-svc [t-7439] GET /products/batch p-7678 ok 45ms\n#595 2026-11-27T01:05:32Z INFO catalog-svc [t-7442] GET /products/batch p-7683 ok 29ms\n#602 2026-11-27T01:05:35Z INFO catalog-svc [t-7444] GET /products/batch p-7685 ok 74ms\n#618 2026-11-27T01:05:43Z INFO catalog-svc [t-7459] GET /products/batch p-7692 ok 65ms\n#632 2026-11-27T01:05:49Z INFO catalog-svc [t-7468] GET /products/batch p-7698 ok 51ms\n#636 2026-11-27T01:05:50Z DEBUG catalog-svc GC pause 12ms (young), heap 34%\n#645 2026-11-27T01:05:55Z INFO catalog-svc [t-7474] GET /products/batch p-7703 ok 51ms\n#682 2026-11-27T01:06:12Z INFO catalog-svc [t-7497] GET /products/batch p-7724 ok 76ms\n#686 2026-11-27T01:06:15Z INFO catalog-svc [t-7500] GET /products/batch p-7725 ok 50ms\n#695 2026-11-27T01:06:19Z DEBUG catalog-svc GC pause 5ms (young), heap 34%\n#728 2026-11-27T01:06:33Z INFO catalog-svc [t-7533] GET /products/batch p-7746 ok 30ms\n#735 2026-11-27T01:06:36Z INFO catalog-svc [t-7539] GET /products/batch p-7749 ok 28ms\n#766 2026-11-27T01:06:49Z INFO catalog-svc [t-7556] GET /products/batch p-7765 ok 89ms\n#768 2026-11-27T01:06:49Z DEBUG catalog-svc GC pause 20ms (young), heap 31%\n#777 2026-11-27T01:06:54Z INFO catalog-svc [t-7561] GET /products/batch p-7771 ok 22ms\n#785 2026-11-27T01:06:57Z INFO catalog-svc [t-7563] GET /products/batch p-7777 ok 41ms\n#815 2026-11-27T01:07:12Z DEBUG catalog-svc GC pause 20ms (young), heap 33%\n#819 2026-11-27T01:07:13Z INFO catalog-svc [t-7584] GET /products/batch p-7795 ok 39ms\n#850 2026-11-27T01:07:25Z INFO catalog-svc [t-7606] GET /products/batch p-7811 ok 39ms\n#859 2026-11-27T01:07:30Z INFO catalog-svc [t-7611] GET /products/batch p-7814 ok 75ms\n#861 2026-11-27T01:07:31Z DEBUG catalog-svc GC pause 10ms (young), heap 44%\n#925 2026-11-27T01:08:03Z INFO catalog-svc [t-7654] GET /products/batch p-7845 ok 67ms\n#934 2026-11-27T01:08:06Z DEBUG catalog-svc GC pause 13ms (young), heap 37%\n#948 2026-11-27T01:08:12Z INFO catalog-svc [t-7666] GET /products/batch p-7854 ok 89ms\n#962 2026-11-27T01:08:19Z INFO catalog-svc [t-7676] GET /products/batch p-7858 ok 60ms\n#969 2026-11-27T01:08:22Z INFO catalog-svc [t-7681] GET /products/batch p-7862 ok 22ms\n#980 2026-11-27T01:08:26Z DEBUG catalog-svc GC pause 17ms (young), heap 42%\n#997 2026-11-27T01:08:36Z INFO catalog-svc [t-7698] GET /products/batch p-7877 ok 47ms\n#1004 2026-11-27T01:08:38Z INFO catalog-svc [t-7706] GET /products/batch p-7881 ok 27ms\n#1020 2026-11-27T01:08:45Z DEBUG catalog-svc GC pause 13ms (young), heap 43%\n#1033 2026-11-27T01:08:51Z INFO catalog-svc [t-7721] GET /products/batch p-7891 ok 26ms\n#1042 2026-11-27T01:08:54Z INFO catalog-svc [t-7723] GET /products/batch p-7895 ok 60ms\n#1050 2026-11-27T01:08:56Z INFO catalog-svc [t-7729] GET /products/batch p-7901 ok 90ms\n#1070 2026-11-27T01:09:06Z INFO catalog-svc [t-7744] GET /products/batch p-7911 ok 35ms\n#1075 2026-11-27T01:09:07Z INFO catalog-svc [t-7752] GET /products/batch p-7916 ok 75ms\n#1087 2026-11-27T01:09:13Z DEBUG catalog-svc GC pause 22ms (young), heap 43%\n#1100 2026-11-27T01:09:18Z INFO catalog-svc [t-7761] GET /products/batch p-7925 ok 79ms\n#1116 2026-11-27T01:09:25Z INFO catalog-svc [t-7773] GET /products/batch p-7936 ok 80ms\n#1130 2026-11-27T01:09:33Z DEBUG catalog-svc GC pause 17ms (young), heap 39%\n#1157 2026-11-27T01:09:43Z INFO catalog-svc [t-7793] GET /products/batch p-7953 ok 48ms\n#1172 2026-11-27T01:09:52Z DEBUG catalog-svc GC pause 5ms (young), heap 39%\n#1194 2026-11-27T01:10:01Z INFO catalog-svc [t-7813] GET /products/batch p-7970 ok 47ms\n#1203 2026-11-27T01:10:06Z INFO catalog-svc [t-7819] GET /products/batch p-7975 ok 27ms\n#1210 2026-11-27T01:10:10Z INFO catalog-svc [t-7824] GET /products/batch p-7979 ok 29ms\n#1216 2026-11-27T01:10:12Z DEBUG catalog-svc GC pause 6ms (young), heap 35%\n#1222 2026-11-27T01:10:14Z INFO catalog-svc [t-7833] GET /products/batch p-7985 ok 62ms\n#1250 2026-11-27T01:10:26Z INFO catalog-svc [t-7854] GET /products/batch p-7997 ok 73ms\n#1274 2026-11-27T01:10:37Z DEBUG catalog-svc GC pause 14ms (young), heap 32%\n#1277 2026-11-27T01:10:38Z INFO catalog-svc [t-7865] GET /products/batch p-8007 ok 61ms\n#1293 2026-11-27T01:10:46Z INFO catalog-svc [t-7876] GET /products/batch p-8015 ok 56ms\n#1305 2026-11-27T01:10:49Z INFO catalog-svc [t-7881] GET /products/batch p-8017 ok 61ms\n#1311 2026-11-27T01:10:53Z INFO catalog-svc [t-7883] GET /products/batch p-8021 ok 72ms\n#1333 2026-11-27T01:11:01Z INFO catalog-svc [t-7892] GET /products/batch p-8028 ok 31ms\n#1345 2026-11-27T01:11:07Z INFO catalog-svc [t-7899] GET /products/batch p-8032 ok 27ms\n#1351 2026-11-27T01:11:11Z DEBUG catalog-svc GC pause 19ms (young), heap 36%\n#1354 2026-11-27T01:11:12Z INFO catalog-svc [t-7904] GET /products/batch p-8038 ok 60ms\n#1372 2026-11-27T01:11:20Z INFO catalog-svc [t-7918] GET /products/batch p-8052 ok 51ms\n#1384 2026-11-27T01:11:24Z INFO catalog-svc [t-7924] GET /products/batch p-8057 ok 45ms\n#1401 2026-11-27T01:11:32Z INFO catalog-svc [t-7931] GET /products/batch p-8065 ok 76ms\n#1417 2026-11-27T01:11:40Z DEBUG catalog-svc GC pause 13ms (young), heap 41%\n#1436 2026-11-27T01:11:51Z INFO catalog-svc [t-7951] GET /products/batch p-8084 ok 27ms\n#1451 2026-11-27T01:11:57Z INFO catalog-svc [t-7963] GET /products/batch p-8092 ok 82ms\n#1458 2026-11-27T01:11:59Z INFO catalog-svc [t-7967] GET /products/batch p-8095 ok 84ms\n#1467 2026-11-27T01:12:05Z DEBUG catalog-svc GC pause 22ms (young), heap 36%\n#1504 2026-11-27T01:12:18Z INFO catalog-svc [t-7995] GET /products/batch p-8118 ok 71ms\n#1518 2026-11-27T01:12:28Z INFO catalog-svc [t-8007] GET /products/batch p-8124 ok 88ms\n#1524 2026-11-27T01:12:30Z INFO catalog-svc [t-8011] GET /products/batch p-8130 ok 50ms\n#1532 2026-11-27T01:12:33Z INFO catalog-svc [t-8014] GET /products/batch p-8134 ok 83ms\n#1540 2026-11-27T01:12:36Z INFO catalog-svc [t-8020] GET /products/batch p-8138 ok 66ms\n#1544 2026-11-27T01:12:38Z INFO catalog-svc [t-8022] GET /products/batch p-8140 ok 77ms\n#1547 2026-11-27T01:12:38Z DEBUG catalog-svc GC pause 10ms (young), heap 41%\n#1579 2026-11-27T01:12:55Z INFO catalog-svc [t-8043] GET /products/batch p-8156 ok 90ms\n#1587 2026-11-27T01:12:59Z INFO catalog-svc [t-8048] GET /products/batch p-8161 ok 24ms\n#1594 2026-11-27T01:13:04Z INFO catalog-svc [t-8050] GET /products/batch p-8164 ok 63ms\n#1603 2026-11-27T01:13:08Z DEBUG catalog-svc GC pause 11ms (young), heap 39%\n#1611 2026-11-27T01:13:13Z INFO catalog-svc [t-8065] GET /products/batch p-8174 ok 35ms\n#1622 2026-11-27T01:13:16Z INFO catalog-svc [t-8071] GET /products/batch p-8178 ok 77ms\n#1635 2026-11-27T01:13:26Z INFO catalog-svc [t-8078] GET /products/batch p-8183 ok 36ms\n#1641 2026-11-27T01:13:30Z INFO catalog-svc [t-8080] GET /products/batch p-8186 ok 42ms\n#1660 2026-11-27T01:13:43Z DEBUG catalog-svc GC pause 19ms (young), heap 35%\n#1677 2026-11-27T01:13:52Z INFO catalog-svc [t-8100] GET /products/batch p-8200 ok 49ms\n#1687 2026-11-27T01:14:00Z INFO catalog-svc [t-8104] GET /products/batch p-8203 ok 89ms\n#1690 2026-11-27T01:14:03Z INFO catalog-svc [t-8107] GET /products/batch p-8206 ok 78ms\n#1708 2026-11-27T01:14:17Z DEBUG catalog-svc GC pause 15ms (young), heap 45%\n#1717 2026-11-27T01:14:20Z INFO catalog-svc [t-8123] GET /products/batch p-8215 ok 75ms\n#1724 2026-11-27T01:14:24Z INFO catalog-svc [t-8127] GET /products/batch p-8219 ok 53ms\n#1731 2026-11-27T01:14:28Z INFO catalog-svc [t-8130] GET /products/batch p-8222 ok 21ms\n#1748 2026-11-27T01:14:35Z INFO catalog-svc [t-8141] GET /products/batch p-8236 ok 39ms\n#1754 2026-11-27T01:14:40Z DEBUG catalog-svc GC pause 14ms (young), heap 43%\n#1756 2026-11-27T01:14:40Z INFO catalog-svc [t-8148] GET /products/batch p-8241 ok 23ms\n#1766 2026-11-27T01:14:45Z INFO catalog-svc [t-8156] GET /products/batch p-8244 ok 25ms\n#1774 2026-11-27T01:14:50Z INFO catalog-svc [t-8163] GET /products/batch p-8248 ok 34ms\n#1798 2026-11-27T01:15:02Z INFO catalog-svc [t-8178] GET /products/batch p-8258 ok 70ms\n#1815 2026-11-27T01:15:12Z DEBUG catalog-svc GC pause 4ms (young), heap 39%\n#1824 2026-11-27\n[output truncated at 12000 chars — narrow the query or lower the limit]"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "search-api",
+          "until": "01:16:10",
+          "limit": 60
+        },
+        "output": "274 match(es), showing first 60:\n#1 2026-11-27T01:01:00Z INFO search-api [t-7082] product p-7386 accepted, calling catalog-svc GET /products/batch\n#4 2026-11-27T01:01:01Z DEBUG search-api GC pause 11ms (young), heap 47%\n#6 2026-11-27T01:01:02Z INFO search-api [t-7085] product p-7388 accepted, calling catalog-svc GET /products/batch\n#11 2026-11-27T01:01:05Z INFO search-api [t-7089] product p-7392 accepted, calling catalog-svc GET /products/batch\n#18 2026-11-27T01:01:10Z INFO search-api [t-7093] product p-7397 accepted, calling catalog-svc GET /products/batch\n#27 2026-11-27T01:01:12Z INFO search-api [t-7098] product p-7400 accepted, calling catalog-svc GET /products/batch\n#31 2026-11-27T01:01:14Z INFO search-api [t-7101] product p-7402 accepted, calling catalog-svc GET /products/batch\n#44 2026-11-27T01:01:20Z INFO search-api [t-7109] product p-7407 accepted, calling catalog-svc GET /products/batch\n#47 2026-11-27T01:01:21Z DEBUG search-api GC pause 23ms (young), heap 40%\n#50 2026-11-27T01:01:22Z INFO search-api [t-7112] product p-7413 accepted, calling catalog-svc GET /products/batch\n#61 2026-11-27T01:01:27Z INFO search-api [t-7121] product p-7419 accepted, calling catalog-svc GET /products/batch\n#68 2026-11-27T01:01:31Z INFO search-api [t-7128] product p-7422 accepted, calling catalog-svc GET /products/batch\n#78 2026-11-27T01:01:35Z INFO search-api [t-7134] product p-7427 accepted, calling catalog-svc GET /products/batch\n#87 2026-11-27T01:01:38Z INFO search-api [t-7136] product p-7429 accepted, calling catalog-svc GET /products/batch\n#92 2026-11-27T01:01:41Z INFO search-api [t-7139] product p-7432 accepted, calling catalog-svc GET /products/batch\n#98 2026-11-27T01:01:45Z INFO search-api [t-7142] product p-7433 accepted, calling catalog-svc GET /products/batch\n#102 2026-11-27T01:01:46Z DEBUG search-api GC pause 23ms (young), heap 42%\n#105 2026-11-27T01:01:47Z INFO search-api [t-7146] product p-7438 accepted, calling catalog-svc GET /products/batch\n#111 2026-11-27T01:01:51Z INFO search-api [t-7150] product p-7439 accepted, calling catalog-svc GET /products/batch\n#122 2026-11-27T01:01:57Z INFO search-api [t-7157] product p-7445 accepted, calling catalog-svc GET /products/batch\n#128 2026-11-27T01:01:59Z INFO search-api [t-7162] product p-7450 accepted, calling catalog-svc GET /products/batch\n#135 2026-11-27T01:02:04Z INFO search-api [t-7168] product p-7453 accepted, calling catalog-svc GET /products/batch\n#147 2026-11-27T01:02:09Z INFO search-api [t-7170] product p-7458 accepted, calling catalog-svc GET /products/batch\n#154 2026-11-27T01:02:12Z INFO search-api [t-7178] product p-7462 accepted, calling catalog-svc GET /products/batch\n#156 2026-11-27T01:02:13Z DEBUG search-api GC pause 23ms (young), heap 44%\n#160 2026-11-27T01:02:15Z INFO search-api [t-7183] product p-7467 accepted, calling catalog-svc GET /products/batch\n#164 2026-11-27T01:02:18Z INFO search-api [t-7185] product p-7469 accepted, calling catalog-svc GET /products/batch\n#174 2026-11-27T01:02:24Z INFO search-api [t-7192] product p-7476 accepted, calling catalog-svc GET /products/batch\n#182 2026-11-27T01:02:27Z INFO search-api [t-7198] product p-7479 accepted, calling catalog-svc GET /products/batch\n#194 2026-11-27T01:02:32Z INFO search-api [t-7207] product p-7487 accepted, calling catalog-svc GET /products/batch\n#206 2026-11-27T01:02:38Z INFO search-api [t-7215] product p-7492 accepted, calling catalog-svc GET /products/batch\n#212 2026-11-27T01:02:40Z INFO search-api [t-7218] product p-7493 accepted, calling catalog-svc GET /products/batch\n#214 2026-11-27T01:02:40Z DEBUG search-api GC pause 25ms (young), heap 39%\n#224 2026-11-27T01:02:44Z INFO search-api [t-7227] product p-7500 accepted, calling catalog-svc GET /products/batch\n#228 2026-11-27T01:02:47Z INFO search-api [t-7228] product p-7502 accepted, calling catalog-svc GET /products/batch\n#236 2026-11-27T01:02:50Z INFO search-api [t-7231] product p-7507 accepted, calling catalog-svc GET /products/batch\n#246 2026-11-27T01:02:54Z INFO search-api [t-7238] product p-7510 accepted, calling catalog-svc GET /products/batch\n#254 2026-11-27T01:02:57Z INFO search-api [t-7240] product p-7513 accepted, calling catalog-svc GET /products/batch\n#259 2026-11-27T01:03:02Z INFO search-api [t-7243] product p-7516 accepted, calling catalog-svc GET /products/batch\n#265 2026-11-27T01:03:04Z INFO search-api [t-7247] product p-7519 accepted, calling catalog-svc GET /products/batch\n#267 2026-11-27T01:03:05Z DEBUG search-api GC pause 21ms (young), heap 40%\n#279 2026-11-27T01:03:09Z INFO search-api [t-7253] product p-7525 accepted, calling catalog-svc GET /products/batch\n#291 2026-11-27T01:03:14Z INFO search-api [t-7261] product p-7532 accepted, calling catalog-svc GET /products/batch\n#297 2026-11-27T01:03:17Z INFO search-api [t-7265] product p-7537 accepted, calling catalog-svc GET /products/batch\n#305 2026-11-27T01:03:20Z INFO search-api [t-7273] product p-7543 accepted, calling catalog-svc GET /products/batch\n#310 2026-11-27T01:03:22Z INFO search-api [t-7276] product p-7546 accepted, calling catalog-svc GET /products/batch\n#317 2026-11-27T01:03:26Z INFO search-api [t-7279] product p-7549 accepted, calling catalog-svc GET /products/batch\n#327 2026-11-27T01:03:30Z INFO search-api [t-7283] product p-7555 accepted, calling catalog-svc GET /products/batch\n#336 2026-11-27T01:03:34Z INFO search-api [t-7293] product p-7561 accepted, calling catalog-svc GET /products/batch\n#343 2026-11-27T01:03:38Z DEBUG search-api GC pause 17ms (young), heap 42%\n#345 2026-11-27T01:03:39Z INFO search-api [t-7297] product p-7563 accepted, calling catalog-svc GET /products/batch\n#351 2026-11-27T01:03:42Z INFO search-api [t-7299] product p-7564 accepted, calling catalog-svc GET /products/batch\n#358 2026-11-27T01:03:46Z INFO search-api [t-7303] product p-7566 accepted, calling catalog-svc GET /products/batch\n#367 2026-11-27T01:03:50Z INFO search-api [t-7306] product p-7568 accepted, calling catalog-svc GET /products/batch\n#373 2026-11-27T01:03:52Z INFO search-api [t-7312] product p-7572 accepted, calling catalog-svc GET /products/batch\n#383 2026-11-27T01:03:57Z INFO search-api [t-7320] product p-7576 accepted, calling catalog-svc GET /products/batch\n#390 2026-11-27T01:04:00Z INFO search-api [t-7322] product p-7579 accepted, calling catalog-svc GET /products/batch\n#398 2026-11-27T01:04:03Z INFO search-api [t-7326] product p-7583 accepted, calling catalog-svc GET /products/batch\n#401 2026-11-27T01:04:03Z DEBUG search-api GC pause 5ms (young), heap 43%\n#404 2026-11-27T01:04:06Z INFO search-api [t-7328] product p-7585 accepted, calling catalog-svc GET /products/batch"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-svc",
+          "since": "01:15:00",
+          "until": "01:17:00",
+          "limit": 100
+        },
+        "output": "6 match(es):\n#1798 2026-11-27T01:15:02Z INFO catalog-svc [t-8178] GET /products/batch p-8258 ok 70ms\n#1815 2026-11-27T01:15:12Z DEBUG catalog-svc GC pause 4ms (young), heap 39%\n#1824 2026-11-27T01:15:18Z INFO catalog-svc [t-8191] GET /products/batch p-8270 ok 74ms\n#1855 2026-11-27T01:15:43Z DEBUG catalog-svc GC pause 25ms (young), heap 29%\n#1878 2026-11-27T01:16:05Z DEBUG catalog-svc GC pause 20ms (young), heap 36%\n#1924 2026-11-27T01:16:39Z DEBUG catalog-svc GC pause 25ms (young), heap 38%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "listen",
+          "limit": 50
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1875,
+          "before": 15,
+          "after": 10
+        },
+        "output": "#1860 2026-11-27T01:15:48Z DEBUG auth-svc GC pause 24ms (young), heap 29%\n#1861 2026-11-27T01:15:48Z INFO redis-cache stats: hits=13905 misses=691 evicted=0 connected_clients=32\n#1862 2026-11-27T01:15:50Z INFO webhook-dispatcher delivered 122 webhooks (p95 234ms)\n#1863 2026-11-27T01:15:51Z ERROR account-svc [t-8203] AuthClient.issueToken failed: auth-svc returned 500 (storage write failed)\n#1864 2026-11-27T01:15:52Z INFO account-svc [t-8205] user u-8282 accepted, calling auth-svc POST /tokens\n#1865 2026-11-27T01:15:52Z INFO auth-svc [t-8205] POST /tokens u-8282 ok 78ms\n#1866 2026-11-27T01:15:53Z INFO edge-proxy [t-8205] POST /login 200 108ms\n#1867 2026-11-27T01:15:53Z INFO audit-consumer processed batch of 108 messages from audit.events (lag 231ms)\n#1868 2026-11-27T01:15:53Z INFO index-worker processed batch of 118 messages from catalog.updates (lag 375ms)\n#1869 2026-11-27T01:15:55Z INFO session-cache stats: hits=18856 misses=323 evicted=0 connected_clients=31\n#1870 2026-11-27T01:15:58Z INFO audit-consumer processed batch of 108 messages from audit.events (lag 268ms)\n#1871 2026-11-27T01:16:00Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 39\n#1872 2026-11-27T01:16:00Z DEBUG account-svc GC pause 18ms (young), heap 31%\n#1873 2026-11-27T01:16:02Z INFO accounts-db checkpoint complete: wrote 202 buffers (6.8%)\n#1874 2026-11-27T01:16:02Z INFO index-worker processed batch of 40 messages from catalog.updates (lag 61ms)\n#1875 2026-11-27T01:16:03Z ERROR search-api [t-8206] dial tcp 10.23.138.197:8081: connect: connection refused (calling catalog-svc)\n#1876 2026-11-27T01:16:04Z INFO status-poller poll cycle complete: 33 targets checked in 528ms\n#1877 2026-11-27T01:16:04Z INFO redis-cache stats: hits=8951 misses=489 evicted=0 connected_clients=44\n#1878 2026-11-27T01:16:05Z DEBUG catalog-svc GC pause 20ms (young), heap 36%\n#1879 2026-11-27T01:16:06Z INFO audit-consumer processed batch of 54 messages from audit.events (lag 257ms)\n#1880 2026-11-27T01:16:06Z DEBUG search-api GC pause 7ms (young), heap 35%\n#1881 2026-11-27T01:16:06Z INFO account-svc [t-8208] user u-8284 accepted, calling auth-svc POST /tokens\n#1882 2026-11-27T01:16:06Z INFO auth-svc [t-8208] POST /tokens u-8284 ok 84ms\n#1883 2026-11-27T01:16:06Z INFO edge-proxy [t-8208] POST /login 200 137ms\n#1884 2026-11-27T01:16:09Z INFO index-worker processed batch of 111 messages from catalog.updates (lag 260ms)\n#1885 2026-11-27T01:16:10Z DEBUG auth-svc GC pause 21ms (young), heap 43%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-svc",
+          "since": "01:15:19",
+          "limit": 100
+        },
+        "output": "30 match(es):\n#1855 2026-11-27T01:15:43Z DEBUG catalog-svc GC pause 25ms (young), heap 29%\n#1878 2026-11-27T01:16:05Z DEBUG catalog-svc GC pause 20ms (young), heap 36%\n#1924 2026-11-27T01:16:39Z DEBUG catalog-svc GC pause 25ms (young), heap 38%\n#1964 2026-11-27T01:17:13Z DEBUG catalog-svc GC pause 18ms (young), heap 32%\n#1998 2026-11-27T01:17:38Z INFO catalog-svc [t-8264] GET /products/batch p-8317 ok 26ms\n#2004 2026-11-27T01:17:43Z DEBUG catalog-svc GC pause 22ms (young), heap 45%\n#2024 2026-11-27T01:18:04Z DEBUG catalog-svc GC pause 17ms (young), heap 38%\n#2061 2026-11-27T01:18:36Z DEBUG catalog-svc GC pause 24ms (young), heap 33%\n#2096 2026-11-27T01:19:10Z DEBUG catalog-svc GC pause 16ms (young), heap 37%\n#2118 2026-11-27T01:19:31Z DEBUG catalog-svc GC pause 24ms (young), heap 39%\n#2147 2026-11-27T01:19:55Z DEBUG catalog-svc GC pause 16ms (young), heap 42%\n#2178 2026-11-27T01:20:25Z DEBUG catalog-svc GC pause 12ms (young), heap 32%\n#2212 2026-11-27T01:20:51Z DEBUG catalog-svc GC pause 6ms (young), heap 34%\n#2252 2026-11-27T01:21:27Z DEBUG catalog-svc GC pause 24ms (young), heap 32%\n#2271 2026-11-27T01:21:46Z DEBUG catalog-svc GC pause 20ms (young), heap 45%\n#2292 2026-11-27T01:22:09Z DEBUG catalog-svc GC pause 7ms (young), heap 31%\n#2326 2026-11-27T01:22:42Z DEBUG catalog-svc GC pause 20ms (young), heap 32%\n#2328 2026-11-27T01:22:43Z INFO catalog-svc [t-8366] GET /products/batch p-8387 ok 37ms\n#2361 2026-11-27T01:23:14Z DEBUG catalog-svc GC pause 18ms (young), heap 43%\n#2395 2026-11-27T01:23:45Z DEBUG catalog-svc GC pause 15ms (young), heap 45%\n#2424 2026-11-27T01:24:07Z DEBUG catalog-svc GC pause 4ms (young), heap 40%\n#2441 2026-11-27T01:24:29Z INFO catalog-svc [t-8402] GET /products/batch p-8414 ok 22ms\n#2450 2026-11-27T01:24:34Z DEBUG catalog-svc GC pause 18ms (young), heap 43%\n#2480 2026-11-27T01:25:00Z DEBUG catalog-svc GC pause 10ms (young), heap 29%\n#2513 2026-11-27T01:25:31Z DEBUG catalog-svc GC pause 19ms (young), heap 44%\n#2534 2026-11-27T01:25:51Z DEBUG catalog-svc GC pause 18ms (young), heap 34%\n#2567 2026-11-27T01:26:24Z DEBUG catalog-svc GC pause 9ms (young), heap 34%\n#2597 2026-11-27T01:26:57Z DEBUG catalog-svc GC pause 17ms (young), heap 28%\n#2624 2026-11-27T01:27:24Z DEBUG catalog-svc GC pause 10ms (young), heap 31%\n#2647 2026-11-27T01:27:47Z DEBUG catalog-svc GC pause 5ms (young), heap 28%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "catalog",
+          "since": "01:14:30",
+          "until": "01:16:30",
+          "limit": 80
+        },
+        "output": "34 match(es):\n#1738 2026-11-27T01:14:31Z INFO search-api [t-8135] product p-8227 accepted, calling catalog-svc GET /products/batch\n#1744 2026-11-27T01:14:34Z INFO index-worker processed batch of 38 messages from catalog.updates (lag 265ms)\n#1746 2026-11-27T01:14:35Z INFO search-api [t-8141] product p-8236 accepted, calling catalog-svc GET /products/batch\n#1750 2026-11-27T01:14:37Z INFO search-api [t-8144] product p-8238 accepted, calling catalog-svc GET /products/batch\n#1755 2026-11-27T01:14:40Z INFO search-api [t-8148] product p-8241 accepted, calling catalog-svc GET /products/batch\n#1761 2026-11-27T01:14:41Z DEBUG web-bff upstream health: search-api ok, catalog-svc ok\n#1763 2026-11-27T01:14:43Z INFO index-worker processed batch of 94 messages from catalog.updates (lag 387ms)\n#1765 2026-11-27T01:14:45Z INFO search-api [t-8156] product p-8244 accepted, calling catalog-svc GET /products/batch\n#1773 2026-11-27T01:14:49Z INFO search-api [t-8163] product p-8248 accepted, calling catalog-svc GET /products/batch\n#1777 2026-11-27T01:14:50Z INFO index-worker processed batch of 96 messages from catalog.updates (lag 324ms)\n#1779 2026-11-27T01:14:53Z INFO search-api [t-8165] product p-8250 accepted, calling catalog-svc GET /products/batch\n#1782 2026-11-27T01:14:55Z INFO search-api [t-8168] product p-8252 accepted, calling catalog-svc GET /products/batch\n#1787 2026-11-27T01:14:58Z INFO search-api [t-8173] product p-8256 accepted, calling catalog-svc GET /products/batch\n#1788 2026-11-27T01:14:58Z INFO index-worker processed batch of 97 messages from catalog.updates (lag 395ms)\n#1793 2026-11-27T01:15:00Z INFO search-api config reloaded from config-service (revision 747): 1 key changed: CATALOG_SVC_URL=http://catalog-svc.internal:8081\n#1797 2026-11-27T01:15:02Z INFO search-api [t-8178] product p-8258 accepted, calling catalog-svc GET /products/batch\n#1802 2026-11-27T01:15:04Z INFO index-worker processed batch of 88 messages from catalog.updates (lag 62ms)\n#1803 2026-11-27T01:15:05Z DEBUG web-bff upstream health: search-api ok, catalog-svc ok\n#1804 2026-11-27T01:15:05Z INFO search-api [t-8181] product p-8261 accepted, calling catalog-svc GET /products/batch\n#1806 2026-11-27T01:15:08Z INFO search-api [t-8184] product p-8262 accepted, calling catalog-svc GET /products/batch\n#1811 2026-11-27T01:15:10Z INFO index-worker processed batch of 66 messages from catalog.updates (lag 377ms)\n#1814 2026-11-27T01:15:12Z INFO search-api [t-8187] product p-8266 accepted, calling catalog-svc GET /products/batch\n#1823 2026-11-27T01:15:17Z INFO search-api [t-8191] product p-8270 accepted, calling catalog-svc GET /products/batch\n#1830 2026-11-27T01:15:18Z INFO index-worker processed batch of 72 messages from catalog.updates (lag 116ms)\n#1838 2026-11-27T01:15:27Z INFO index-worker processed batch of 40 messages from catalog.updates (lag 237ms)\n#1847 2026-11-27T01:15:34Z INFO index-worker processed batch of 77 messages from catalog.updates (lag 329ms)\n#1856 2026-11-27T01:15:44Z INFO index-worker processed batch of 74 messages from catalog.updates (lag 55ms)\n#1868 2026-11-27T01:15:53Z INFO index-worker processed batch of 118 messages from catalog.updates (lag 375ms)\n#1874 2026-11-27T01:16:02Z INFO index-worker processed batch of 40 messages from catalog.updates (lag 61ms)\n#1875 2026-11-27T01:16:03Z ERROR search-api [t-8206] dial tcp 10.23.138.197:8081: connect: connection refused (calling catalog-svc)\n#1884 2026-11-27T01:16:09Z INFO index-worker processed batch of 111 messages from catalog.updates (lag 260ms)\n#1894 2026-11-27T01:16:15Z INFO index-worker processed batch of 49 messages from catalog.updates (lag 326ms)\n#1903 2026-11-27T01:16:23Z INFO index-worker processed batch of 93 messages from catalog.updates (lag 153ms)\n#1905 2026-11-27T01:16:25Z ERROR search-api [t-8223] GET /products/batch to catalog-svc.internal:8081 failed: Connection refused"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "8081",
+          "limit": 80
+        },
+        "output": "6 match(es):\n#1425 2026-11-27T01:11:46Z INFO search-api [t-7946] product p-8081 accepted, calling catalog-svc GET /products/batch\n#1793 2026-11-27T01:15:00Z INFO search-api config reloaded from config-service (revision 747): 1 key changed: CATALOG_SVC_URL=http://catalog-svc.internal:8081\n#1875 2026-11-27T01:16:03Z ERROR search-api [t-8206] dial tcp 10.23.138.197:8081: connect: connection refused (calling catalog-svc)\n#1905 2026-11-27T01:16:25Z ERROR search-api [t-8223] GET /products/batch to catalog-svc.internal:8081 failed: Connection refused\n#1978 2026-11-27T01:17:26Z ERROR search-api [t-8253] CatalogClient.getBatch failed: connect ECONNREFUSED 10.23.138.197:8081 (catalog-svc.internal)\n#2063 2026-11-27T01:18:38Z ERROR search-api [t-8282] dial tcp 10.23.138.197:8081: connect: connection refused (calling catalog-svc)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "CATALOG_SVC_URL",
+          "limit": 20
+        },
+        "output": "1 match(es):\n#1793 2026-11-27T01:15:00Z INFO search-api config reloaded from config-service (revision 747): 1 key changed: CATALOG_SVC_URL=http://catalog-svc.internal:8081"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1793,
+          "before": 5,
+          "after": 3
+        },
+        "output": "#1788 2026-11-27T01:14:58Z INFO index-worker processed batch of 97 messages from catalog.updates (lag 395ms)\n#1789 2026-11-27T01:14:58Z INFO web-bff [t-8173] GET /search 200 85ms\n#1790 2026-11-27T01:14:59Z INFO session-cache stats: hits=14607 misses=745 evicted=0 connected_clients=50\n#1791 2026-11-27T01:14:59Z INFO redis-cache stats: hits=8264 misses=447 evicted=0 connected_clients=49\n#1792 2026-11-27T01:14:59Z DEBUG search-api GC pause 6ms (young), heap 37%\n#1793 2026-11-27T01:15:00Z INFO search-api config reloaded from config-service (revision 747): 1 key changed: CATALOG_SVC_URL=http://catalog-svc.internal:8081\n#1794 2026-11-27T01:15:01Z INFO account-svc [t-8174] user u-8257 accepted, calling auth-svc POST /tokens\n#1795 2026-11-27T01:15:01Z INFO edge-proxy [t-8174] POST /login 200 81ms\n#1796 2026-11-27T01:15:01Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 5"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "port",
+          "limit": 30
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "search-api",
+          "since": "01:15:01",
+          "until": "01:16:30",
+          "limit": 40
+        },
+        "output": "10 match(es):\n#1797 2026-11-27T01:15:02Z INFO search-api [t-8178] product p-8258 accepted, calling catalog-svc GET /products/batch\n#1804 2026-11-27T01:15:05Z INFO search-api [t-8181] product p-8261 accepted, calling catalog-svc GET /products/batch\n#1806 2026-11-27T01:15:08Z INFO search-api [t-8184] product p-8262 accepted, calling catalog-svc GET /products/batch\n#1814 2026-11-27T01:15:12Z INFO search-api [t-8187] product p-8266 accepted, calling catalog-svc GET /products/batch\n#1823 2026-11-27T01:15:17Z INFO search-api [t-8191] product p-8270 accepted, calling catalog-svc GET /products/batch\n#1829 2026-11-27T01:15:18Z DEBUG search-api GC pause 20ms (young), heap 43%\n#1858 2026-11-27T01:15:44Z DEBUG search-api GC pause 18ms (young), heap 33%\n#1875 2026-11-27T01:16:03Z ERROR search-api [t-8206] dial tcp 10.23.138.197:8081: connect: connection refused (calling catalog-svc)\n#1880 2026-11-27T01:16:06Z DEBUG search-api GC pause 7ms (young), heap 35%\n#1905 2026-11-27T01:16:25Z ERROR search-api [t-8223] GET /products/batch to catalog-svc.internal:8081 failed: Connection refused"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "config_error",
+              "confidence": 0.87,
+              "evidenceLines": [
+                1793,
+                1875,
+                1905,
+                1978,
+                2063
+              ],
+              "reasoning": "At 01:15:00Z search-api reloaded config (revision 747) and CATALOG_SVC_URL changed to http://catalog-svc.internal:8081. Immediately after, search-api's catalog calls begin failing with 'connection refused' to 10.23.138.197:8081 (#1875 at 01:16:03, #1905, #1978, #2063 repeat it). Before the reload, search-api was calling catalog-svc successfully (e.g. #1797, #1814, #1823 at 01:15:02-01:15:17), and catalog-svc kept logging GC and some successful batch requests through the window, so the service itself was not down. The refused connections point to a wrong endpoint/port in the changed config rather than a crashed catalog-svc. The gateway-level failures (web-bff 503 on GET /search, e.g. #1920, #2046) and edge-proxy login 500s are downstream symptoms and are not cited. The S3 PutObject 500/503 errors in auth-svc and the legacy-inventory healthcheck timeouts in status-poller are real but separate, and do not explain the /search collapse, which starts at the config reload.",
+              "reasoning_note": ""
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.05,
+              "evidenceLines": [
+                1549,
+                1714,
+                1727
+              ],
+              "reasoning": "Alternative: auth-svc's S3 storage failures (500/503 and retry quota exhausted) cause account-svc token failures and /login 500s. This does not explain GET /search, which depends on search-api and catalog-svc, not auth, so it is a parallel problem rather than the origin of the search outage."
+            }
+          ],
+          "recommendedAction": "Roll back search-api's CATALOG_SVC_URL to the previous value (revision before 747), or correct it to catalog-svc's actual listening address/port, and confirm the config reload is applied. Then verify search-api can reach catalog-svc (GET /products/batch succeeds) and watch the /search success rate recover. Separately, investigate auth-svc's S3 PutObject failures (accounts-artifacts-prod, us-east-1) and the legacy-inventory healthcheck timeouts in status-poller, which are not part of the /search outage."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 8,
+    "toolCalls": 14,
+    "usage": {
+      "inputTokens": 18,
+      "outputTokens": 3036,
+      "cacheReadTokens": 119271,
+      "cacheWriteTokens": 26078
+    },
+    "durationMs": 15283,
+    "stopReason": "tool_use"
+  }
+}

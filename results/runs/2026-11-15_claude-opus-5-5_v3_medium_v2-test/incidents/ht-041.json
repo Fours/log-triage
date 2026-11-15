@@ -1,0 +1,195 @@
+{
+  "score": {
+    "incidentId": "ht-041",
+    "difficulty": "hard",
+    "scenario": "resource_exhaustion/db-disk-full",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.93,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 7,
+      "precision": 1,
+      "recall": 0.875,
+      "f1": 0.9333333333333333
+    },
+    "herringsCited": 2,
+    "secondaryCited": 1,
+    "costUsd": 0.0676842,
+    "durationMs": 12907,
+    "iterations": 4,
+    "toolCalls": 8,
+    "tokens": {
+      "input": 10,
+      "output": 1406,
+      "cacheRead": 16271,
+      "cacheWrite": 7254
+    }
+  },
+  "result": {
+    "incidentId": "ht-041",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.93,
+          "evidenceLines": [
+            1252,
+            2153,
+            2622,
+            2961,
+            2758,
+            2949,
+            3267
+          ],
+          "reasoning": "notif-db disk on /var/lib/mysql climbed from 95% (22:24:13) to 99% (22:28:00) as binlog/WAL grew. At 22:29:51 InnoDB hit 'No space left on device' writing notifications.ibd. Right after that, notification-svc inserts began failing with 'table is full' (error 1114 / ER_RECORD_FILE_FULL). Those failures reach the gateway as POST /v1/notify 500s starting at 22:30:40. Reads stay healthy because only writes need disk space. I ruled out three other leads. The flag-sync unknown-flag errors are a staging-2 config issue, and the billing-reconciler checksum errors come from old archive partitions and began before onset. Neither touches the notify path. The auth-svc deploy came at 22:33, after the failures started."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.03,
+          "evidenceLines": [
+            1306,
+            1602
+          ],
+          "reasoning": "Billing-reconciler checksum violations on archive rows. These are unrelated to the notify write path."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.02,
+          "evidenceLines": [
+            3213
+          ],
+          "reasoning": "The auth-svc deploy came after the 500s had already started and did not touch notification writes."
+        }
+      ],
+      "recommendedAction": "Free disk space on notif-db right away: purge or rotate old binlogs (PURGE BINARY LOGS) or expand the volume. Then check that inserts into notifications succeed again. After that, set binlog retention (binlog_expire_logs_seconds) and add disk alerts at 85% and 90%. Look into why binlog growth sped up (440 to 726MB/h)."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "service": "notification-svc"
+        },
+        "output": "3 match(es):\n#2758 2026-11-16T22:30:37Z ERROR notification-svc [t-9059] insert into notifications failed for m-9056: error 1114: The table is full\n#2949 2026-11-16T22:31:38Z ERROR notification-svc [t-9181] could not save message m-9139: database rejected the write (table full)\n#3267 2026-11-16T22:33:19Z ERROR notification-svc [t-9356] notifications.insert(m-9279) -> ER_RECORD_FILE_FULL"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "service": "notif-db"
+        },
+        "output": "3 match(es):\n#2622 2026-11-16T22:29:51Z ERROR notif-db [ERROR] [MY-012639] InnoDB: Write to file ./notifications.ibd failed: No space left on device\n#2961 2026-11-16T22:31:42Z ERROR notif-db [ERROR] [MY-012639] InnoDB: Write to file ./notifications.ibd failed: No space left on device\n#3075 2026-11-16T22:32:19Z ERROR notif-db [ERROR] [MY-012639] InnoDB: Write to file ./notifications.ibd failed: No space left on device"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "service": "api-gateway"
+        },
+        "output": "12 match(es):\n#2772 2026-11-16T22:30:40Z ERROR api-gateway [t-9075] POST /v1/notify 500 18660ms: upstream notification-svc returned 500 Internal Server Error\n#2856 2026-11-16T22:31:07Z ERROR api-gateway [t-9123] POST /v1/notify 500 16365ms: upstream notification-svc returned 500 Internal Server Error\n#3068 2026-11-16T22:32:16Z ERROR api-gateway [t-9249] POST /v1/notify 500 21457ms: upstream notification-svc returned 500 Internal Server Error\n#3260 2026-11-16T22:33:18Z ERROR api-gateway [t-9353] POST /v1/notify 500 11134ms: upstream notification-svc returned 500 Internal Server Error\n#3460 2026-11-16T22:34:33Z ERROR api-gateway [t-9467] POST /v1/notify 500 21017ms: upstream notification-svc returned 500 Internal Server Error\n#3692 2026-11-16T22:36:06Z ERROR api-gateway [t-9584] POST /v1/notify 500 14413ms: upstream notification-svc returned 500 Internal Server Error\n#3808 2026-11-16T22:36:56Z ERROR api-gateway [t-9647] POST /v1/notify 500 18076ms: upstream notification-svc returned 500 Internal Server Error\n#3915 2026-11-16T22:37:38Z ERROR api-gateway [t-9706] POST /v1/notify 500 24828ms: upstream notification-svc returned 500 Internal Server Error\n#4058 2026-11-16T22:38:52Z ERROR api-gateway [t-9756] POST /v1/notify 500 25219ms: upstream notification-svc returned 500 Internal Server Error\n#4216 2026-11-16T22:39:53Z ERROR api-gateway [t-9822] POST /v1/notify 500 10126ms: upstream notification-svc returned 500 Internal Server Error\n#4496 2026-11-16T22:41:42Z ERROR api-gateway [t-9953] POST /v1/notify 500 24492ms: upstream notification-svc returned 500 Internal Server Error\n#4550 2026-11-16T22:42:00Z ERROR api-gateway [t-9987] POST /v1/notify 500 27974ms: upstream notification-svc returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-db",
+          "level": "WARN"
+        },
+        "output": "3 match(es):\n#2622 2026-11-16T22:29:51Z ERROR notif-db [ERROR] [MY-012639] InnoDB: Write to file ./notifications.ibd failed: No space left on device\n#2961 2026-11-16T22:31:42Z ERROR notif-db [ERROR] [MY-012639] InnoDB: Write to file ./notifications.ibd failed: No space left on device\n#3075 2026-11-16T22:32:19Z ERROR notif-db [ERROR] [MY-012639] InnoDB: Write to file ./notifications.ibd failed: No space left on device"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "flag-sync",
+          "level": "ERROR",
+          "limit": 5
+        },
+        "output": "18 match(es), showing first 5:\n#2620 2026-11-16T22:29:51Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2781 2026-11-16T22:30:42Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#2882 2026-11-16T22:31:15Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#3033 2026-11-16T22:32:04Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#3164 2026-11-16T22:32:45Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "billing-reconciler",
+          "level": "ERROR",
+          "limit": 5
+        },
+        "output": "15 match(es), showing first 5:\n#1306 2026-11-16T22:24:25Z ERROR billing-reconciler invoice_archive row inv-169971 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1602 2026-11-16T22:25:38Z ERROR billing-reconciler invoice_archive row inv-981929 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1918 2026-11-16T22:26:57Z ERROR billing-reconciler invoice_archive row inv-930045 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2304 2026-11-16T22:28:33Z ERROR billing-reconciler invoice_archive row inv-932644 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2641 2026-11-16T22:29:58Z ERROR billing-reconciler invoice_archive row inv-583000 violates checksum constraint, skipping (archive partition 2019-Q1)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-db",
+          "query": "disk"
+        },
+        "output": "2 match(es):\n#1252 2026-11-16T22:24:13Z INFO notif-db disk usage 95% on /var/lib/mysql (WAL/binlog growth 440MB/h)\n#2153 2026-11-16T22:28:00Z INFO notif-db disk usage 99% on /var/lib/mysql (WAL/binlog growth 726MB/h)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 10
+        },
+        "output": "1 match(es):\n#3213 2026-11-16T22:33:02Z INFO auth-svc deploy: rolling out auth-svc v3.21.0 (build 9e87eda), replacing v3.20.9"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.93,
+              "evidenceLines": [
+                1252,
+                2153,
+                2622,
+                2961,
+                2758,
+                2949,
+                3267
+              ],
+              "reasoning": "notif-db disk on /var/lib/mysql climbed from 95% (22:24:13) to 99% (22:28:00) as binlog/WAL grew. At 22:29:51 InnoDB hit 'No space left on device' writing notifications.ibd. Right after that, notification-svc inserts began failing with 'table is full' (error 1114 / ER_RECORD_FILE_FULL). Those failures reach the gateway as POST /v1/notify 500s starting at 22:30:40. Reads stay healthy because only writes need disk space. I ruled out three other leads. The flag-sync unknown-flag errors are a staging-2 config issue, and the billing-reconciler checksum errors come from old archive partitions and began before onset. Neither touches the notify path. The auth-svc deploy came at 22:33, after the failures started."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.03,
+              "evidenceLines": [
+                1306,
+                1602
+              ],
+              "reasoning": "Billing-reconciler checksum violations on archive rows. These are unrelated to the notify write path."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.02,
+              "evidenceLines": [
+                3213
+              ],
+              "reasoning": "The auth-svc deploy came after the 500s had already started and did not touch notification writes."
+            }
+          ],
+          "recommendedAction": "Free disk space on notif-db right away: purge or rotate old binlogs (PURGE BINARY LOGS) or expand the volume. Then check that inserts into notifications succeed again. After that, set binlog retention (binlog_expire_logs_seconds) and add disk alerts at 85% and 90%. Look into why binlog growth sped up (440 to 726MB/h)."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 8,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1406,
+      "cacheReadTokens": 16271,
+      "cacheWriteTokens": 7254
+    },
+    "durationMs": 12907,
+    "stopReason": "tool_use"
+  }
+}

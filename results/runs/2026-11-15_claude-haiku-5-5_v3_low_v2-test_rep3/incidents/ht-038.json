@@ -1,0 +1,199 @@
+{
+  "score": {
+    "incidentId": "ht-038",
+    "difficulty": "medium",
+    "scenario": "poison_message/consumer-crash-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "poison_message",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 3,
+      "precision": 0.5,
+      "recall": 0.5,
+      "f1": 0.5
+    },
+    "herringsCited": 2,
+    "secondaryCited": 0,
+    "costUsd": 0.00251427,
+    "durationMs": 10444,
+    "iterations": 5,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 12,
+      "output": 2310,
+      "cacheRead": 24907,
+      "cacheWrite": 8872
+    }
+  },
+  "result": {
+    "incidentId": "ht-038",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.9,
+          "evidenceLines": [
+            1728,
+            1760,
+            1798,
+            1730,
+            1761,
+            1799
+          ],
+          "reasoning": "audit-consumer was processing normally (batches of 28-99 messages with lag under 400ms, #1720, #1726). At 06:14:56 it crashed on msg-750657 at audit.events offset 618947 with a RangeError (call stack overflow in expandReferences, #1728). Every restart re-reads the same offset and crashes again on the same message (#1760, #1798), with backoff growing 10s, 20s, 40s. That repeated deterministic crash on one message is the CrashLoopBackOff, and the consumer cannot advance, so audit.events lag rises. The GC pause at #595 is minor (heap 56%) and not the cause. The report-cron ModuleNotFoundError for pandas (#1803 onward) is a separate bad deploy of report-cron:2026.10.2 and does not affect audit-consumer."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.05,
+          "evidenceLines": [
+            1803,
+            3054
+          ],
+          "reasoning": "Unrelated to the audit alert. report-cron nightly-revenue-report fails on every run since the report-cron:2026.10.2 deploy with ModuleNotFoundError: pandas. It is a real fault but does not explain audit-consumer crashes."
+        }
+      ],
+      "recommendedAction": "Quarantine offset 618947 (msg-750657) on audit.events by moving it to a dead-letter topic or skipping it, so audit-consumer can resume and the lag drains. Then fix expandReferences to handle deeply nested or self-referencing payloads (recursion guard or iterative traversal), and wrap per-message processing in a try/catch that routes failures to a DLQ. Separately, roll back report-cron to the previous image or add the missing pandas dependency to report-cron:2026.10.2."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "audit-consumer",
+          "level": "WARN",
+          "limit": 50
+        },
+        "output": "7 match(es):\n#595 2026-11-21T06:05:36Z WARN audit-consumer GC pause 870ms (G1 Old Gen), heap 56% after collection\n#1728 2026-11-21T06:14:56Z FATAL audit-consumer process crashed on msg-750657@618947: RangeError: call stack overflow in expandReferences\n#1730 2026-11-21T06:14:56Z ERROR audit-consumer process exited with code 1, restarting (restart 1, backoff 10s)\n#1760 2026-11-21T06:15:09Z FATAL audit-consumer uncaught RangeError (stack size exceeded) while handling offset 618947 (msg-750657)\n#1761 2026-11-21T06:15:09Z ERROR audit-consumer process exited with code 1, restarting (restart 2, backoff 20s)\n#1798 2026-11-21T06:15:32Z FATAL audit-consumer unhandled exception processing msg-750657 (offset 618947): RangeError: Maximum call stack size exceeded at expandReferences\n#1799 2026-11-21T06:15:33Z ERROR audit-consumer process exited with code 1, restarting (restart 3, backoff 40s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "report-cron",
+          "level": "ERROR",
+          "limit": 20
+        },
+        "output": "15 match(es):\n#1803 2026-11-21T06:15:34Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1929 2026-11-21T06:16:52Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1998 2026-11-21T06:17:36Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2030 2026-11-21T06:17:57Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2165 2026-11-21T06:19:24Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2221 2026-11-21T06:19:53Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2340 2026-11-21T06:20:59Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2494 2026-11-21T06:22:26Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2533 2026-11-21T06:22:53Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2634 2026-11-21T06:24:04Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2723 2026-11-21T06:24:56Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2783 2026-11-21T06:25:42Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2867 2026-11-21T06:26:37Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2967 2026-11-21T06:27:46Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3054 2026-11-21T06:28:50Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "msg-750657",
+          "limit": 30
+        },
+        "output": "3 match(es):\n#1728 2026-11-21T06:14:56Z FATAL audit-consumer process crashed on msg-750657@618947: RangeError: call stack overflow in expandReferences\n#1760 2026-11-21T06:15:09Z FATAL audit-consumer uncaught RangeError (stack size exceeded) while handling offset 618947 (msg-750657)\n#1798 2026-11-21T06:15:32Z FATAL audit-consumer unhandled exception processing msg-750657 (offset 618947): RangeError: Maximum call stack size exceeded at expandReferences"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1728,
+          "before": 12,
+          "after": 3
+        },
+        "output": "#1716 2026-11-21T06:14:47Z INFO account-svc [t-6480] user u-5527 accepted, calling auth-svc POST /tokens\n#1717 2026-11-21T06:14:47Z INFO edge-proxy [t-6480] POST /login 200 121ms\n#1718 2026-11-21T06:14:47Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#1719 2026-11-21T06:14:48Z INFO index-worker processed batch of 66 messages from catalog.updates (lag 57ms)\n#1720 2026-11-21T06:14:49Z INFO audit-consumer processed batch of 99 messages from audit.events (lag 279ms)\n#1721 2026-11-21T06:14:50Z INFO account-svc [t-6483] user u-5530 accepted, calling auth-svc POST /tokens\n#1722 2026-11-21T06:14:50Z INFO edge-proxy [t-6483] POST /login 200 78ms\n#1723 2026-11-21T06:14:51Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 31\n#1724 2026-11-21T06:14:52Z INFO account-svc [t-6484] user u-5533 accepted, calling auth-svc POST /tokens\n#1725 2026-11-21T06:14:52Z INFO edge-proxy [t-6484] POST /login 200 103ms\n#1726 2026-11-21T06:14:55Z INFO audit-consumer processed batch of 76 messages from audit.events (lag 366ms)\n#1727 2026-11-21T06:14:55Z INFO index-worker processed batch of 53 messages from catalog.updates (lag 333ms)\n#1728 2026-11-21T06:14:56Z FATAL audit-consumer process crashed on msg-750657@618947: RangeError: call stack overflow in expandReferences\n#1729 2026-11-21T06:14:56Z INFO catalog-db checkpoint complete: wrote 275 buffers (4.9%)\n#1730 2026-11-21T06:14:56Z ERROR audit-consumer process exited with code 1, restarting (restart 1, backoff 10s)\n#1731 2026-11-21T06:14:56Z INFO account-svc [t-6487] user u-5535 accepted, calling auth-svc POST /tokens"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "audit-consumer",
+          "query": "expandReferences",
+          "limit": 10
+        },
+        "output": "2 match(es):\n#1728 2026-11-21T06:14:56Z FATAL audit-consumer process crashed on msg-750657@618947: RangeError: call stack overflow in expandReferences\n#1798 2026-11-21T06:15:32Z FATAL audit-consumer unhandled exception processing msg-750657 (offset 618947): RangeError: Maximum call stack size exceeded at expandReferences"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "audit-consumer",
+          "since": "06:14:00",
+          "until": "06:14:56",
+          "limit": 30
+        },
+        "output": "9 match(es):\n#1649 2026-11-21T06:14:08Z INFO audit-consumer processed batch of 71 messages from audit.events (lag 167ms)\n#1663 2026-11-21T06:14:16Z INFO audit-consumer processed batch of 62 messages from audit.events (lag 396ms)\n#1677 2026-11-21T06:14:22Z INFO audit-consumer processed batch of 56 messages from audit.events (lag 342ms)\n#1695 2026-11-21T06:14:32Z INFO audit-consumer processed batch of 28 messages from audit.events (lag 373ms)\n#1711 2026-11-21T06:14:41Z INFO audit-consumer processed batch of 84 messages from audit.events (lag 189ms)\n#1720 2026-11-21T06:14:49Z INFO audit-consumer processed batch of 99 messages from audit.events (lag 279ms)\n#1726 2026-11-21T06:14:55Z INFO audit-consumer processed batch of 76 messages from audit.events (lag 366ms)\n#1728 2026-11-21T06:14:56Z FATAL audit-consumer process crashed on msg-750657@618947: RangeError: call stack overflow in expandReferences\n#1730 2026-11-21T06:14:56Z ERROR audit-consumer process exited with code 1, restarting (restart 1, backoff 10s)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.9,
+              "evidenceLines": [
+                1728,
+                1760,
+                1798,
+                1730,
+                1761,
+                1799
+              ],
+              "reasoning": "audit-consumer was processing normally (batches of 28-99 messages with lag under 400ms, #1720, #1726). At 06:14:56 it crashed on msg-750657 at audit.events offset 618947 with a RangeError (call stack overflow in expandReferences, #1728). Every restart re-reads the same offset and crashes again on the same message (#1760, #1798), with backoff growing 10s, 20s, 40s. That repeated deterministic crash on one message is the CrashLoopBackOff, and the consumer cannot advance, so audit.events lag rises. The GC pause at #595 is minor (heap 56%) and not the cause. The report-cron ModuleNotFoundError for pandas (#1803 onward) is a separate bad deploy of report-cron:2026.10.2 and does not affect audit-consumer.",
+              "recommendedAction": "Skip or quarantine offset 618947 (msg-750657) on audit.events, or move it to a dead-letter topic, so the consumer can resume. Then fix expandReferences to handle deeply nested or self-referencing payloads (recursion guard or iterative traversal) and add a try/catch with DLQ for per-message failures. Separately, roll back or fix report-cron:2026.10.2, which is missing the pandas dependency."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.05,
+              "evidenceLines": [
+                1803,
+                3054
+              ],
+              "reasoning": "Unrelated to the audit alert. report-cron nightly-revenue-report fails on every run since the report-cron:2026.10.2 deploy with ModuleNotFoundError: pandas. It is a real fault but does not explain audit-consumer crashes.",
+              "recommendedAction": "Roll back report-cron to the previous image or add pandas to the image."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.9,
+              "evidenceLines": [
+                1728,
+                1760,
+                1798,
+                1730,
+                1761,
+                1799
+              ],
+              "reasoning": "audit-consumer was processing normally (batches of 28-99 messages with lag under 400ms, #1720, #1726). At 06:14:56 it crashed on msg-750657 at audit.events offset 618947 with a RangeError (call stack overflow in expandReferences, #1728). Every restart re-reads the same offset and crashes again on the same message (#1760, #1798), with backoff growing 10s, 20s, 40s. That repeated deterministic crash on one message is the CrashLoopBackOff, and the consumer cannot advance, so audit.events lag rises. The GC pause at #595 is minor (heap 56%) and not the cause. The report-cron ModuleNotFoundError for pandas (#1803 onward) is a separate bad deploy of report-cron:2026.10.2 and does not affect audit-consumer.",
+              "recommendedAction": "Skip or quarantine offset 618947 (msg-750657) on audit.events, or move it to a dead-letter topic, so the consumer can resume. Then fix expandReferences to handle deeply nested or self-referencing payloads (recursion guard or iterative traversal) and add a try/catch with DLQ for per-message failures. Separately, roll back or fix report-cron:2026.10.2, which is missing the pandas dependency."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.05,
+              "evidenceLines": [
+                1803,
+                3054
+              ],
+              "reasoning": "Unrelated to the audit alert. report-cron nightly-revenue-report fails on every run since the report-cron:2026.10.2 deploy with ModuleNotFoundError: pandas. It is a real fault but does not explain audit-consumer crashes."
+            }
+          ],
+          "recommendedAction": "Quarantine offset 618947 (msg-750657) on audit.events by moving it to a dead-letter topic or skipping it, so audit-consumer can resume and the lag drains. Then fix expandReferences to handle deeply nested or self-referencing payloads (recursion guard or iterative traversal), and wrap per-message processing in a try/catch that routes failures to a DLQ. Separately, roll back report-cron to the previous image or add the missing pandas dependency to report-cron:2026.10.2."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 2310,
+      "cacheReadTokens": 24907,
+      "cacheWriteTokens": 8872
+    },
+    "durationMs": 10444,
+    "stopReason": "tool_use"
+  }
+}

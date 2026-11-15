@@ -1,0 +1,162 @@
+{
+  "score": {
+    "incidentId": "ht-006",
+    "difficulty": "medium",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 3,
+      "precision": 0.6,
+      "recall": 0.75,
+      "f1": 0.6666666666666665
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.047893,
+    "durationMs": 13067,
+    "iterations": 5,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 12,
+      "output": 1201,
+      "cacheRead": 30840,
+      "cacheWrite": 13110
+    }
+  },
+  "result": {
+    "incidentId": "ht-006",
+    "model": "claude-sonnet-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.85,
+          "evidenceLines": [
+            2228,
+            2372,
+            2317,
+            2410,
+            2414
+          ],
+          "reasoning": "redis-cache restarted after a node replacement with no snapshot and 0 keys (#2228). Search-api's cache miss ratio then hit 96% against a 3% baseline, so reads fell through to catalog-db (#2372). That is a cache stampede. catalog-db hit 485/500 connections and 96% CPU (#2317), and its queries slowed (#2414). Search-api queries timed out (#2410), and web-bff returned 504s. The notif-worker poison message crash loop (#2051) is unrelated, because it affects a different service chain. The metrics-agent errors are only a side effect."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.1,
+          "evidenceLines": [
+            2414,
+            2410
+          ],
+          "reasoning": "catalog-db slow queries causing search-api timeouts would fit this category if the cache cold start were ignored."
+        }
+      ],
+      "recommendedAction": "Warm the cache and rate-limit or coalesce cache-miss loads to catalog-db. Consider adding a connection limit on the search path. Make redis-cache persistent (RDB snapshot) or add replicas so a node replacement doesn't start cold. Separately, fix the notif-worker expandReferences stack overflow and skip msg-759587 at offset 829709."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "42 match(es):\n#283 2026-10-18T07:25:09Z WARN index-worker GC pause 887ms (G1 Old Gen), heap 58% after collection\n#2051 2026-10-18T07:38:43Z FATAL notif-worker unhandled exception processing msg-759587 (offset 829709): RangeError: Maximum call stack size exceeded at expandReferences\n#2052 2026-10-18T07:38:43Z ERROR notif-worker process exited with code 1, restarting (restart 1, backoff 10s)\n#2091 2026-10-18T07:38:58Z FATAL notif-worker process crashed on msg-759587@829709: RangeError: call stack overflow in expandReferences\n#2092 2026-10-18T07:38:59Z ERROR notif-worker process exited with code 1, restarting (restart 2, backoff 20s)\n#2143 2026-10-18T07:39:24Z FATAL notif-worker uncaught RangeError (stack size exceeded) while handling offset 829709 (msg-759587)\n#2145 2026-10-18T07:39:24Z ERROR notif-worker process exited with code 1, restarting (restart 3, backoff 40s)\n#2256 2026-10-18T07:40:26Z WARN notification-svc publish to notifications.outbound slow: broker reports consumer group notif-worker lag 1875\n#2277 2026-10-18T07:40:41Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1249 samples\n#2317 2026-10-18T07:41:10Z WARN catalog-db connections 485/500 (active 389), CPU 96%\n#2359 2026-10-18T07:41:32Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1483 samples\n#2410 2026-10-18T07:42:03Z ERROR search-api [t-5764] query on products timed out after 5000ms (p-4174)\n#2414 2026-10-18T07:42:04Z WARN catalog-db slow query 3478ms: SELECT * FROM products WHERE id = $1\n#2470 2026-10-18T07:42:39Z ERROR web-bff [t-5803] GET /search 504 12559ms: upstream search-api timed out\n#2471 2026-10-18T07:42:41Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1783 samples\n#2476 2026-10-18T07:42:45Z WARN notification-svc publish to notifications.outbound slow: broker reports consumer group notif-worker lag 2820\n#2508 2026-10-18T07:43:03Z WARN catalog-db too many clients: 471 of 500 connection slots used, CPU at 94%\n#2553 2026-10-18T07:43:30Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1621 samples\n#2578 2026-10-18T07:43:47Z WARN notification-svc publish to notifications.outbound slow: broker reports consumer group notif-worker lag 4686\n#2587 2026-10-18T07:43:52Z ERROR web-bff [t-5879] GET /search 504 27547ms: upstream search-api timed out\n#2638 2026-10-18T07:44:29Z WARN catalog-db slow query 7352ms: SELECT * FROM products WHERE id = $1\n#2644 2026-10-18T07:44:31Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2026 samples\n#2718 2026-10-18T07:45:23Z ERROR web-bff [t-5968] GET /search 504 25087ms: upstream search-api timed out\n#2733 2026-10-18T07:45:31Z ERROR search-api [t-5983] query on products timed out after 5000ms (p-4324)\n#2765 2026-10-18T07:45:54Z WARN notification-svc publish to notifications.outbound slow: broker reports consumer group notif-worker lag 3396\n#2774 2026-10-18T07:45:59Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1772 samples\n#2837 2026-10-18T07:46:39Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1355 samples\n#2900 2026-10-18T07:47:10Z ERROR web-bff [t-6080] GET /search 504 24476ms: upstream search-api timed out\n#2902 2026-10-18T07:47:12Z WARN catalog-db slow query 5220ms: SELECT * FROM products WHERE id = $1\n#2914 2026-10-18T07:47:19Z WARN notification-svc publish to notifications.outbound slow: broker reports consumer group notif-worker lag 6060\n#2997 2026-10-18T07:48:12Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1430 samples\n#3002 2026-10-18T07:48:16Z ERROR web-bff [t-6160] GET /search 504 16711ms: upstream search-api timed out\n#3095 2026-10-18T07:49:14Z WARN catalog-db slow query 5948ms: SELECT * FROM products WHERE id = $1\n#3132 2026-10-18T07:49:41Z ERROR search-api [t-6248] query on products timed out after 5000ms (p-4544)\n#3136 2026-10-18T07:49:43Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 963 samples\n#3155 2026-10-18T07:49:55Z ERROR web-bff [t-6263] GET /search 504 11281ms: upstream search-api timed out\n#3160 2026-10-18T07:49:58Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2020 samples\n#3165 2026-10-18T07:50:00Z WARN notification-svc publish to notifications.outbound slow: broker reports consumer group notif-worker lag 8664\n#3221 2026-10-18T07:50:43Z WARN notification-svc publish to notifications.outbound slow: broker reports consumer group notif-worker lag 5656\n#3276 2026-10-18T07:51:16Z WARN catalog-db slow query 8012ms: SELECT * FROM products WHERE id = $1\n#3294 2026-10-18T07:51:29Z ERROR web-bff [t-6343] GET /search 504 10165ms: upstream search-api timed out\n#3322 2026-10-18T07:51:45Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2231 samples"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-db",
+          "since": "07:30:00",
+          "until": "07:42:00"
+        },
+        "output": "32 match(es), showing first 25:\n#938 2026-10-18T07:30:13Z INFO catalog-db checkpoint complete: wrote 229 buffers (7.6%)\n#991 2026-10-18T07:30:39Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 32\n#1042 2026-10-18T07:31:06Z INFO catalog-db checkpoint complete: wrote 997 buffers (2.5%)\n#1081 2026-10-18T07:31:26Z INFO catalog-db checkpoint complete: wrote 784 buffers (7.7%)\n#1143 2026-10-18T07:31:55Z INFO catalog-db checkpoint complete: wrote 518 buffers (6.4%)\n#1181 2026-10-18T07:32:14Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 3\n#1226 2026-10-18T07:32:36Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 13\n#1287 2026-10-18T07:33:02Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 22\n#1345 2026-10-18T07:33:29Z INFO catalog-db checkpoint complete: wrote 959 buffers (1.5%)\n#1407 2026-10-18T07:33:56Z INFO catalog-db checkpoint complete: wrote 1074 buffers (5.0%)\n#1469 2026-10-18T07:34:25Z INFO catalog-db checkpoint complete: wrote 350 buffers (3.5%)\n#1511 2026-10-18T07:34:44Z INFO catalog-db checkpoint complete: wrote 923 buffers (7.6%)\n#1579 2026-10-18T07:35:13Z INFO catalog-db checkpoint complete: wrote 593 buffers (1.4%)\n#1624 2026-10-18T07:35:32Z INFO catalog-db checkpoint complete: wrote 920 buffers (7.9%)\n#1684 2026-10-18T07:35:58Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 25\n#1731 2026-10-18T07:36:17Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 16\n#1788 2026-10-18T07:36:45Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 40\n#1845 2026-10-18T07:37:09Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 20\n#1909 2026-10-18T07:37:37Z INFO catalog-db checkpoint complete: wrote 881 buffers (2.6%)\n#1941 2026-10-18T07:37:54Z INFO catalog-db checkpoint complete: wrote 731 buffers (6.2%)\n#2010 2026-10-18T07:38:22Z INFO catalog-db checkpoint complete: wrote 240 buffers (1.3%)\n#2050 2026-10-18T07:38:41Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 19\n#2089 2026-10-18T07:38:57Z INFO catalog-db checkpoint complete: wrote 837 buffers (2.1%)\n#2131 2026-10-18T07:39:18Z INFO catalog-db checkpoint complete: wrote 1218 buffers (4.2%)\n#2177 2026-10-18T07:39:41Z INFO catalog-db checkpoint complete: wrote 289 buffers (3.5%)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-svc",
+          "since": "07:36:00",
+          "until": "07:42:00"
+        },
+        "output": "57 match(es), showing first 25:\n#1689 2026-10-18T07:36:00Z DEBUG catalog-svc GC pause 15ms (young), heap 41%\n#1711 2026-10-18T07:36:10Z INFO catalog-svc [t-5320] GET /products/batch p-3844 ok 53ms\n#1738 2026-10-18T07:36:20Z INFO catalog-svc [t-5332] GET /products/batch p-3855 ok 67ms\n#1750 2026-10-18T07:36:25Z INFO catalog-svc [t-5338] GET /products/batch p-3860 ok 67ms\n#1758 2026-10-18T07:36:28Z DEBUG catalog-svc GC pause 19ms (young), heap 34%\n#1776 2026-10-18T07:36:38Z INFO catalog-svc [t-5351] GET /products/batch p-3872 ok 37ms\n#1786 2026-10-18T07:36:43Z INFO catalog-svc [t-5355] GET /products/batch p-3878 ok 31ms\n#1806 2026-10-18T07:36:52Z INFO catalog-svc [t-5369] GET /products/batch p-3889 ok 47ms\n#1811 2026-10-18T07:36:54Z INFO catalog-svc [t-5373] GET /products/batch p-3890 ok 26ms\n#1821 2026-10-18T07:36:58Z INFO catalog-svc [t-5377] GET /products/batch p-3896 ok 38ms\n#1829 2026-10-18T07:37:03Z INFO catalog-svc [t-5383] GET /products/batch p-3899 ok 42ms\n#1835 2026-10-18T07:37:04Z DEBUG catalog-svc GC pause 10ms (young), heap 42%\n#1864 2026-10-18T07:37:17Z INFO catalog-svc [t-5409] GET /products/batch p-3915 ok 90ms\n#1872 2026-10-18T07:37:22Z INFO catalog-svc [t-5412] GET /products/batch p-3918 ok 27ms\n#1880 2026-10-18T07:37:27Z INFO catalog-svc [t-5420] GET /products/batch p-3920 ok 40ms\n#1887 2026-10-18T07:37:29Z INFO catalog-svc [t-5425] GET /products/batch p-3924 ok 29ms\n#1910 2026-10-18T07:37:39Z DEBUG catalog-svc GC pause 6ms (young), heap 32%\n#1916 2026-10-18T07:37:41Z INFO catalog-svc [t-5447] GET /products/batch p-3937 ok 29ms\n#1946 2026-10-18T07:37:56Z INFO catalog-svc [t-5467] GET /products/batch p-3951 ok 38ms\n#1953 2026-10-18T07:37:58Z INFO catalog-svc [t-5471] GET /products/batch p-3955 ok 22ms\n#1962 2026-10-18T07:38:02Z DEBUG catalog-svc GC pause 15ms (young), heap 31%\n#1972 2026-10-18T07:38:04Z INFO catalog-svc [t-5483] GET /products/batch p-3961 ok 46ms\n#1981 2026-10-18T07:38:08Z INFO catalog-svc [t-5491] GET /products/batch p-3968 ok 20ms\n#1989 2026-10-18T07:38:12Z INFO catalog-svc [t-5497] GET /products/batch p-3970 ok 67ms\n#2008 2026-10-18T07:38:21Z INFO catalog-svc [t-5506] GET /products/batch p-3977 ok 42ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "07:39:30",
+          "until": "07:42:05",
+          "query": "catalog",
+          "limit": 40
+        },
+        "output": "43 match(es), showing first 40:\n#2158 2026-10-18T07:39:31Z INFO index-worker processed batch of 36 messages from catalog.updates (lag 123ms)\n#2161 2026-10-18T07:39:33Z INFO search-api [t-5598] product p-4051 accepted, calling catalog-svc GET /products/batch\n#2165 2026-10-18T07:39:34Z DEBUG web-bff upstream health: search-api ok, catalog-svc ok\n#2168 2026-10-18T07:39:36Z INFO search-api [t-5605] product p-4059 accepted, calling catalog-svc GET /products/batch\n#2171 2026-10-18T07:39:38Z INFO search-api [t-5608] product p-4062 accepted, calling catalog-svc GET /products/batch\n#2176 2026-10-18T07:39:39Z INFO index-worker processed batch of 64 messages from catalog.updates (lag 368ms)\n#2178 2026-10-18T07:39:42Z INFO search-api [t-5614] product p-4067 accepted, calling catalog-svc GET /products/batch\n#2187 2026-10-18T07:39:46Z INFO search-api [t-5622] product p-4069 accepted, calling catalog-svc GET /products/batch\n#2190 2026-10-18T07:39:47Z INFO index-worker processed batch of 60 messages from catalog.updates (lag 156ms)\n#2195 2026-10-18T07:39:49Z INFO search-api [t-5627] product p-4072 accepted, calling catalog-svc GET /products/batch\n#2206 2026-10-18T07:39:55Z INFO search-api [t-5636] product p-4081 accepted, calling catalog-svc GET /products/batch\n#2209 2026-10-18T07:39:55Z INFO index-worker processed batch of 104 messages from catalog.updates (lag 151ms)\n#2212 2026-10-18T07:39:57Z INFO search-api [t-5643] product p-4084 accepted, calling catalog-svc GET /products/batch\n#2218 2026-10-18T07:40:02Z INFO search-api [t-5650] product p-4089 accepted, calling catalog-svc GET /products/batch\n#2223 2026-10-18T07:40:04Z INFO index-worker processed batch of 46 messages from catalog.updates (lag 64ms)\n#2229 2026-10-18T07:40:07Z INFO search-api [t-5653] product p-4092 accepted, calling catalog-svc GET /products/batch\n#2237 2026-10-18T07:40:10Z INFO index-worker processed batch of 57 messages from catalog.updates (lag 129ms)\n#2244 2026-10-18T07:40:17Z INFO index-worker processed batch of 54 messages from catalog.updates (lag 392ms)\n#2249 2026-10-18T07:40:23Z INFO search-api [t-5663] product p-4103 accepted, calling catalog-svc GET /products/batch\n#2255 2026-10-18T07:40:26Z INFO index-worker processed batch of 39 messages from catalog.updates (lag 179ms)\n#2264 2026-10-18T07:40:32Z INFO search-api [t-5673] product p-4112 accepted, calling catalog-svc GET /products/batch\n#2268 2026-10-18T07:40:32Z INFO index-worker processed batch of 99 messages from catalog.updates (lag 243ms)\n#2275 2026-10-18T07:40:41Z INFO index-worker processed batch of 30 messages from catalog.updates (lag 299ms)\n#2281 2026-10-18T07:40:43Z INFO search-api [t-5680] product p-4118 accepted, calling catalog-svc GET /products/batch\n#2287 2026-10-18T07:40:47Z INFO search-api [t-5686] product p-4122 accepted, calling catalog-svc GET /products/batch\n#2293 2026-10-18T07:40:51Z INFO index-worker processed batch of 83 messages from catalog.updates (lag 257ms)\n#2302 2026-10-18T07:41:00Z INFO index-worker processed batch of 113 messages from catalog.updates (lag 56ms)\n#2310 2026-10-18T07:41:06Z INFO search-api [t-5703] product p-4132 accepted, calling catalog-svc GET /products/batch\n#2314 2026-10-18T07:41:08Z INFO index-worker processed batch of 89 messages from catalog.updates (lag 159ms)\n#2318 2026-10-18T07:41:10Z INFO search-api [t-5708] product p-4134 accepted, calling catalog-svc GET /products/batch\n#2331 2026-10-18T07:41:18Z INFO index-worker processed batch of 97 messages from catalog.updates (lag 194ms)\n#2334 2026-10-18T07:41:18Z INFO search-api [t-5718] product p-4143 accepted, calling catalog-svc GET /products/batch\n#2346 2026-10-18T07:41:26Z INFO index-worker processed batch of 31 messages from catalog.updates (lag 194ms)\n#2347 2026-10-18T07:41:26Z INFO search-api [t-5724] product p-4149 accepted, calling catalog-svc GET /products/batch\n#2352 2026-10-18T07:41:28Z INFO search-api [t-5732] product p-4151 accepted, calling catalog-svc GET /products/batch\n#2360 2026-10-18T07:41:33Z INFO index-worker processed batch of 80 messages from catalog.updates (lag 202ms)\n#2372 2026-10-18T07:41:41Z INFO search-api redis-cache miss ratio 96% over last 30s (baseline 3%), loading from catalog-db\n#2373 2026-10-18T07:41:41Z INFO index-worker processed batch of 46 messages from catalog.updates (lag 296ms)\n#2374 2026-10-18T07:41:41Z INFO search-api [t-5742] product p-4157 accepted, calling catalog-svc GET /products/batch\n#2380 2026-10-18T07:41:45Z INFO search-api [t-5748] product p-4160 accepted, calling catalog-svc GET /products/batch"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "redis-cache",
+          "since": "07:38:00"
+        },
+        "output": "10 match(es):\n#1959 2026-10-18T07:38:01Z INFO redis-cache stats: hits=11567 misses=896 evicted=0 connected_clients=42\n#1999 2026-10-18T07:38:18Z INFO redis-cache stats: hits=19909 misses=626 evicted=0 connected_clients=53\n#2038 2026-10-18T07:38:35Z INFO redis-cache stats: hits=11877 misses=274 evicted=0 connected_clients=35\n#2069 2026-10-18T07:38:49Z INFO redis-cache stats: hits=8322 misses=764 evicted=0 connected_clients=54\n#2107 2026-10-18T07:39:05Z INFO redis-cache stats: hits=14653 misses=492 evicted=0 connected_clients=49\n#2130 2026-10-18T07:39:17Z INFO redis-cache stats: hits=15635 misses=695 evicted=0 connected_clients=36\n#2159 2026-10-18T07:39:31Z INFO redis-cache stats: hits=18846 misses=386 evicted=0 connected_clients=31\n#2182 2026-10-18T07:39:43Z INFO redis-cache stats: hits=14039 misses=314 evicted=0 connected_clients=57\n#2214 2026-10-18T07:39:58Z INFO redis-cache stats: hits=14092 misses=823 evicted=0 connected_clients=50\n#2228 2026-10-18T07:40:07Z INFO redis-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "redis",
+          "since": "07:38:00",
+          "until": "07:42:00"
+        },
+        "output": "16 match(es):\n#1967 2026-10-18T07:38:03Z INFO redis stats: hits=11588 misses=348 evicted=0 connected_clients=47\n#1994 2026-10-18T07:38:16Z INFO redis stats: hits=10758 misses=554 evicted=0 connected_clients=46\n#2031 2026-10-18T07:38:32Z INFO redis stats: hits=12446 misses=281 evicted=0 connected_clients=32\n#2064 2026-10-18T07:38:47Z INFO redis stats: hits=17265 misses=207 evicted=0 connected_clients=34\n#2105 2026-10-18T07:39:04Z INFO redis stats: hits=8568 misses=874 evicted=0 connected_clients=52\n#2132 2026-10-18T07:39:18Z INFO redis stats: hits=15075 misses=398 evicted=0 connected_clients=37\n#2160 2026-10-18T07:39:32Z INFO redis stats: hits=14111 misses=514 evicted=0 connected_clients=31\n#2191 2026-10-18T07:39:48Z INFO redis stats: hits=11196 misses=631 evicted=0 connected_clients=41\n#2224 2026-10-18T07:40:05Z INFO redis stats: hits=12559 misses=759 evicted=0 connected_clients=41\n#2246 2026-10-18T07:40:19Z INFO redis stats: hits=11266 misses=538 evicted=0 connected_clients=59\n#2269 2026-10-18T07:40:34Z INFO redis stats: hits=19602 misses=500 evicted=0 connected_clients=39\n#2286 2026-10-18T07:40:46Z INFO redis stats: hits=14136 misses=576 evicted=0 connected_clients=59\n#2307 2026-10-18T07:41:03Z INFO redis stats: hits=14654 misses=820 evicted=0 connected_clients=30\n#2337 2026-10-18T07:41:20Z INFO redis stats: hits=19324 misses=280 evicted=0 connected_clients=34\n#2354 2026-10-18T07:41:31Z INFO redis stats: hits=12294 misses=374 evicted=0 connected_clients=48\n#2386 2026-10-18T07:41:47Z INFO redis stats: hits=19518 misses=890 evicted=0 connected_clients=50"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.85,
+              "evidenceLines": [
+                2228,
+                2372,
+                2317,
+                2410,
+                2414
+              ],
+              "reasoning": "redis-cache restarted after a node replacement with no snapshot and 0 keys (#2228). Search-api's cache miss ratio then hit 96% against a 3% baseline, so reads fell through to catalog-db (#2372). That is a cache stampede. catalog-db hit 485/500 connections and 96% CPU (#2317), and its queries slowed (#2414). Search-api queries timed out (#2410), and web-bff returned 504s. The notif-worker poison message crash loop (#2051) is unrelated, because it affects a different service chain. The metrics-agent errors are only a side effect."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.1,
+              "evidenceLines": [
+                2414,
+                2410
+              ],
+              "reasoning": "catalog-db slow queries causing search-api timeouts would fit this category if the cache cold start were ignored."
+            }
+          ],
+          "recommendedAction": "Warm the cache and rate-limit or coalesce cache-miss loads to catalog-db. Consider adding a connection limit on the search path. Make redis-cache persistent (RDB snapshot) or add replicas so a node replacement doesn't start cold. Separately, fix the notif-worker expandReferences stack overflow and skip msg-759587 at offset 829709."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1201,
+      "cacheReadTokens": 30840,
+      "cacheWriteTokens": 13110
+    },
+    "durationMs": 13067,
+    "stopReason": "tool_use"
+  }
+}

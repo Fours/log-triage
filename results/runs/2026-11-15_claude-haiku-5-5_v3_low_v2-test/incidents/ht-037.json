@@ -1,0 +1,177 @@
+{
+  "score": {
+    "incidentId": "ht-037",
+    "difficulty": "medium",
+    "scenario": "dependency_timeout/db-lock-wait",
+    "truth": "dependency_timeout",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.82,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 8,
+      "precision": 1,
+      "recall": 0.8888888888888888,
+      "f1": 0.9411764705882353
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.0029529499999999998,
+    "durationMs": 8881,
+    "iterations": 5,
+    "toolCalls": 7,
+    "tokens": {
+      "input": 12,
+      "output": 1778,
+      "cacheRead": 36350,
+      "cacheWrite": 13594
+    }
+  },
+  "result": {
+    "incidentId": "ht-037",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.82,
+          "evidenceLines": [
+            1749,
+            1852,
+            1942,
+            1868,
+            2017,
+            2048,
+            2053,
+            2026
+          ],
+          "reasoning": "Origin: at 22:47:06 accounts-db shows transaction 86264 from application_name=auth-svc-reconciler sitting idle in transaction while holding RowExclusiveLock on the accounts table (#1749). Subsequent UPDATE accounts statements from auth-svc queue behind it on ShareLock (#1852, #1942), then hit statement_timeout (#1868, #2017, #2048). auth-svc's token writes stall, so account-svc's calls to auth-svc POST /tokens hit ReadTimeout/deadline exceeded (#1878, #2026, #2053). account-svc's connection pool to auth-svc saturates (#2063, #2199) and checkouts time out (#2348), and edge-proxy returns 504s on POST /login (#2093, #2270, #2459, #2633). The lock is the trigger; pool saturation and 5xx at the gateway are amplification. The lock holder's idle transaction is consistent with a reconciler that opened a transaction and never committed or rolled back, which I inferred from the application name rather than seeing its code path. Ruled out as unrelated: the ingest-api v4.27.0 TypeError on 'region' (#1927, #2081) affects /v1/events, not /login; and the billing-reconciler invoice_archive checksum violations (#1844, #2027) are a separate 2019 archive data issue."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.1,
+          "evidenceLines": [
+            2063,
+            2199,
+            2348
+          ],
+          "reasoning": "The auth-svc connection pool in account-svc hit 50/50 capacity with growing queues. This is a symptom of the lock-induced hangs, not an independent pool-size fault, so it is only a weak alternative."
+        }
+      ],
+      "recommendedAction": "Identify and terminate the idle-in-transaction session 86264 (application_name=auth-svc-reconciler) on accounts-db to release the ShareLock, then fix the reconciler to commit or roll back and set idle_in_transaction_session_timeout. Afterwards, verify that auth-svc UPDATEs stop timing out and that /login 504s drop. Separately, track the ingest-api v4.27.0 'region' TypeError and the billing-reconciler 2019 archive checksum violations as distinct issues."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "40 match(es):\n#208 2026-11-30T22:35:26Z WARN auth-svc [t-5305] identity provider call failed: connection reset by peer POST https://idp.example/oauth2/token, retry 1/3\n#1844 2026-11-30T22:47:50Z ERROR billing-reconciler invoice_archive row inv-610898 violates checksum constraint, skipping (archive partition 2019-Q1)\n#1852 2026-11-30T22:47:57Z WARN accounts-db process 6258 still waiting for ShareLock on transaction 86264 after 1000.000 ms (UPDATE accounts SET ...)\n#1868 2026-11-30T22:48:05Z ERROR auth-svc [t-6385] canceling UPDATE on accounts for u-9233 due to statement_timeout\n#1878 2026-11-30T22:48:10Z ERROR account-svc [t-6385] upstream request to auth-svc failed: ReadTimeout (read timeout=15s) [u-9233]\n#1927 2026-11-30T22:48:39Z ERROR ingest-api [t-6423] unhandled error in POST /v1/events (e-9262): TypeError: Cannot read properties of undefined (reading 'region') at format (event-formatter.ts:81) [v4.27.0]\n#1942 2026-11-30T22:48:47Z WARN accounts-db process 8878 still waiting for ShareLock on transaction 86264 after 1000.000 ms (UPDATE accounts SET ...)\n#2017 2026-11-30T22:49:40Z ERROR auth-svc [t-6470] db write accounts/u-9293 aborted: QueryCanceled after 10.0s\n#2026 2026-11-30T22:49:45Z ERROR account-svc [t-6470] POST /tokens -> auth-svc: context deadline exceeded after 15.0s (u-9293)\n#2027 2026-11-30T22:49:46Z ERROR billing-reconciler invoice_archive row inv-858732 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2048 2026-11-30T22:50:01Z ERROR auth-svc [t-6487] query canceled: statement timeout 10000ms (UPDATE accounts WHERE id = u-9302)\n#2052 2026-11-30T22:50:06Z ERROR ingest-gateway [t-6493] POST /v1/events 500 12165ms: upstream ingest-api returned 500 Internal Server Error\n#2053 2026-11-30T22:50:06Z ERROR account-svc [t-6487] AuthClient.issueToken timed out after 15000ms calling auth-svc POST /tokens (u-9302)\n#2063 2026-11-30T22:50:12Z WARN account-svc HTTP connection pool to auth-svc at capacity (50/50 in use), 50 requests queued\n#2081 2026-11-30T22:50:23Z ERROR ingest-api [t-6508] [v4.27.0] POST /v1/events e-9316 -> 500: TypeError: undefined has no property 'region'\n#2093 2026-11-30T22:50:31Z ERROR edge-proxy [t-6514] POST /login 504 5740ms: upstream account-svc timed out\n#2113 2026-11-30T22:50:47Z ERROR ingest-api [t-6524] request e-9333 failed in v4.27.0: cannot access 'region' of undefined, stack: format @ event-formatter.ts:81\n#2128 2026-11-30T22:50:57Z ERROR ingest-gateway [t-6531] POST /v1/events 500 25491ms: upstream ingest-api returned 500 Internal Server Error\n#2136 2026-11-30T22:51:07Z ERROR billing-reconciler invoice_archive row inv-206349 violates checksum constraint, skipping (archive partition 2019-Q3)\n#2184 2026-11-30T22:51:38Z ERROR ingest-api [t-6560] unhandled error in POST /v1/events (e-9355): TypeError: Cannot read properties of undefined (reading 'region') at format (event-formatter.ts:81) [v4.27.0]\n#2199 2026-11-30T22:51:47Z WARN account-svc HTTP connection pool to auth-svc at capacity (50/50 in use), 75 requests queued\n#2257 2026-11-30T22:52:38Z ERROR billing-reconciler invoice_archive row inv-306185 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2270 2026-11-30T22:52:49Z ERROR edge-proxy [t-6590] POST /login 504 5510ms: upstream account-svc timed out\n#2284 2026-11-30T22:53:03Z ERROR ingest-gateway [t-6598] POST /v1/events 500 10635ms: upstream ingest-api returned 500 Internal Server Error\n#2331 2026-11-30T22:53:41Z ERROR billing-reconciler invoice_archive row inv-589027 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2348 2026-11-30T22:53:49Z ERROR account-svc pool checkout timeout: no connection to auth-svc available after 5000ms\n#2364 2026-11-30T22:53:56Z ERROR edge-proxy [t-6640] POST /login 504 4958ms: upstream account-svc timed out\n#2386 2026-11-30T22:54:22Z ERROR billing-reconciler invoice_archive row inv-498773 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2435 2026-11-30T22:54:57Z ERROR ingest-gateway [t-6671] POST /v1/events 500 5824ms: upstream ingest-api returned 500 Internal Server Error\n#2459 2026-11-30T22:55:16Z ERROR edge-proxy [t-6682] POST /login 504 18857ms: upstream account-svc timed out\n#2515 2026-11-30T22:55:55Z ERROR billing-reconciler invoice_archive row inv-481395 violates checksum constraint, skipping (archive partition 2019-Q3)\n#2538 2026-11-30T22:56:17Z ERROR ingest-gateway [t-6716] POST /v1/events 500 28797ms: upstream ingest-api returned 500 Internal Server Error\n#2618 2026-11-30T22:57:18Z ERROR billing-reconciler invoice_archive row inv-723384 violates checksum constraint, skipping (archive partition 2019-Q3)\n#2633 2026-11-30T22:57:26Z ERROR edge-proxy [t-6761] POST /login 504 23936ms: upstream account-svc timed out\n#2697 2026-11-30T22:58:19Z ERROR edge-proxy [t-6787] POST /login 504 12502ms: upstream account-svc timed out\n#2709 2026-11-30T22:58:27Z ERROR billing-reconciler invoice_archive row inv-344738 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2730 2026-11-30T22:58:44Z ERROR ingest-gateway [t-6804] POST /v1/events 500 28309ms: upstream ingest-api returned 500 Internal Server Error\n#2815 2026-11-30T22:59:41Z ERROR ingest-gateway [t-6842] POST /v1/events 500 10749ms: upstream ingest-api returned 500 Internal Server Error\n#2857 2026-11-30T23:00:12Z ERROR billing-reconciler invoice_archive row inv-185059 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2890 2026-11-30T23:00:33Z ERROR edge-proxy [t-6874] POST /login 504 10968ms: upstream account-svc timed out"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "accounts-db",
+          "limit": 40
+        },
+        "output": "75 match(es), showing first 40:\n#63 2026-11-30T22:34:26Z INFO accounts-db checkpoint complete: wrote 749 buffers (5.4%)\n#131 2026-11-30T22:34:55Z INFO accounts-db checkpoint complete: wrote 765 buffers (3.4%)\n#181 2026-11-30T22:35:16Z INFO accounts-db checkpoint complete: wrote 961 buffers (2.2%)\n#235 2026-11-30T22:35:40Z INFO accounts-db checkpoint complete: wrote 969 buffers (4.1%)\n#287 2026-11-30T22:36:07Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 33\n#342 2026-11-30T22:36:30Z INFO accounts-db checkpoint complete: wrote 689 buffers (1.9%)\n#399 2026-11-30T22:36:54Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 25\n#449 2026-11-30T22:37:17Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 31\n#492 2026-11-30T22:37:34Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 35\n#545 2026-11-30T22:37:57Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 31\n#605 2026-11-30T22:38:25Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 15\n#647 2026-11-30T22:38:47Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 17\n#691 2026-11-30T22:39:05Z INFO accounts-db checkpoint complete: wrote 970 buffers (6.3%)\n#725 2026-11-30T22:39:22Z INFO accounts-db checkpoint complete: wrote 742 buffers (2.2%)\n#787 2026-11-30T22:39:50Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 28\n#847 2026-11-30T22:40:15Z INFO accounts-db checkpoint complete: wrote 463 buffers (4.7%)\n#901 2026-11-30T22:40:40Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 29\n#938 2026-11-30T22:40:57Z INFO accounts-db checkpoint complete: wrote 200 buffers (1.5%)\n#993 2026-11-30T22:41:23Z INFO accounts-db checkpoint complete: wrote 762 buffers (1.5%)\n#1030 2026-11-30T22:41:40Z INFO accounts-db checkpoint complete: wrote 1341 buffers (1.9%)\n#1073 2026-11-30T22:41:57Z INFO accounts-db checkpoint complete: wrote 925 buffers (5.9%)\n#1134 2026-11-30T22:42:25Z INFO accounts-db checkpoint complete: wrote 449 buffers (3.4%)\n#1173 2026-11-30T22:42:42Z INFO accounts-db checkpoint complete: wrote 1043 buffers (3.1%)\n#1217 2026-11-30T22:42:59Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 16\n#1257 2026-11-30T22:43:21Z INFO accounts-db checkpoint complete: wrote 582 buffers (7.8%)\n#1300 2026-11-30T22:43:40Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 34\n#1347 2026-11-30T22:44:04Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 40\n#1407 2026-11-30T22:44:29Z INFO accounts-db checkpoint complete: wrote 475 buffers (4.4%)\n#1469 2026-11-30T22:44:56Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 14\n#1533 2026-11-30T22:45:24Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 39\n#1576 2026-11-30T22:45:43Z INFO accounts-db checkpoint complete: wrote 785 buffers (4.9%)\n#1627 2026-11-30T22:46:05Z INFO accounts-db checkpoint complete: wrote 692 buffers (3.0%)\n#1678 2026-11-30T22:46:31Z INFO accounts-db checkpoint complete: wrote 243 buffers (5.0%)\n#1715 2026-11-30T22:46:49Z INFO accounts-db checkpoint complete: wrote 1355 buffers (2.1%)\n#1749 2026-11-30T22:47:06Z INFO accounts-db transaction 86264 (application_name=auth-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"accounts\"\n#1764 2026-11-30T22:47:13Z INFO accounts-db checkpoint complete: wrote 1267 buffers (6.8%)\n#1815 2026-11-30T22:47:35Z INFO accounts-db checkpoint complete: wrote 903 buffers (3.8%)\n#1852 2026-11-30T22:47:57Z WARN accounts-db process 6258 still waiting for ShareLock on transaction 86264 after 1000.000 ms (UPDATE accounts SET ...)\n#1853 2026-11-30T22:47:57Z INFO accounts-db checkpoint complete: wrote 226 buffers (8.0%)\n#1908 2026-11-30T22:48:26Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 34"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "86264",
+          "limit": 30
+        },
+        "output": "3 match(es):\n#1749 2026-11-30T22:47:06Z INFO accounts-db transaction 86264 (application_name=auth-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"accounts\"\n#1852 2026-11-30T22:47:57Z WARN accounts-db process 6258 still waiting for ShareLock on transaction 86264 after 1000.000 ms (UPDATE accounts SET ...)\n#1942 2026-11-30T22:48:47Z WARN accounts-db process 8878 still waiting for ShareLock on transaction 86264 after 1000.000 ms (UPDATE accounts SET ...)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "since": "22:46:00",
+          "until": "22:48:00",
+          "limit": 40
+        },
+        "output": "16 match(es):\n#1618 2026-11-30T22:46:01Z DEBUG auth-svc GC pause 8ms (young), heap 44%\n#1621 2026-11-30T22:46:01Z INFO auth-svc [t-6233] POST /tokens u-9116 ok 38ms\n#1637 2026-11-30T22:46:10Z INFO auth-svc [t-6243] POST /tokens u-9125 ok 41ms\n#1653 2026-11-30T22:46:19Z INFO auth-svc [t-6253] POST /tokens u-9132 ok 79ms\n#1680 2026-11-30T22:46:32Z DEBUG auth-svc GC pause 15ms (young), heap 36%\n#1690 2026-11-30T22:46:36Z INFO auth-svc [t-6277] POST /tokens u-9153 ok 22ms\n#1712 2026-11-30T22:46:49Z INFO auth-svc [t-6294] POST /tokens u-9161 ok 44ms\n#1721 2026-11-30T22:46:51Z INFO auth-svc [t-6300] POST /tokens u-9167 ok 78ms\n#1729 2026-11-30T22:46:56Z DEBUG auth-svc GC pause 13ms (young), heap 42%\n#1734 2026-11-30T22:47:00Z INFO auth-svc [t-6309] POST /tokens u-9174 ok 74ms\n#1760 2026-11-30T22:47:10Z INFO auth-svc [t-6326] POST /tokens u-9186 ok 33ms\n#1775 2026-11-30T22:47:17Z DEBUG auth-svc GC pause 23ms (young), heap 35%\n#1789 2026-11-30T22:47:23Z INFO auth-svc [t-6341] POST /tokens u-9198 ok 82ms\n#1803 2026-11-30T22:47:29Z INFO auth-svc [t-6349] POST /tokens u-9205 ok 37ms\n#1810 2026-11-30T22:47:32Z INFO auth-svc [t-6355] POST /tokens u-9209 ok 33ms\n#1825 2026-11-30T22:47:39Z DEBUG auth-svc GC pause 5ms (young), heap 36%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "reconcil",
+          "limit": 40
+        },
+        "output": "85 match(es), showing first 40:\n#10 2026-11-30T22:34:05Z INFO billing-reconciler reconciled 943 current-period invoices, 0 discrepancies\n#38 2026-11-30T22:34:16Z INFO billing-reconciler reconciled 614 current-period invoices, 0 discrepancies\n#79 2026-11-30T22:34:31Z INFO billing-reconciler reconciled 832 current-period invoices, 0 discrepancies\n#128 2026-11-30T22:34:54Z INFO billing-reconciler reconciled 651 current-period invoices, 0 discrepancies\n#158 2026-11-30T22:35:08Z INFO billing-reconciler reconciled 716 current-period invoices, 0 discrepancies\n#200 2026-11-30T22:35:23Z INFO billing-reconciler reconciled 1131 current-period invoices, 0 discrepancies\n#247 2026-11-30T22:35:47Z INFO billing-reconciler reconciled 675 current-period invoices, 0 discrepancies\n#269 2026-11-30T22:35:59Z INFO billing-reconciler reconciled 461 current-period invoices, 0 discrepancies\n#301 2026-11-30T22:36:10Z INFO billing-reconciler reconciled 539 current-period invoices, 0 discrepancies\n#327 2026-11-30T22:36:22Z INFO billing-reconciler reconciled 361 current-period invoices, 0 discrepancies\n#380 2026-11-30T22:36:46Z INFO billing-reconciler reconciled 633 current-period invoices, 0 discrepancies\n#421 2026-11-30T22:37:04Z INFO billing-reconciler reconciled 743 current-period invoices, 0 discrepancies\n#461 2026-11-30T22:37:22Z INFO billing-reconciler reconciled 1025 current-period invoices, 0 discrepancies\n#513 2026-11-30T22:37:42Z INFO billing-reconciler reconciled 390 current-period invoices, 0 discrepancies\n#573 2026-11-30T22:38:09Z INFO billing-reconciler reconciled 455 current-period invoices, 0 discrepancies\n#613 2026-11-30T22:38:28Z INFO billing-reconciler reconciled 879 current-period invoices, 0 discrepancies\n#651 2026-11-30T22:38:50Z INFO billing-reconciler reconciled 796 current-period invoices, 0 discrepancies\n#693 2026-11-30T22:39:07Z INFO billing-reconciler reconciled 580 current-period invoices, 0 discrepancies\n#719 2026-11-30T22:39:20Z INFO billing-reconciler reconciled 863 current-period invoices, 0 discrepancies\n#754 2026-11-30T22:39:35Z INFO billing-reconciler reconciled 479 current-period invoices, 0 discrepancies\n#786 2026-11-30T22:39:49Z INFO billing-reconciler reconciled 1010 current-period invoices, 0 discrepancies\n#814 2026-11-30T22:40:01Z INFO billing-reconciler reconciled 1083 current-period invoices, 0 discrepancies\n#858 2026-11-30T22:40:19Z INFO billing-reconciler reconciled 1035 current-period invoices, 0 discrepancies\n#897 2026-11-30T22:40:39Z INFO billing-reconciler reconciled 1010 current-period invoices, 0 discrepancies\n#952 2026-11-30T22:41:02Z INFO billing-reconciler reconciled 337 current-period invoices, 0 discrepancies\n#992 2026-11-30T22:41:22Z INFO billing-reconciler reconciled 333 current-period invoices, 0 discrepancies\n#1035 2026-11-30T22:41:42Z INFO billing-reconciler reconciled 412 current-period invoices, 0 discrepancies\n#1067 2026-11-30T22:41:54Z INFO billing-reconciler reconciled 562 current-period invoices, 0 discrepancies\n#1113 2026-11-30T22:42:16Z INFO billing-reconciler reconciled 1009 current-period invoices, 0 discrepancies\n#1164 2026-11-30T22:42:39Z INFO billing-reconciler reconciled 582 current-period invoices, 0 discrepancies\n#1200 2026-11-30T22:42:53Z INFO billing-reconciler reconciled 960 current-period invoices, 0 discrepancies\n#1242 2026-11-30T22:43:12Z INFO billing-reconciler reconciled 835 current-period invoices, 0 discrepancies\n#1293 2026-11-30T22:43:35Z INFO billing-reconciler reconciled 338 current-period invoices, 0 discrepancies\n#1337 2026-11-30T22:43:59Z INFO billing-reconciler reconciled 1056 current-period invoices, 0 discrepancies\n#1365 2026-11-30T22:44:11Z INFO billing-reconciler reconciled 837 current-period invoices, 0 discrepancies\n#1422 2026-11-30T22:44:35Z INFO billing-reconciler reconciled 921 current-period invoices, 0 discrepancies\n#1453 2026-11-30T22:44:50Z INFO billing-reconciler reconciled 1179 current-period invoices, 0 discrepancies\n#1514 2026-11-30T22:45:16Z INFO billing-reconciler reconciled 449 current-period invoices, 0 discrepancies\n#1573 2026-11-30T22:45:42Z INFO billing-reconciler reconciled 804 current-period invoices, 0 discrepancies\n#1608 2026-11-30T22:45:57Z INFO billing-reconciler reconciled 406 current-period invoices, 0 discrepancies"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1749,
+          "before": 8,
+          "after": 4
+        },
+        "output": "#1741 2026-11-30T22:47:03Z INFO ingest-api [t-6314] event e-9178 accepted, calling enrichment-svc POST /enrich\n#1742 2026-11-30T22:47:03Z INFO enrichment-svc [t-6314] POST /enrich e-9178 ok 34ms\n#1743 2026-11-30T22:47:03Z INFO ingest-gateway [t-6314] POST /v1/events 200 52ms\n#1744 2026-11-30T22:47:04Z DEBUG enrichment-svc GC pause 17ms (young), heap 29%\n#1745 2026-11-30T22:47:04Z INFO account-svc [t-6317] user u-9179 accepted, calling auth-svc POST /tokens\n#1746 2026-11-30T22:47:04Z INFO edge-proxy [t-6317] POST /login 200 108ms\n#1747 2026-11-30T22:47:06Z INFO ingest-api [t-6319] event e-9180 accepted, calling enrichment-svc POST /enrich\n#1748 2026-11-30T22:47:06Z INFO enrichment-svc [t-6319] POST /enrich e-9180 ok 33ms\n#1749 2026-11-30T22:47:06Z INFO accounts-db transaction 86264 (application_name=auth-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"accounts\"\n#1750 2026-11-30T22:47:06Z INFO ingest-gateway [t-6319] POST /v1/events 200 52ms\n#1751 2026-11-30T22:47:06Z INFO audit-consumer processed batch of 78 messages from audit.events (lag 171ms)\n#1752 2026-11-30T22:47:07Z INFO billing-reconciler reconciled 1170 current-period invoices, 0 discrepancies\n#1753 2026-11-30T22:47:07Z INFO account-svc [t-6321] user u-9181 accepted, calling auth-svc POST /tokens"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "idle",
+          "limit": 20
+        },
+        "output": "1 match(es):\n#1749 2026-11-30T22:47:06Z INFO accounts-db transaction 86264 (application_name=auth-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"accounts\""
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.82,
+              "evidenceLines": [
+                1749,
+                1852,
+                1942,
+                1868,
+                2017,
+                2048,
+                2053,
+                2026
+              ],
+              "reasoning": "Origin: at 22:47:06 accounts-db shows transaction 86264 from application_name=auth-svc-reconciler sitting idle in transaction while holding RowExclusiveLock on the accounts table (#1749). Subsequent UPDATE accounts statements from auth-svc queue behind it on ShareLock (#1852, #1942), then hit statement_timeout (#1868, #2017, #2048). auth-svc's token writes stall, so account-svc's calls to auth-svc POST /tokens hit ReadTimeout/deadline exceeded (#1878, #2026, #2053). account-svc's connection pool to auth-svc saturates (#2063, #2199) and checkouts time out (#2348), and edge-proxy returns 504s on POST /login (#2093, #2270, #2459, #2633). The lock is the trigger; pool saturation and 5xx at the gateway are amplification. The lock holder's idle transaction is consistent with a reconciler that opened a transaction and never committed or rolled back, which I inferred from the application name rather than seeing its code path. Ruled out as unrelated: the ingest-api v4.27.0 TypeError on 'region' (#1927, #2081) affects /v1/events, not /login; and the billing-reconciler invoice_archive checksum violations (#1844, #2027) are a separate 2019 archive data issue.",
+              "recommendation_placeholder": true
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.1,
+              "evidenceLines": [
+                2063,
+                2199,
+                2348
+              ],
+              "reasoning": "The auth-svc connection pool in account-svc hit 50/50 capacity with growing queues. This is a symptom of the lock-induced hangs, not an independent pool-size fault, so it is only a weak alternative."
+            }
+          ],
+          "recommendedAction": "Identify and terminate the idle-in-transaction session 86264 (application_name=auth-svc-reconciler) on accounts-db to release the ShareLock, then fix the reconciler to commit or roll back and set idle_in_transaction_session_timeout. Afterwards, verify that auth-svc UPDATEs stop timing out and that /login 504s drop. Separately, track the ingest-api v4.27.0 'region' TypeError and the billing-reconciler 2019 archive checksum violations as distinct issues."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 7,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1778,
+      "cacheReadTokens": 36350,
+      "cacheWriteTokens": 13594
+    },
+    "durationMs": 8881,
+    "stopReason": "tool_use"
+  }
+}

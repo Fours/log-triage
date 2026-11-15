@@ -1,0 +1,210 @@
+{
+  "score": {
+    "incidentId": "ht-002",
+    "difficulty": "hard",
+    "scenario": "dependency_timeout/external-hang",
+    "truth": "dependency_timeout",
+    "acceptable": [
+      "external_outage"
+    ],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 7,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "secondaryCited": 2,
+    "costUsd": 0.077312,
+    "durationMs": 17405,
+    "iterations": 5,
+    "toolCalls": 9,
+    "tokens": {
+      "input": 12,
+      "output": 1673,
+      "cacheRead": 22320,
+      "cacheWrite": 7868
+    }
+  },
+  "result": {
+    "incidentId": "ht-002",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.88,
+          "evidenceLines": [
+            2567,
+            2657,
+            2746,
+            2889,
+            2658,
+            2749,
+            2890
+          ],
+          "reasoning": "The login path is edge-proxy → account-svc → auth-svc → identity provider (idp.example). The first sign of trouble is the IdP token call slowing down at 09:53:20 (5.8s, line 2567). From 09:54:12 auth-svc calls to the IdP hang until they hit the 30s timeout (lines 2657, 2746, 2889). account-svc's calls to auth-svc time out on the same traces (t-7441, t-7474, t-7543). The waiting drains account-svc's connection pool to auth-svc: by 09:59:19 checkouts time out (line 3345). As a result, edge-proxy gets 503s from account-svc on POST /login starting at 09:56:20. The IdP hangs instead of failing fast, so this is a dependency timeout, not an external outage."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.08,
+          "evidenceLines": [
+            2657,
+            2746
+          ],
+          "reasoning": "The IdP is a third-party service, so this could be read as that provider being down. But the logs only show hangs and timeouts, with no 5xx or refused connections."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.04,
+          "evidenceLines": [
+            1782,
+            2334
+          ],
+          "reasoning": "ingest-api is crashing from running out of memory at the same time, but it sits on the separate /v1/events path. Nothing ties it to the /login failures, so it is a red herring."
+        }
+      ],
+      "recommendedAction": "Check whether the identity provider (idp.example) is healthy and contact the vendor. Lower auth-svc's IdP timeout from 30s and add a circuit breaker or fail-fast so stuck calls don't drain account-svc's pool to auth-svc. If tokens can be cached or validated locally, use that as a fallback. Investigate the ingest-api out-of-memory crashes as a separate issue."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60,
+          "query": "login"
+        },
+        "output": "12 match(es):\n#2942 2026-10-08T09:56:20Z ERROR edge-proxy [t-7564] POST /login 503 28460ms: upstream account-svc returned 503 Service Unavailable\n#2966 2026-10-08T09:56:30Z ERROR edge-proxy [t-7573] POST /login 503 7437ms: upstream account-svc returned 503 Service Unavailable\n#3051 2026-10-08T09:57:10Z ERROR edge-proxy [t-7617] POST /login 503 19941ms: upstream account-svc returned 503 Service Unavailable\n#3104 2026-10-08T09:57:34Z ERROR edge-proxy [t-7643] POST /login 503 25935ms: upstream account-svc returned 503 Service Unavailable\n#3154 2026-10-08T09:57:58Z ERROR edge-proxy [t-7665] POST /login 503 10237ms: upstream account-svc returned 503 Service Unavailable\n#3209 2026-10-08T09:58:23Z ERROR edge-proxy [t-7694] POST /login 503 11701ms: upstream account-svc returned 503 Service Unavailable\n#3272 2026-10-08T09:58:50Z ERROR edge-proxy [t-7717] POST /login 503 28398ms: upstream account-svc returned 503 Service Unavailable\n#3313 2026-10-08T09:59:07Z ERROR edge-proxy [t-7734] POST /login 503 7345ms: upstream account-svc returned 503 Service Unavailable\n#3388 2026-10-08T09:59:34Z ERROR edge-proxy [t-7775] POST /login 503 19994ms: upstream account-svc returned 503 Service Unavailable\n#3417 2026-10-08T09:59:46Z ERROR edge-proxy [t-7791] POST /login 503 27866ms: upstream account-svc returned 503 Service Unavailable\n#3522 2026-10-08T10:00:32Z ERROR edge-proxy [t-7842] POST /login 503 16126ms: upstream account-svc returned 503 Service Unavailable\n#3562 2026-10-08T10:00:46Z ERROR edge-proxy [t-7868] POST /login 503 5525ms: upstream account-svc returned 503 Service Unavailable"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 40,
+          "service": "auth-svc"
+        },
+        "output": "3 match(es):\n#2657 2026-10-08T09:54:12Z ERROR auth-svc [t-7441] call to the identity provider aborted: no response within 30s\n#2746 2026-10-08T09:54:56Z ERROR auth-svc [t-7474] HTTP client: read timed out after 30000 ms waiting for idp.example\n#2889 2026-10-08T09:55:56Z ERROR auth-svc [t-7543] identity provider request abandoned, socket idle 30.0s"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 40,
+          "service": "account-svc"
+        },
+        "output": "4 match(es):\n#2658 2026-10-08T09:54:12Z ERROR account-svc [t-7441] gave up waiting on auth-svc for u-5119: no response in 30000 ms\n#2749 2026-10-08T09:54:56Z ERROR account-svc [t-7474] AuthClient.issueToken timed out after 30000ms calling auth-svc POST /tokens (u-5149)\n#2890 2026-10-08T09:55:57Z ERROR account-svc [t-7543] upstream request to auth-svc failed: ReadTimeout (read timeout=30s) [u-5193]\n#3345 2026-10-08T09:59:19Z ERROR account-svc pool checkout timeout: no connection to auth-svc available after 5000ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 40,
+          "service": "auth-svc"
+        },
+        "output": "3 match(es):\n#2657 2026-10-08T09:54:12Z ERROR auth-svc [t-7441] call to the identity provider aborted: no response within 30s\n#2746 2026-10-08T09:54:56Z ERROR auth-svc [t-7474] HTTP client: read timed out after 30000 ms waiting for idp.example\n#2889 2026-10-08T09:55:56Z ERROR auth-svc [t-7543] identity provider request abandoned, socket idle 30.0s"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "idp",
+          "limit": 30,
+          "until": "09:54:30"
+        },
+        "output": "1 match(es):\n#2567 2026-10-08T09:53:20Z INFO auth-svc [t-7421] identity provider call slow: 5772ms (soft threshold 2000ms) POST https://idp.example/oauth2/token"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "identity provider",
+          "limit": 30
+        },
+        "output": "3 match(es):\n#2567 2026-10-08T09:53:20Z INFO auth-svc [t-7421] identity provider call slow: 5772ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#2657 2026-10-08T09:54:12Z ERROR auth-svc [t-7441] call to the identity provider aborted: no response within 30s\n#2889 2026-10-08T09:55:56Z ERROR auth-svc [t-7543] identity provider request abandoned, socket idle 30.0s"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 20
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-7441"
+        },
+        "output": "2 line(s) for t-7441:\n#2657 2026-10-08T09:54:12Z ERROR auth-svc [t-7441] call to the identity provider aborted: no response within 30s\n#2658 2026-10-08T09:54:12Z ERROR account-svc [t-7441] gave up waiting on auth-svc for u-5119: no response in 30000 ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 15,
+          "until": "09:54:00"
+        },
+        "output": "17 match(es), showing first 15:\n#1339 2026-10-08T09:47:37Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 213 events (attempt 1/5, then dropped)\n#1500 2026-10-08T09:48:17Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 322 events (attempt 2/5, then dropped)\n#1744 2026-10-08T09:49:19Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 342 events (attempt 3/5, then dropped)\n#1782 2026-10-08T09:49:29Z FATAL ingest-api fatal: heap exhausted while growing eventCache (requested 64MB, max 1536MB)\n#1788 2026-10-08T09:49:30Z ERROR ingest-api pod ingest-api-2 exceeded its 2Gi memory limit and was killed (restart #1)\n#1869 2026-10-08T09:49:51Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 262 events (attempt 4/5, then dropped)\n#1887 2026-10-08T09:49:57Z ERROR ingest-gateway [t-7006] POST /v1/events 502 7305ms: upstream ingest-api connection reset (no healthy upstream)\n#2056 2026-10-08T09:50:45Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 179 events (attempt 5/5, then dropped)\n#2112 2026-10-08T09:51:01Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 209 events (attempt 1/5, then dropped)\n#2274 2026-10-08T09:51:46Z ERROR ingest-gateway [t-7249] POST /v1/events 502 23367ms: upstream ingest-api connection reset (no healthy upstream)\n#2334 2026-10-08T09:52:01Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#2340 2026-10-08T09:52:02Z ERROR ingest-api container ingest-api-1 killed: OOMKilled (memory limit 2Gi), restart count 2\n#2426 2026-10-08T09:52:26Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 153 events (attempt 2/5, then dropped)\n#2502 2026-10-08T09:52:55Z ERROR ingest-gateway [t-7396] POST /v1/events 502 17829ms: upstream ingest-api connection reset (no healthy upstream)\n#2526 2026-10-08T09:53:02Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 293 events (attempt 3/5, then dropped)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.88,
+              "evidenceLines": [
+                2567,
+                2657,
+                2746,
+                2889,
+                2658,
+                2749,
+                2890
+              ],
+              "reasoning": "The login path is edge-proxy → account-svc → auth-svc → identity provider (idp.example). The first sign of trouble is the IdP token call slowing down at 09:53:20 (5.8s, line 2567). From 09:54:12 auth-svc calls to the IdP hang until they hit the 30s timeout (lines 2657, 2746, 2889). account-svc's calls to auth-svc time out on the same traces (t-7441, t-7474, t-7543). The waiting drains account-svc's connection pool to auth-svc: by 09:59:19 checkouts time out (line 3345). As a result, edge-proxy gets 503s from account-svc on POST /login starting at 09:56:20. The IdP hangs instead of failing fast, so this is a dependency timeout, not an external outage."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.08,
+              "evidenceLines": [
+                2657,
+                2746
+              ],
+              "reasoning": "The IdP is a third-party service, so this could be read as that provider being down. But the logs only show hangs and timeouts, with no 5xx or refused connections."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.04,
+              "evidenceLines": [
+                1782,
+                2334
+              ],
+              "reasoning": "ingest-api is crashing from running out of memory at the same time, but it sits on the separate /v1/events path. Nothing ties it to the /login failures, so it is a red herring."
+            }
+          ],
+          "recommendedAction": "Check whether the identity provider (idp.example) is healthy and contact the vendor. Lower auth-svc's IdP timeout from 30s and add a circuit breaker or fail-fast so stuck calls don't drain account-svc's pool to auth-svc. If tokens can be cached or validated locally, use that as a fallback. Investigate the ingest-api out-of-memory crashes as a separate issue."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 9,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1673,
+      "cacheReadTokens": 22320,
+      "cacheWriteTokens": 7868
+    },
+    "durationMs": 17405,
+    "stopReason": "tool_use"
+  }
+}

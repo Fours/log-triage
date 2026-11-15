@@ -1,0 +1,193 @@
+{
+  "score": {
+    "incidentId": "ht-023",
+    "difficulty": "medium",
+    "scenario": "data_integrity/partial-migration",
+    "truth": "data_integrity",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.92,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 10,
+      "correct": 6,
+      "precision": 0.6,
+      "recall": 0.8571428571428571,
+      "f1": 0.7058823529411764
+    },
+    "herringsCited": 0,
+    "secondaryCited": 8,
+    "costUsd": 0.0030455,
+    "durationMs": 9463,
+    "iterations": 5,
+    "toolCalls": 7,
+    "tokens": {
+      "input": 12,
+      "output": 1792,
+      "cacheRead": 36030,
+      "cacheWrite": 14304
+    }
+  },
+  "result": {
+    "incidentId": "ht-023",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.92,
+          "evidenceLines": [
+            1696,
+            1701,
+            1730,
+            1876,
+            1918,
+            1956,
+            2064,
+            2123,
+            2384,
+            2553
+          ],
+          "reasoning": "Migration 0124_add_region_id on ingest-api ran in 3 steps against events-db. Step 1 renamed events.region_id -> region_id_old and committed, but step 2 failed with a lock timeout (#1730). The DDL is non-transactional, so step 1 was never rolled back, leaving the events table without region_id. From 10:18:33 onward, events-db rejects every query that references region_id (#1876, #1918, #2064, #2129), and ingest-api fails its event queries with 'Unknown column region_id' (#1956, #2123, #2384, #2553). Those failures surface at ingest-gateway as POST /v1/events 500s (#1866, #2053, #2092, #2266, #2343, #2411, #2608), which is the paged alert. The 500s are a downstream symptom; the half-applied migration is the origin. Note that the enrichment, event-processor and index-worker lines show no errors, and the ingest path was healthy until the migration step ran at ~10:17."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.1,
+          "evidenceLines": [
+            1553,
+            1945,
+            2139,
+            2219,
+            2301,
+            2145,
+            2179,
+            2285
+          ],
+          "reasoning": "Secondary, unrelated issue. catalog-db ran out of disk (95% then 99%, then 'could not extend file: No space left on device'), which breaks search-api product writes and produces the web-bff /search 500s. It does not touch POST /v1/events, so it is not the cause of the ingest-gateway alert, though it needs its own remediation. The report-cron ModuleNotFoundError for pandas (#1803 onward) is a separate bad deploy of report-cron:2026.10.2 and is also unrelated to the alert."
+        }
+      ],
+      "recommendedAction": "Immediately repair events-db schema: restore the region_id column (rename events.region_id_old back to region_id, or re-add it with the correct definition and backfill) and confirm the migration state so 0124 can be re-run safely. Then verify POST /v1/events returns 200 on ingest-gateway. Before re-running the migration, check the lock holder on events, since step 2 hit a lock timeout. Make future DDL migrations transactional or add a compensating rollback. Separately, free disk on catalog-db (WAL/binlog growth ~531-833MB/h) to stop the search-api write failures, and fix the report-cron:2026.10.2 image, which is missing pandas."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "42 match(es):\n#198 2026-11-19T10:05:30Z WARN ingest-gateway rate limiter: client key k-2022 throttled (429), 159 req/s over quota\n#682 2026-11-19T10:09:14Z WARN enrichment-svc [t-5626] geo-IP provider call failed: connection reset by peer POST https://api.geoip.example/v1/lookup, retry 1/3\n#1553 2026-11-19T10:15:53Z WARN catalog-db disk usage 95% on /var/lib/postgresql/data (WAL/binlog growth 833MB/h)\n#1803 2026-11-19T10:17:47Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1866 2026-11-19T10:18:26Z ERROR ingest-gateway [t-6394] POST /v1/events 500 28906ms: upstream ingest-api returned 500 Internal Server Error\n#1876 2026-11-19T10:18:33Z ERROR events-db Unknown column 'events.region_id' in 'where clause'\n#1907 2026-11-19T10:18:51Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1918 2026-11-19T10:18:58Z ERROR events-db ER_BAD_FIELD_ERROR (1054) for region_id on events\n#1945 2026-11-19T10:19:14Z WARN catalog-db disk usage 99% on /var/lib/postgresql/data (WAL/binlog growth 531MB/h)\n#1956 2026-11-19T10:19:19Z ERROR ingest-api [t-6446] query on events failed for e-8356: Unknown column 'region_id'\n#1972 2026-11-19T10:19:28Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2053 2026-11-19T10:20:23Z ERROR ingest-gateway [t-6488] POST /v1/events 500 22612ms: upstream ingest-api returned 500 Internal Server Error\n#2064 2026-11-19T10:20:30Z ERROR events-db Unknown column 'region_id' in 'field list'\n#2092 2026-11-19T10:20:47Z ERROR ingest-gateway [t-6511] POST /v1/events 500 21956ms: upstream ingest-api returned 500 Internal Server Error\n#2123 2026-11-19T10:21:18Z ERROR ingest-api [t-6522] query on events failed for e-8410: Unknown column 'region_id'\n#2128 2026-11-19T10:21:23Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2129 2026-11-19T10:21:23Z ERROR events-db Unknown column 'events.region_id' in 'where clause'\n#2130 2026-11-19T10:21:24Z ERROR web-bff [t-6524] GET /search 500 16487ms: upstream search-api returned 500 Internal Server Error\n#2139 2026-11-19T10:21:34Z ERROR catalog-db could not extend file \"base/16384/37310\": No space left on device\n#2145 2026-11-19T10:21:39Z ERROR search-api [t-6530] could not save product p-8413: database rejected the write (disk full)\n#2159 2026-11-19T10:21:50Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2175 2026-11-19T10:22:05Z ERROR web-bff [t-6543] GET /search 500 19448ms: upstream search-api returned 500 Internal Server Error\n#2179 2026-11-19T10:22:06Z ERROR search-api [t-6550] products.insert(p-8425) -> DiskFullError\n#2219 2026-11-19T10:22:35Z ERROR catalog-db could not extend file \"base/16384/20517\": No space left on device\n#2240 2026-11-19T10:22:55Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2266 2026-11-19T10:23:18Z ERROR ingest-gateway [t-6584] POST /v1/events 500 24854ms: upstream ingest-api returned 500 Internal Server Error\n#2285 2026-11-19T10:23:30Z ERROR search-api [t-6596] insert into products failed for p-8456: could not extend file\n#2294 2026-11-19T10:23:38Z ERROR web-bff [t-6602] GET /search 500 27833ms: upstream search-api returned 500 Internal Server Error\n#2301 2026-11-19T10:23:41Z ERROR catalog-db could not extend file \"base/16384/30228\": No space left on device\n#2324 2026-11-19T10:24:00Z ERROR web-bff [t-6618] GET /search 500 22026ms: upstream search-api returned 500 Internal Server Error\n#2333 2026-11-19T10:24:03Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2343 2026-11-19T10:24:10Z ERROR ingest-gateway [t-6629] POST /v1/events 500 17397ms: upstream ingest-api returned 500 Internal Server Error\n#2384 2026-11-19T10:24:49Z ERROR ingest-api [t-6648] query on events failed for e-8484: Unknown column 'region_id'\n#2398 2026-11-19T10:24:58Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2411 2026-11-19T10:25:08Z ERROR ingest-gateway [t-6663] POST /v1/events 500 29946ms: upstream ingest-api returned 500 Internal Server Error\n#2458 2026-11-19T10:25:46Z ERROR web-bff [t-6683] GET /search 500 10328ms: upstream search-api returned 500 Internal Server Error\n#2484 2026-11-19T10:26:11Z ERROR web-bff [t-6692] GET /search 500 12785ms: upstream search-api returned 500 Internal Server Error\n#2525 2026-11-19T10:26:39Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2553 2026-11-19T10:27:05Z ERROR ingest-api [t-6721] query on events failed for e-8538: Unknown column 'region_id'\n#2558 2026-11-19T10:27:11Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2608 2026-11-19T10:27:44Z ERROR ingest-gateway [t-6748] POST /v1/events 500 25387ms: upstream ingest-api returned 500 Internal Server Error\n#2615 2026-11-19T10:27:48Z ERROR web-bff [t-6754] GET /search 500 27182ms: upstream search-api returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-gateway",
+          "level": "ERROR",
+          "limit": 20
+        },
+        "output": "7 match(es):\n#1866 2026-11-19T10:18:26Z ERROR ingest-gateway [t-6394] POST /v1/events 500 28906ms: upstream ingest-api returned 500 Internal Server Error\n#2053 2026-11-19T10:20:23Z ERROR ingest-gateway [t-6488] POST /v1/events 500 22612ms: upstream ingest-api returned 500 Internal Server Error\n#2092 2026-11-19T10:20:47Z ERROR ingest-gateway [t-6511] POST /v1/events 500 21956ms: upstream ingest-api returned 500 Internal Server Error\n#2266 2026-11-19T10:23:18Z ERROR ingest-gateway [t-6584] POST /v1/events 500 24854ms: upstream ingest-api returned 500 Internal Server Error\n#2343 2026-11-19T10:24:10Z ERROR ingest-gateway [t-6629] POST /v1/events 500 17397ms: upstream ingest-api returned 500 Internal Server Error\n#2411 2026-11-19T10:25:08Z ERROR ingest-gateway [t-6663] POST /v1/events 500 29946ms: upstream ingest-api returned 500 Internal Server Error\n#2608 2026-11-19T10:27:44Z ERROR ingest-gateway [t-6748] POST /v1/events 500 25387ms: upstream ingest-api returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "events-db",
+          "limit": 70
+        },
+        "output": "67 match(es):\n#6 2026-11-19T10:04:03Z INFO events-db InnoDB: page cleaner flushed 751 pages, buffer pool hit rate 99.9%\n#44 2026-11-19T10:04:22Z INFO events-db InnoDB: page cleaner flushed 621 pages, buffer pool hit rate 99.5%\n#110 2026-11-19T10:04:51Z INFO events-db InnoDB: page cleaner flushed 143 pages, buffer pool hit rate 99.9%\n#151 2026-11-19T10:05:10Z INFO events-db InnoDB: page cleaner flushed 733 pages, buffer pool hit rate 99.6%\n#190 2026-11-19T10:05:28Z INFO events-db InnoDB: page cleaner flushed 428 pages, buffer pool hit rate 99%\n#232 2026-11-19T10:05:46Z INFO events-db InnoDB: page cleaner flushed 781 pages, buffer pool hit rate 99.6%\n#289 2026-11-19T10:06:12Z INFO events-db InnoDB: page cleaner flushed 884 pages, buffer pool hit rate 99%\n#348 2026-11-19T10:06:38Z INFO events-db InnoDB: page cleaner flushed 457 pages, buffer pool hit rate 99%\n#407 2026-11-19T10:07:05Z INFO events-db InnoDB: page cleaner flushed 793 pages, buffer pool hit rate 99.3%\n#460 2026-11-19T10:07:33Z INFO events-db InnoDB: page cleaner flushed 603 pages, buffer pool hit rate 98.5%\n#492 2026-11-19T10:07:50Z INFO events-db InnoDB: page cleaner flushed 239 pages, buffer pool hit rate 98.5%\n#540 2026-11-19T10:08:10Z INFO events-db InnoDB: page cleaner flushed 448 pages, buffer pool hit rate 98.8%\n#597 2026-11-19T10:08:35Z INFO events-db InnoDB: page cleaner flushed 691 pages, buffer pool hit rate 99.4%\n#653 2026-11-19T10:09:01Z INFO events-db InnoDB: page cleaner flushed 192 pages, buffer pool hit rate 99.1%\n#695 2026-11-19T10:09:20Z INFO events-db InnoDB: page cleaner flushed 865 pages, buffer pool hit rate 99.1%\n#745 2026-11-19T10:09:42Z INFO events-db InnoDB: page cleaner flushed 690 pages, buffer pool hit rate 98.6%\n#787 2026-11-19T10:10:00Z INFO events-db InnoDB: page cleaner flushed 794 pages, buffer pool hit rate 99.7%\n#837 2026-11-19T10:10:24Z INFO events-db InnoDB: page cleaner flushed 540 pages, buffer pool hit rate 99.1%\n#881 2026-11-19T10:10:45Z INFO events-db InnoDB: page cleaner flushed 126 pages, buffer pool hit rate 98.6%\n#935 2026-11-19T10:11:11Z INFO events-db InnoDB: page cleaner flushed 271 pages, buffer pool hit rate 99%\n#989 2026-11-19T10:11:35Z INFO events-db InnoDB: page cleaner flushed 795 pages, buffer pool hit rate 98.7%\n#1029 2026-11-19T10:11:54Z INFO events-db InnoDB: page cleaner flushed 386 pages, buffer pool hit rate 99.9%\n#1087 2026-11-19T10:12:18Z INFO events-db InnoDB: page cleaner flushed 100 pages, buffer pool hit rate 99.1%\n#1133 2026-11-19T10:12:41Z INFO events-db InnoDB: page cleaner flushed 825 pages, buffer pool hit rate 99.3%\n#1181 2026-11-19T10:13:02Z INFO events-db InnoDB: page cleaner flushed 472 pages, buffer pool hit rate 99.9%\n#1216 2026-11-19T10:13:18Z INFO events-db InnoDB: page cleaner flushed 492 pages, buffer pool hit rate 98.9%\n#1260 2026-11-19T10:13:37Z INFO events-db InnoDB: page cleaner flushed 522 pages, buffer pool hit rate 99.7%\n#1306 2026-11-19T10:14:00Z INFO events-db InnoDB: page cleaner flushed 577 pages, buffer pool hit rate 99.7%\n#1345 2026-11-19T10:14:19Z INFO events-db InnoDB: page cleaner flushed 395 pages, buffer pool hit rate 99.8%\n#1409 2026-11-19T10:14:48Z INFO events-db InnoDB: page cleaner flushed 533 pages, buffer pool hit rate 99.5%\n#1468 2026-11-19T10:15:15Z INFO events-db InnoDB: page cleaner flushed 463 pages, buffer pool hit rate 99.7%\n#1501 2026-11-19T10:15:32Z INFO events-db InnoDB: page cleaner flushed 755 pages, buffer pool hit rate 99.3%\n#1548 2026-11-19T10:15:51Z INFO events-db InnoDB: page cleaner flushed 259 pages, buffer pool hit rate 99.2%\n#1596 2026-11-19T10:16:11Z INFO events-db InnoDB: page cleaner flushed 196 pages, buffer pool hit rate 98.6%\n#1637 2026-11-19T10:16:30Z INFO events-db InnoDB: page cleaner flushed 628 pages, buffer pool hit rate 99.7%\n#1694 2026-11-19T10:16:57Z INFO events-db InnoDB: page cleaner flushed 780 pages, buffer pool hit rate 99.3%\n#1754 2026-11-19T10:17:22Z INFO events-db InnoDB: page cleaner flushed 403 pages, buffer pool hit rate 99.5%\n#1796 2026-11-19T10:17:43Z INFO events-db InnoDB: page cleaner flushed 842 pages, buffer pool hit rate 99%\n#1828 2026-11-19T10:18:01Z INFO events-db InnoDB: page cleaner flushed 217 pages, buffer pool hit rate 98.7%\n#1870 2026-11-19T10:18:30Z INFO events-db InnoDB: page cleaner flushed 167 pages, buffer pool hit rate 99.9%\n#1876 2026-11-19T10:18:33Z ERROR events-db Unknown column 'events.region_id' in 'where clause'\n#1906 2026-11-19T10:18:49Z INFO events-db InnoDB: page cleaner flushed 146 pages, buffer pool hit rate 98.9%\n#1918 2026-11-19T10:18:58Z ERROR events-db ER_BAD_FIELD_ERROR (1054) for region_id on events\n#1949 2026-11-19T10:19:15Z INFO events-db InnoDB: page cleaner flushed 772 pages, buffer pool hit rate 99.5%\n#1994 2026-11-19T10:19:43Z INFO events-db InnoDB: page cleaner flushed 219 pages, buffer pool hit rate 99.7%\n#2030 2026-11-19T10:20:09Z INFO events-db InnoDB: page cleaner flushed 900 pages, buffer pool hit rate 99.5%\n#2064 2026-11-19T10:20:30Z ERROR events-db Unknown column 'region_id' in 'field list'\n#2076 2026-11-19T10:20:37Z INFO events-db InnoDB: page cleaner flushed 539 pages, buffer pool hit rate 99.4%\n#2104 2026-11-19T10:20:56Z INFO events-db InnoDB: page cleaner flushed 829 pages, buffer pool hit rate 98.7%\n#2126 2026-11-19T10:21:20Z INFO events-db InnoDB: page cleaner flushed 486 pages, buffer pool hit rate 99.1%\n#2129 2026-11-19T10:21:23Z ERROR events-db Unknown column 'events.region_id' in 'where clause'\n#2154 2026-11-19T10:21:45Z INFO events-db InnoDB: page cleaner flushed 458 pages, buffer pool hit rate 99.1%\n#2184 2026-11-19T10:22:08Z INFO events-db InnoDB: page cleaner flushed 505 pages, buffer pool hit rate 99.1%\n#2211 2026-11-19T10:22:29Z INFO events-db InnoDB: page cleaner flushed 302 pages, buffer pool hit rate 99%\n#2239 2026-11-19T10:22:52Z INFO events-db InnoDB: page cleaner flushed 656 pages, buffer pool hit rate 99.9%\n#2269 2026-11-19T10:23:18Z INFO events-db InnoDB: page cleaner flushed 402 pages, buffer pool hit rate 98.7%\n#2296 2026-11-19T10:23:39Z INFO events-db InnoDB: page cleaner flushed 247 pages, buffer pool hit rate 99.7%\n#2331 2026-11-19T10:24:03Z INFO events-db InnoDB: page cleaner flushed 176 pages, buffer pool hit rate 98.6%\n#2366 2026-11-19T10:24:32Z INFO events-db InnoDB: page cleaner flushed 607 pages, buffer pool hit rate 99.9%\n#2397 2026-11-19T10:24:57Z INFO events-db InnoDB: page cleaner flushed 749 pages, buffer pool hit rate 98.8%\n#2422 2026-11-19T10:25:18Z INFO events-db InnoDB: page cleaner flushed 569 pages, buffer pool hit rate 98.6%\n#2457 2026-11-19T10:25:46Z INFO events-db InnoDB: page cleaner flushed 858 pages, buffer pool hit rate 99.7%\n#2488 2026-11-19T10:26:12Z INFO events-db InnoDB: page cleaner flushed 759 pages, buffer pool hit rate 98.9%\n#2528 2026-11-19T10:26:41Z INFO events-db InnoDB: page cleaner flushed 186 pages, buffer pool hit rate 99.5%\n#2554 2026-11-19T10:27:05Z INFO events-db InnoDB: page cleaner flushed 813 pages, buffer pool hit rate 99.2%\n#2590 2026-11-19T10:27:32Z INFO events-db InnoDB: page cleaner flushed 685 pages, buffer pool hit rate 99.9%\n#2622 2026-11-19T10:27:52Z INFO events-db InnoDB: page cleaner flushed 398 pages, buffer pool hit rate 98.9%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "migration",
+          "limit": 30
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "region",
+          "limit": 50
+        },
+        "output": "11 match(es):\n#1696 2026-11-19T10:16:57Z INFO ingest-api migrate: applying 0124_add_region_id (3 steps) to events-db\n#1701 2026-11-19T10:16:59Z INFO ingest-api migrate: 0124_add_region_id step 1/3 ok: renamed column events.region_id -> region_id_old\n#1730 2026-11-19T10:17:11Z INFO ingest-api migrate: 0124_add_region_id step 2/3 failed: lock timeout on events; step 1 already committed (non-transactional DDL), not rolled back\n#1876 2026-11-19T10:18:33Z ERROR events-db Unknown column 'events.region_id' in 'where clause'\n#1918 2026-11-19T10:18:58Z ERROR events-db ER_BAD_FIELD_ERROR (1054) for region_id on events\n#1956 2026-11-19T10:19:19Z ERROR ingest-api [t-6446] query on events failed for e-8356: Unknown column 'region_id'\n#2064 2026-11-19T10:20:30Z ERROR events-db Unknown column 'region_id' in 'field list'\n#2123 2026-11-19T10:21:18Z ERROR ingest-api [t-6522] query on events failed for e-8410: Unknown column 'region_id'\n#2129 2026-11-19T10:21:23Z ERROR events-db Unknown column 'events.region_id' in 'where clause'\n#2384 2026-11-19T10:24:49Z ERROR ingest-api [t-6648] query on events failed for e-8484: Unknown column 'region_id'\n#2553 2026-11-19T10:27:05Z ERROR ingest-api [t-6721] query on events failed for e-8538: Unknown column 'region_id'"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 30
+        },
+        "output": "10 match(es):\n#1803 2026-11-19T10:17:47Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1907 2026-11-19T10:18:51Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1972 2026-11-19T10:19:28Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2128 2026-11-19T10:21:23Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2159 2026-11-19T10:21:50Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2240 2026-11-19T10:22:55Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2333 2026-11-19T10:24:03Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2398 2026-11-19T10:24:58Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2525 2026-11-19T10:26:39Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2558 2026-11-19T10:27:11Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1730,
+          "before": 12,
+          "after": 4
+        },
+        "output": "#1718 2026-11-19T10:17:06Z INFO redis-cache stats: hits=16790 misses=312 evicted=0 connected_clients=40\n#1719 2026-11-19T10:17:06Z INFO search-api [t-6312] product p-8253 accepted, calling catalog-svc GET /products/batch\n#1720 2026-11-19T10:17:06Z INFO catalog-svc [t-6312] GET /products/batch p-8253 ok 25ms\n#1721 2026-11-19T10:17:06Z INFO web-bff [t-6312] GET /search 200 118ms\n#1722 2026-11-19T10:17:07Z DEBUG enrichment-svc GC pause 6ms (young), heap 37%\n#1723 2026-11-19T10:17:07Z INFO ingest-api [t-6313] event e-8255 accepted, calling enrichment-svc POST /enrich\n#1724 2026-11-19T10:17:08Z INFO index-worker processed batch of 94 messages from catalog.updates (lag 345ms)\n#1725 2026-11-19T10:17:08Z INFO ingest-gateway [t-6313] POST /v1/events 200 44ms\n#1726 2026-11-19T10:17:08Z INFO event-processor processed batch of 62 messages from events.raw (lag 115ms)\n#1727 2026-11-19T10:17:09Z INFO search-api [t-6315] product p-8257 accepted, calling catalog-svc GET /products/batch\n#1728 2026-11-19T10:17:09Z INFO web-bff [t-6315] GET /search 200 122ms\n#1729 2026-11-19T10:17:10Z DEBUG web-bff upstream health: search-api ok, catalog-svc ok\n#1730 2026-11-19T10:17:11Z INFO ingest-api migrate: 0124_add_region_id step 2/3 failed: lock timeout on events; step 1 already committed (non-transactional DDL), not rolled back\n#1731 2026-11-19T10:17:11Z INFO ingest-api [t-6319] event e-8259 accepted, calling enrichment-svc POST /enrich\n#1732 2026-11-19T10:17:11Z INFO enrichment-svc [t-6319] POST /enrich e-8259 ok 49ms\n#1733 2026-11-19T10:17:11Z INFO ingest-gateway [t-6319] POST /v1/events 200 81ms\n#1734 2026-11-19T10:17:13Z INFO catalog-db checkpoint complete: wrote 387 buffers (4.9%)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.92,
+              "evidenceLines": [
+                1696,
+                1701,
+                1730,
+                1876,
+                1918,
+                1956,
+                2064,
+                2123,
+                2384,
+                2553
+              ],
+              "reasoning": "Migration 0124_add_region_id on ingest-api ran in 3 steps against events-db. Step 1 renamed events.region_id -> region_id_old and committed, but step 2 failed with a lock timeout (#1730). The DDL is non-transactional, so step 1 was never rolled back, leaving the events table without region_id. From 10:18:33 onward, events-db rejects every query that references region_id (#1876, #1918, #2064, #2129), and ingest-api fails its event queries with 'Unknown column region_id' (#1956, #2123, #2384, #2553). Those failures surface at ingest-gateway as POST /v1/events 500s (#1866, #2053, #2092, #2266, #2343, #2411, #2608), which is the paged alert. The 500s are a downstream symptom; the half-applied migration is the origin. Note that the enrichment, event-processor and index-worker lines show no errors, and the ingest path was healthy until the migration step ran at ~10:17.",
+              "cascading_failure": null
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.1,
+              "evidenceLines": [
+                1553,
+                1945,
+                2139,
+                2219,
+                2301,
+                2145,
+                2179,
+                2285
+              ],
+              "reasoning": "Secondary, unrelated issue. catalog-db ran out of disk (95% then 99%, then 'could not extend file: No space left on device'), which breaks search-api product writes and produces the web-bff /search 500s. It does not touch POST /v1/events, so it is not the cause of the ingest-gateway alert, though it needs its own remediation. The report-cron ModuleNotFoundError for pandas (#1803 onward) is a separate bad deploy of report-cron:2026.10.2 and is also unrelated to the alert.",
+              "cascading_failure": null
+            }
+          ],
+          "recommendedAction": "Immediately repair events-db schema: restore the region_id column (rename events.region_id_old back to region_id, or re-add it with the correct definition and backfill) and confirm the migration state so 0124 can be re-run safely. Then verify POST /v1/events returns 200 on ingest-gateway. Before re-running the migration, check the lock holder on events, since step 2 hit a lock timeout. Make future DDL migrations transactional or add a compensating rollback. Separately, free disk on catalog-db (WAL/binlog growth ~531-833MB/h) to stop the search-api write failures, and fix the report-cron:2026.10.2 image, which is missing pandas."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 7,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1792,
+      "cacheReadTokens": 36030,
+      "cacheWriteTokens": 14304
+    },
+    "durationMs": 9463,
+    "stopReason": "tool_use"
+  }
+}

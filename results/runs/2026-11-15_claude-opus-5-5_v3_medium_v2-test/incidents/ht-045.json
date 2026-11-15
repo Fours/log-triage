@@ -1,0 +1,168 @@
+{
+  "score": {
+    "incidentId": "ht-045",
+    "difficulty": "medium",
+    "scenario": "external_outage/cloud-object-storage",
+    "truth": "external_outage",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 4,
+      "precision": 0.6666666666666666,
+      "recall": 0.8,
+      "f1": 0.7272727272727272
+    },
+    "herringsCited": 0,
+    "secondaryCited": 5,
+    "costUsd": 0.0830506,
+    "durationMs": 16540,
+    "iterations": 6,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 14,
+      "output": 1328,
+      "cacheRead": 37398,
+      "cacheWrite": 9791
+    }
+  },
+  "result": {
+    "incidentId": "ht-045",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.85,
+          "evidenceLines": [
+            1231,
+            1285,
+            1384,
+            1431,
+            1273,
+            1463
+          ],
+          "reasoning": "The GET /search 500s begin at 20:37:46. catalog-svc S3 PutObject calls to s3://search-artifacts-prod in us-east-1 start failing fast with 503 ServiceUnavailable and 500 InternalError from 20:37:52, and the aws-sdk retry quota is exhausted by 20:39:05. Catalog-svc then returns 500 'storage write failed' to search-api's CatalogClient.getBatch, search-api returns 500, and web-bff passes the 500 to the client. Before this, catalog-svc batch reads were healthy. The /login 503s are a separate, concurrent problem: idp.example timing out in auth-svc, which saturates account-svc's pool. That chain does not touch the /search path. The metrics-agent drops and the index-worker GC pause are noise."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.1,
+          "evidenceLines": [
+            720,
+            763,
+            886,
+            1009,
+            1109
+          ],
+          "reasoning": "There is also a concurrent identity provider timeout chain: the idp is slow from 20:32 and times out after 30s from 20:34. That explains the /login 503s, but no evidence ties it to /search."
+        }
+      ],
+      "recommendedAction": "Check the AWS S3 us-east-1 health status. Make catalog-svc's S3 artifact write non-blocking, or degrade gracefully, so a failed write doesn't fail search batch reads. Consider failing over to another region or bucket. Separately, escalate the idp.example token endpoint timeouts that are breaking /login."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 80
+        },
+        "output": "50 match(es):\n#328 2026-10-22T20:29:28Z WARN index-worker GC pause 1035ms (G1 Old Gen), heap 55% after collection\n#720 2026-10-22T20:32:34Z WARN auth-svc [t-4660] identity provider call slow: 4816ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#763 2026-10-22T20:33:00Z WARN auth-svc [t-4692] identity provider call slow: 7216ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#886 2026-10-22T20:34:13Z ERROR auth-svc [t-4774] identity provider call FAILED: upstream timeout after 30000ms POST https://idp.example/oauth2/token\n#887 2026-10-22T20:34:13Z ERROR account-svc [t-4774] POST /tokens -> auth-svc: context deadline exceeded after 30.0s (u-6148)\n#1009 2026-10-22T20:35:20Z ERROR auth-svc [t-4839] call to the identity provider aborted: no response within 30s\n#1010 2026-10-22T20:35:20Z ERROR account-svc [t-4839] AuthClient.issueToken timed out after 30000ms calling auth-svc POST /tokens (u-6203)\n#1097 2026-10-22T20:36:15Z WARN account-svc HTTP connection pool to auth-svc at capacity (50/50 in use), 39 requests queued\n#1109 2026-10-22T20:36:23Z ERROR auth-svc [t-4883] HTTP client: read timed out after 30000 ms waiting for idp.example\n#1110 2026-10-22T20:36:23Z ERROR account-svc [t-4883] upstream request to auth-svc failed: ReadTimeout (read timeout=30s) [u-6240]\n#1139 2026-10-22T20:36:39Z ERROR edge-proxy [t-4900] POST /login 503 9912ms: upstream account-svc returned 503 Service Unavailable\n#1226 2026-10-22T20:37:46Z ERROR web-bff [t-4936] GET /search 500 14137ms: upstream search-api returned 500 Internal Server Error\n#1231 2026-10-22T20:37:52Z ERROR catalog-svc [t-4937] S3 upload of p-6290.json returned 503 ServiceUnavailable (us-east-1, 4654F30)\n#1232 2026-10-22T20:37:52Z WARN account-svc HTTP connection pool to auth-svc at capacity (50/50 in use), 55 requests queued\n#1247 2026-10-22T20:38:06Z ERROR edge-proxy [t-4947] POST /login 503 14608ms: upstream account-svc returned 503 Service Unavailable\n#1250 2026-10-22T20:38:08Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2339 samples\n#1273 2026-10-22T20:38:24Z ERROR search-api [t-4956] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#1281 2026-10-22T20:38:30Z ERROR account-svc pool checkout timeout: no connection to auth-svc available after 5000ms\n#1285 2026-10-22T20:38:32Z ERROR catalog-svc [t-4963] aws-sdk PutObjectCommand failed for key p-6313.json: InternalError (HTTP 500), requestId=F295E39\n#1302 2026-10-22T20:38:45Z ERROR web-bff [t-4972] GET /search 500 5874ms: upstream search-api returned 500 Internal Server Error\n#1307 2026-10-22T20:38:50Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1089 samples\n#1323 2026-10-22T20:39:05Z WARN catalog-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (46 failed attempts in 60s)\n#1327 2026-10-22T20:39:09Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2046 samples\n#1349 2026-10-22T20:39:21Z ERROR edge-proxy [t-4991] POST /login 503 10825ms: upstream account-svc returned 503 Service Unavailable\n#1377 2026-10-22T20:39:38Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 675 samples\n#1384 2026-10-22T20:39:46Z ERROR catalog-svc [t-5014] PutObject s3://search-artifacts-prod/p-6338.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id 3DCCAA1)\n#1397 2026-10-22T20:39:53Z ERROR edge-proxy [t-5023] POST /login 503 11254ms: upstream account-svc returned 503 Service Unavailable\n#1402 2026-10-22T20:39:57Z ERROR web-bff [t-5027] GET /search 500 13171ms: upstream search-api returned 500 Internal Server Error\n#1407 2026-10-22T20:40:01Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 231 samples\n#1431 2026-10-22T20:40:18Z ERROR catalog-svc [t-5040] S3 upload of p-6356.json returned 503 ServiceUnavailable (us-east-1, 3271DCF)\n#1446 2026-10-22T20:40:30Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2189 samples\n#1454 2026-10-22T20:40:36Z ERROR web-bff [t-5051] GET /search 500 25347ms: upstream search-api returned 500 Internal Server Error\n#1463 2026-10-22T20:40:45Z ERROR search-api [t-5058] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#1502 2026-10-22T20:41:17Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1857 samples\n#1508 2026-10-22T20:41:22Z ERROR search-api [t-5076] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#1537 2026-10-22T20:41:37Z ERROR edge-proxy [t-5099] POST /login 503 19734ms: upstream account-svc returned 503 Service Unavailable\n#1541 2026-10-22T20:41:40Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 789 samples\n#1552 2026-10-22T20:41:51Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1588 samples\n#1574 2026-10-22T20:42:04Z ERROR web-bff [t-5118] GET /search 500 23924ms: upstream search-api returned 500 Internal Server Error\n#1613 2026-10-22T20:42:38Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1115 samples\n#1622 2026-10-22T20:42:42Z ERROR edge-proxy [t-5135] POST /login 503 7525ms: upstream account-svc returned 503 Service Unavailable\n#1634 2026-10-22T20:42:47Z ERROR web-bff [t-5148] GET /search 500 29863ms: upstream search-api returned 500 Internal Server Error\n#1657 2026-10-22T20:43:00Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2224 samples\n#1671 2026-10-22T20:43:12Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1202 samples\n#1723 2026-10-22T20:43:47Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1539 samples\n#1744 2026-10-22T20:44:01Z ERROR web-bff [t-5199] GET /search 500 10933ms: upstream search-api returned 500 Internal Server Error\n#1754 2026-10-22T20:44:10Z ERROR search-api [t-5206] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)\n#1757 2026-10-22T20:44:12Z ERROR edge-proxy [t-5212] POST /login 503 13104ms: upstream account-svc returned 503 Service Unavailable\n#1775 2026-10-22T20:44:27Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1913 samples\n#1809 2026-10-22T20:44:55Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1151 samples"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-4956"
+        },
+        "output": "1 line(s) for t-4956:\n#1273 2026-10-22T20:38:24Z ERROR search-api [t-4956] CatalogClient.getBatch failed: catalog-svc returned 500 (storage write failed)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "status-poller",
+          "since": "20:35:00",
+          "limit": 20
+        },
+        "output": "32 match(es), showing first 20:\n#982 2026-10-22T20:35:05Z INFO status-poller poll cycle complete: 36 targets checked in 469ms\n#1005 2026-10-22T20:35:19Z INFO status-poller poll cycle complete: 34 targets checked in 851ms\n#1028 2026-10-22T20:35:32Z INFO status-poller poll cycle complete: 28 targets checked in 429ms\n#1066 2026-10-22T20:35:56Z INFO status-poller poll cycle complete: 37 targets checked in 823ms\n#1098 2026-10-22T20:36:17Z INFO status-poller poll cycle complete: 33 targets checked in 404ms\n#1147 2026-10-22T20:36:41Z INFO status-poller poll cycle complete: 30 targets checked in 855ms\n#1172 2026-10-22T20:36:57Z INFO status-poller poll cycle complete: 19 targets checked in 617ms\n#1198 2026-10-22T20:37:16Z INFO status-poller poll cycle complete: 26 targets checked in 383ms\n#1214 2026-10-22T20:37:33Z INFO status-poller poll cycle complete: 30 targets checked in 667ms\n#1225 2026-10-22T20:37:45Z INFO status-poller poll cycle complete: 40 targets checked in 513ms\n#1254 2026-10-22T20:38:10Z INFO status-poller poll cycle complete: 21 targets checked in 529ms\n#1284 2026-10-22T20:38:31Z INFO status-poller poll cycle complete: 34 targets checked in 354ms\n#1309 2026-10-22T20:38:54Z INFO status-poller poll cycle complete: 18 targets checked in 454ms\n#1338 2026-10-22T20:39:12Z INFO status-poller poll cycle complete: 26 targets checked in 781ms\n#1364 2026-10-22T20:39:33Z INFO status-poller poll cycle complete: 39 targets checked in 753ms\n#1394 2026-10-22T20:39:53Z INFO status-poller poll cycle complete: 25 targets checked in 843ms\n#1412 2026-10-22T20:40:05Z INFO status-poller poll cycle complete: 35 targets checked in 560ms\n#1444 2026-10-22T20:40:29Z INFO status-poller poll cycle complete: 30 targets checked in 420ms\n#1465 2026-10-22T20:40:47Z INFO status-poller poll cycle complete: 38 targets checked in 321ms\n#1490 2026-10-22T20:41:10Z INFO status-poller poll cycle complete: 20 targets checked in 753ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-svc",
+          "query": "s3",
+          "limit": 15
+        },
+        "output": "4 match(es):\n#1231 2026-10-22T20:37:52Z ERROR catalog-svc [t-4937] S3 upload of p-6290.json returned 503 ServiceUnavailable (us-east-1, 4654F30)\n#1323 2026-10-22T20:39:05Z WARN catalog-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (46 failed attempts in 60s)\n#1384 2026-10-22T20:39:46Z ERROR catalog-svc [t-5014] PutObject s3://search-artifacts-prod/p-6338.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id 3DCCAA1)\n#1431 2026-10-22T20:40:18Z ERROR catalog-svc [t-5040] S3 upload of p-6356.json returned 503 ServiceUnavailable (us-east-1, 3271DCF)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "20:37:00",
+          "until": "20:37:52",
+          "query": "t-4936"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "20:36:30",
+          "until": "20:37:55",
+          "service": "catalog-svc"
+        },
+        "output": "12 match(es):\n#1121 2026-10-22T20:36:30Z DEBUG catalog-svc GC pause 16ms (young), heap 44%\n#1129 2026-10-22T20:36:34Z INFO catalog-svc [t-4896] GET /products/batch p-6253 ok 51ms\n#1141 2026-10-22T20:36:39Z INFO catalog-svc [t-4901] GET /products/batch p-6258 ok 78ms\n#1159 2026-10-22T20:36:49Z INFO catalog-svc [t-4911] GET /products/batch p-6268 ok 80ms\n#1161 2026-10-22T20:36:50Z DEBUG catalog-svc GC pause 11ms (young), heap 31%\n#1173 2026-10-22T20:36:57Z INFO catalog-svc [t-4914] GET /products/batch p-6272 ok 64ms\n#1184 2026-10-22T20:37:03Z INFO catalog-svc [t-4921] GET /products/batch p-6276 ok 31ms\n#1190 2026-10-22T20:37:08Z INFO catalog-svc [t-4925] GET /products/batch p-6280 ok 66ms\n#1202 2026-10-22T20:37:22Z DEBUG catalog-svc GC pause 14ms (young), heap 42%\n#1227 2026-10-22T20:37:47Z DEBUG catalog-svc GC pause 17ms (young), heap 31%\n#1231 2026-10-22T20:37:52Z ERROR catalog-svc [t-4937] S3 upload of p-6290.json returned 503 ServiceUnavailable (us-east-1, 4654F30)\n#1236 2026-10-22T20:37:55Z INFO catalog-svc [t-4941] GET /products/batch p-6293 ok 31ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.85,
+              "evidenceLines": [
+                1231,
+                1285,
+                1384,
+                1431,
+                1273,
+                1463
+              ],
+              "reasoning": "The GET /search 500s begin at 20:37:46. catalog-svc S3 PutObject calls to s3://search-artifacts-prod in us-east-1 start failing fast with 503 ServiceUnavailable and 500 InternalError from 20:37:52, and the aws-sdk retry quota is exhausted by 20:39:05. Catalog-svc then returns 500 'storage write failed' to search-api's CatalogClient.getBatch, search-api returns 500, and web-bff passes the 500 to the client. Before this, catalog-svc batch reads were healthy. The /login 503s are a separate, concurrent problem: idp.example timing out in auth-svc, which saturates account-svc's pool. That chain does not touch the /search path. The metrics-agent drops and the index-worker GC pause are noise."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.1,
+              "evidenceLines": [
+                720,
+                763,
+                886,
+                1009,
+                1109
+              ],
+              "reasoning": "There is also a concurrent identity provider timeout chain: the idp is slow from 20:32 and times out after 30s from 20:34. That explains the /login 503s, but no evidence ties it to /search."
+            }
+          ],
+          "recommendedAction": "Check the AWS S3 us-east-1 health status. Make catalog-svc's S3 artifact write non-blocking, or degrade gracefully, so a failed write doesn't fail search batch reads. Consider failing over to another region or bucket. Separately, escalate the idp.example token endpoint timeouts that are breaking /login."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 1328,
+      "cacheReadTokens": 37398,
+      "cacheWriteTokens": 9791
+    },
+    "durationMs": 16540,
+    "stopReason": "tool_use"
+  }
+}

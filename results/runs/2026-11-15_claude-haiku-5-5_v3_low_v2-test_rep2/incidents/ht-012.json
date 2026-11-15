@@ -1,0 +1,226 @@
+{
+  "score": {
+    "incidentId": "ht-012",
+    "difficulty": "hard",
+    "scenario": "poison_message/consumer-crash-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "bad_deploy",
+    "confidence": 0.8,
+    "top1": false,
+    "top1Lenient": false,
+    "top3": true,
+    "rank": 2,
+    "evidence": {
+      "cited": 7,
+      "correct": 6,
+      "precision": 0.8571428571428571,
+      "recall": 0.75,
+      "f1": 0.7999999999999999
+    },
+    "herringsCited": 1,
+    "secondaryCited": 0,
+    "costUsd": 0.004366345,
+    "durationMs": 15566,
+    "iterations": 8,
+    "toolCalls": 11,
+    "tokens": {
+      "input": 18,
+      "output": 3179,
+      "cacheRead": 73042,
+      "cacheWrite": 16357
+    }
+  },
+  "result": {
+    "incidentId": "ht-012",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.8,
+          "evidenceLines": [
+            2382,
+            2908,
+            2968,
+            3062,
+            3240,
+            2949,
+            3492
+          ],
+          "reasoning": "event-processor v4.13.7 (build ab5e687) was rolled out at 14:54:02 (#2382). About two minutes later the consumer aborted on msg-476560 at events.raw offset 720765 with a RangeError (stack overflow) in expandReferences (#2908, #2968, #3062, #3240). The process exits with code 1 and restarts, then resumes at the same committed offset 720765 each time (#2949, #3047, #3211, #3492), so the consumer is stuck on one message and lag keeps rising. The likely cause is the new release's recursive expandReferences overflowing on a deeply nested or self-referencing payload. The alternative is the message itself as a poison message. The deploy timing points to the release, though I did not confirm the message content or the prior version's behaviour. report-cron's pandas ModuleNotFoundError (#3019) is a separate, unrelated failure."
+        },
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.5,
+          "evidenceLines": [
+            2908,
+            2949,
+            3047,
+            3211,
+            3492
+          ],
+          "reasoning": "msg-476560 at offset 720765 is redelivered on every restart and crashes the consumer, which is the signature of a poison message jamming a queue consumer. Its malformed nesting triggers the overflow. Skipping or quarantining the offset would also resolve it, so this is an alternative reading of the same lines."
+        }
+      ],
+      "recommendedAction": "Roll back event-processor to the version before v4.13.7, or hotfix expandReferences to be iterative or depth-limited. Dead-letter or skip msg-476560 at events.raw offset 720765 so the consumer can resume and drain the lag. Separately, fix report-cron's missing pandas dependency in image 2026.10.2."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "event-processor",
+          "level": "WARN",
+          "limit": 50
+        },
+        "output": "9 match(es):\n#2547 2026-11-20T14:54:44Z WARN event-processor GC pause 782ms (G1 Old Gen), heap 56% after collection\n#2908 2026-11-20T14:56:14Z FATAL event-processor consumer aborted: recursion limit hit in expandReferences for msg-476560 at offset 720765\n#2910 2026-11-20T14:56:14Z ERROR event-processor process exited with code 1, restarting (restart 1, backoff 10s)\n#2968 2026-11-20T14:56:30Z FATAL event-processor unhandled exception processing msg-476560 (offset 720765): RangeError: Maximum call stack size exceeded at expandReferences\n#2970 2026-11-20T14:56:30Z ERROR event-processor process exited with code 1, restarting (restart 2, backoff 20s)\n#3062 2026-11-20T14:56:56Z FATAL event-processor process crashed on msg-476560@720765: RangeError: call stack overflow in expandReferences\n#3067 2026-11-20T14:56:56Z ERROR event-processor process exited with code 1, restarting (restart 3, backoff 40s)\n#3240 2026-11-20T14:57:44Z FATAL event-processor uncaught RangeError (stack size exceeded) while handling offset 720765 (msg-476560)\n#3241 2026-11-20T14:57:44Z ERROR event-processor process exited with code 1, restarting (restart 4, backoff 80s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "events-db",
+          "limit": 50
+        },
+        "output": "131 match(es), showing first 50:\n#1 2026-11-20T14:44:00Z INFO events-db InnoDB: page cleaner flushed 477 pages, buffer pool hit rate 99.4%\n#40 2026-11-20T14:44:10Z INFO events-db InnoDB: page cleaner flushed 592 pages, buffer pool hit rate 99.5%\n#74 2026-11-20T14:44:19Z INFO events-db InnoDB: page cleaner flushed 320 pages, buffer pool hit rate 98.9%\n#119 2026-11-20T14:44:29Z INFO events-db InnoDB: page cleaner flushed 647 pages, buffer pool hit rate 99.2%\n#182 2026-11-20T14:44:44Z INFO events-db InnoDB: page cleaner flushed 697 pages, buffer pool hit rate 99.4%\n#218 2026-11-20T14:44:53Z INFO events-db InnoDB: page cleaner flushed 834 pages, buffer pool hit rate 98.5%\n#272 2026-11-20T14:45:08Z INFO events-db InnoDB: page cleaner flushed 262 pages, buffer pool hit rate 99.6%\n#320 2026-11-20T14:45:21Z INFO events-db InnoDB: page cleaner flushed 293 pages, buffer pool hit rate 98.6%\n#369 2026-11-20T14:45:35Z INFO events-db InnoDB: page cleaner flushed 823 pages, buffer pool hit rate 99.5%\n#415 2026-11-20T14:45:45Z INFO events-db InnoDB: page cleaner flushed 554 pages, buffer pool hit rate 98.7%\n#476 2026-11-20T14:46:00Z INFO events-db InnoDB: page cleaner flushed 435 pages, buffer pool hit rate 99%\n#520 2026-11-20T14:46:12Z INFO events-db InnoDB: page cleaner flushed 373 pages, buffer pool hit rate 99.9%\n#572 2026-11-20T14:46:23Z INFO events-db InnoDB: page cleaner flushed 671 pages, buffer pool hit rate 99.9%\n#612 2026-11-20T14:46:33Z INFO events-db InnoDB: page cleaner flushed 577 pages, buffer pool hit rate 99.7%\n#649 2026-11-20T14:46:42Z INFO events-db InnoDB: page cleaner flushed 480 pages, buffer pool hit rate 98.7%\n#683 2026-11-20T14:46:51Z INFO events-db InnoDB: page cleaner flushed 516 pages, buffer pool hit rate 99.9%\n#730 2026-11-20T14:47:02Z INFO events-db InnoDB: page cleaner flushed 181 pages, buffer pool hit rate 99.2%\n#781 2026-11-20T14:47:15Z INFO events-db InnoDB: page cleaner flushed 453 pages, buffer pool hit rate 98.6%\n#835 2026-11-20T14:47:29Z INFO events-db InnoDB: page cleaner flushed 493 pages, buffer pool hit rate 99.9%\n#882 2026-11-20T14:47:40Z INFO events-db InnoDB: page cleaner flushed 791 pages, buffer pool hit rate 99.6%\n#930 2026-11-20T14:47:53Z INFO events-db InnoDB: page cleaner flushed 512 pages, buffer pool hit rate 99%\n#978 2026-11-20T14:48:05Z INFO events-db InnoDB: page cleaner flushed 112 pages, buffer pool hit rate 99%\n#1031 2026-11-20T14:48:20Z INFO events-db InnoDB: page cleaner flushed 163 pages, buffer pool hit rate 99.8%\n#1088 2026-11-20T14:48:35Z INFO events-db InnoDB: page cleaner flushed 640 pages, buffer pool hit rate 99.1%\n#1139 2026-11-20T14:48:48Z INFO events-db InnoDB: page cleaner flushed 296 pages, buffer pool hit rate 99.4%\n#1176 2026-11-20T14:49:00Z INFO events-db InnoDB: page cleaner flushed 522 pages, buffer pool hit rate 99.4%\n#1236 2026-11-20T14:49:14Z INFO events-db InnoDB: page cleaner flushed 415 pages, buffer pool hit rate 99.7%\n#1268 2026-11-20T14:49:22Z INFO events-db InnoDB: page cleaner flushed 334 pages, buffer pool hit rate 99.1%\n#1312 2026-11-20T14:49:34Z INFO events-db InnoDB: page cleaner flushed 312 pages, buffer pool hit rate 99.1%\n#1365 2026-11-20T14:49:47Z INFO events-db InnoDB: page cleaner flushed 881 pages, buffer pool hit rate 98.9%\n#1407 2026-11-20T14:49:57Z INFO events-db InnoDB: page cleaner flushed 872 pages, buffer pool hit rate 98.7%\n#1461 2026-11-20T14:50:12Z INFO events-db InnoDB: page cleaner flushed 302 pages, buffer pool hit rate 99.5%\n#1506 2026-11-20T14:50:24Z INFO events-db InnoDB: page cleaner flushed 151 pages, buffer pool hit rate 99.1%\n#1551 2026-11-20T14:50:36Z INFO events-db InnoDB: page cleaner flushed 555 pages, buffer pool hit rate 99.4%\n#1614 2026-11-20T14:50:51Z INFO events-db InnoDB: page cleaner flushed 113 pages, buffer pool hit rate 98.9%\n#1651 2026-11-20T14:51:00Z INFO events-db InnoDB: page cleaner flushed 829 pages, buffer pool hit rate 98.6%\n#1688 2026-11-20T14:51:09Z INFO events-db InnoDB: page cleaner flushed 146 pages, buffer pool hit rate 99.8%\n#1721 2026-11-20T14:51:19Z INFO events-db InnoDB: page cleaner flushed 148 pages, buffer pool hit rate 99.1%\n#1779 2026-11-20T14:51:33Z INFO events-db InnoDB: page cleaner flushed 106 pages, buffer pool hit rate 99.9%\n#1841 2026-11-20T14:51:47Z INFO events-db InnoDB: page cleaner flushed 734 pages, buffer pool hit rate 98.5%\n#1907 2026-11-20T14:52:03Z INFO events-db InnoDB: page cleaner flushed 888 pages, buffer pool hit rate 99.9%\n#1952 2026-11-20T14:52:14Z INFO events-db InnoDB: page cleaner flushed 842 pages, buffer pool hit rate 98.8%\n#1991 2026-11-20T14:52:25Z INFO events-db InnoDB: page cleaner flushed 230 pages, buffer pool hit rate 98.7%\n#2047 2026-11-20T14:52:37Z INFO events-db InnoDB: page cleaner flushed 851 pages, buffer pool hit rate 99.5%\n#2076 2026-11-20T14:52:45Z INFO events-db InnoDB: page cleaner flushed 311 pages, buffer pool hit rate 99%\n#2136 2026-11-20T14:53:00Z INFO events-db InnoDB: page cleaner flushed 168 pages, buffer pool hit rate 99.9%\n#2176 2026-11-20T14:53:10Z INFO events-db InnoDB: page cleaner flushed 772 pages, buffer pool hit rate 98.9%\n#2232 2026-11-20T14:53:23Z INFO events-db InnoDB: page cleaner flushed 211 pages, buffer pool hit rate 98.5%\n#2272 2026-11-20T14:53:35Z INFO events-db InnoDB: page cleaner flushed 269 pages, buffer pool hit rate 98.7%\n#2306 2026-11-20T14:53:44Z INFO events-db InnoDB: page cleaner flushed 356 pages, buffer pool hit rate 99.8%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "msg-476560",
+          "limit": 50
+        },
+        "output": "4 match(es):\n#2908 2026-11-20T14:56:14Z FATAL event-processor consumer aborted: recursion limit hit in expandReferences for msg-476560 at offset 720765\n#2968 2026-11-20T14:56:30Z FATAL event-processor unhandled exception processing msg-476560 (offset 720765): RangeError: Maximum call stack size exceeded at expandReferences\n#3062 2026-11-20T14:56:56Z FATAL event-processor process crashed on msg-476560@720765: RangeError: call stack overflow in expandReferences\n#3240 2026-11-20T14:57:44Z FATAL event-processor uncaught RangeError (stack size exceeded) while handling offset 720765 (msg-476560)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "expandReferences",
+          "limit": 30
+        },
+        "output": "3 match(es):\n#2908 2026-11-20T14:56:14Z FATAL event-processor consumer aborted: recursion limit hit in expandReferences for msg-476560 at offset 720765\n#2968 2026-11-20T14:56:30Z FATAL event-processor unhandled exception processing msg-476560 (offset 720765): RangeError: Maximum call stack size exceeded at expandReferences\n#3062 2026-11-20T14:56:56Z FATAL event-processor process crashed on msg-476560@720765: RangeError: call stack overflow in expandReferences"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 2908,
+          "before": 25,
+          "after": 3
+        },
+        "output": "#2883 2026-11-20T14:56:08Z INFO report-cron scheduler heartbeat: 11 jobs registered, next run in 257s\n#2884 2026-11-20T14:56:08Z INFO ingest-api [t-9593] event e-9484 accepted, calling enrichment-svc POST /enrich\n#2885 2026-11-20T14:56:08Z INFO enrichment-svc [t-9593] POST /enrich e-9484 ok 23ms\n#2886 2026-11-20T14:56:08Z INFO ingest-gateway [t-9593] POST /v1/events 200 60ms\n#2887 2026-11-20T14:56:09Z INFO ingest-api [t-9595] event e-9485 accepted, calling enrichment-svc POST /enrich\n#2888 2026-11-20T14:56:09Z INFO webhook-dispatcher delivered 87 webhooks (p95 462ms)\n#2889 2026-11-20T14:56:10Z INFO ingest-gateway [t-9595] POST /v1/events 200 95ms\n#2890 2026-11-20T14:56:10Z DEBUG ingest-api GC pause 14ms (young), heap 33%\n#2891 2026-11-20T14:56:10Z INFO events-db InnoDB: page cleaner flushed 732 pages, buffer pool hit rate 99.5%\n#2892 2026-11-20T14:56:10Z INFO ingest-api [t-9598] event e-9488 accepted, calling enrichment-svc POST /enrich\n#2893 2026-11-20T14:56:10Z INFO ingest-gateway [t-9598] POST /v1/events 200 87ms\n#2894 2026-11-20T14:56:11Z INFO event-processor processed batch of 109 messages from events.raw (lag 122ms)\n#2895 2026-11-20T14:56:11Z DEBUG api-gateway upstream health: order-service ok, payment-svc ok\n#2896 2026-11-20T14:56:11Z INFO order-service [t-9601] order o-9489 accepted, calling payment-svc POST /charge\n#2897 2026-11-20T14:56:11Z INFO payment-svc [t-9601] POST /charge o-9489 ok 26ms\n#2898 2026-11-20T14:56:11Z INFO api-gateway [t-9601] POST /checkout 200 116ms\n#2899 2026-11-20T14:56:11Z DEBUG enrichment-svc GC pause 21ms (young), heap 37%\n#2900 2026-11-20T14:56:11Z INFO geo-cache stats: hits=11110 misses=780 evicted=0 connected_clients=36\n#2901 2026-11-20T14:56:11Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1685 samples\n#2902 2026-11-20T14:56:12Z INFO order-consumer processed batch of 66 messages from orders.events (lag 292ms)\n#2903 2026-11-20T14:56:12Z INFO ingest-api [t-9603] event e-9491 accepted, calling enrichment-svc POST /enrich\n#2904 2026-11-20T14:56:12Z INFO ingest-gateway [t-9603] POST /v1/events 200 46ms\n#2905 2026-11-20T14:56:13Z INFO redis stats: hits=18604 misses=403 evicted=0 connected_clients=58\n#2906 2026-11-20T14:56:13Z INFO ingest-api [t-9607] event e-9493 accepted, calling enrichment-svc POST /enrich\n#2907 2026-11-20T14:56:13Z INFO ingest-gateway [t-9607] POST /v1/events 200 69ms\n#2908 2026-11-20T14:56:14Z FATAL event-processor consumer aborted: recursion limit hit in expandReferences for msg-476560 at offset 720765\n#2909 2026-11-20T14:56:14Z INFO postgres checkpoint complete: wrote 795 buffers (2.2%)\n#2910 2026-11-20T14:56:14Z ERROR event-processor process exited with code 1, restarting (restart 1, backoff 10s)\n#2911 2026-11-20T14:56:14Z INFO ingest-api [t-9610] event e-9495 accepted, calling enrichment-svc POST /enrich"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "event-processor",
+          "until": "14:56:14Z",
+          "since": "14:44:00Z",
+          "level": "INFO",
+          "limit": 15
+        },
+        "output": "tool error: can't read time \"14:44:00Z\": use an ISO timestamp like 2026-11-20T14:44:00Z or HH:MM:SS",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "event-processor",
+          "since": "2026-11-20T14:44:00Z",
+          "until": "2026-11-20T14:56:13Z",
+          "limit": 40
+        },
+        "output": "180 match(es), showing first 40:\n#9 2026-11-20T14:44:02Z INFO event-processor processed batch of 28 messages from events.raw (lag 234ms)\n#18 2026-11-20T14:44:05Z INFO event-processor processed batch of 109 messages from events.raw (lag 394ms)\n#39 2026-11-20T14:44:09Z INFO event-processor processed batch of 109 messages from events.raw (lag 357ms)\n#55 2026-11-20T14:44:13Z INFO event-processor processed batch of 86 messages from events.raw (lag 246ms)\n#66 2026-11-20T14:44:16Z INFO event-processor processed batch of 108 messages from events.raw (lag 353ms)\n#75 2026-11-20T14:44:19Z INFO event-processor processed batch of 69 messages from events.raw (lag 221ms)\n#93 2026-11-20T14:44:23Z INFO event-processor processed batch of 78 messages from events.raw (lag 258ms)\n#106 2026-11-20T14:44:26Z INFO event-processor processed batch of 77 messages from events.raw (lag 264ms)\n#120 2026-11-20T14:44:29Z INFO event-processor processed batch of 90 messages from events.raw (lag 297ms)\n#131 2026-11-20T14:44:32Z INFO event-processor processed batch of 88 messages from events.raw (lag 334ms)\n#152 2026-11-20T14:44:37Z INFO event-processor processed batch of 53 messages from events.raw (lag 230ms)\n#168 2026-11-20T14:44:41Z INFO event-processor processed batch of 63 messages from events.raw (lag 307ms)\n#187 2026-11-20T14:44:45Z INFO event-processor processed batch of 32 messages from events.raw (lag 71ms)\n#205 2026-11-20T14:44:50Z INFO event-processor processed batch of 87 messages from events.raw (lag 265ms)\n#213 2026-11-20T14:44:53Z INFO event-processor processed batch of 98 messages from events.raw (lag 323ms)\n#230 2026-11-20T14:44:57Z INFO event-processor processed batch of 67 messages from events.raw (lag 237ms)\n#247 2026-11-20T14:45:01Z INFO event-processor processed batch of 67 messages from events.raw (lag 393ms)\n#260 2026-11-20T14:45:05Z INFO event-processor processed batch of 51 messages from events.raw (lag 243ms)\n#283 2026-11-20T14:45:10Z INFO event-processor processed batch of 37 messages from events.raw (lag 250ms)\n#294 2026-11-20T14:45:13Z INFO event-processor processed batch of 95 messages from events.raw (lag 284ms)\n#301 2026-11-20T14:45:16Z INFO event-processor processed batch of 54 messages from events.raw (lag 267ms)\n#317 2026-11-20T14:45:20Z INFO event-processor processed batch of 69 messages from events.raw (lag 186ms)\n#331 2026-11-20T14:45:25Z INFO event-processor processed batch of 116 messages from events.raw (lag 70ms)\n#347 2026-11-20T14:45:29Z INFO event-processor processed batch of 107 messages from events.raw (lag 290ms)\n#362 2026-11-20T14:45:33Z INFO event-processor processed batch of 43 messages from events.raw (lag 67ms)\n#379 2026-11-20T14:45:37Z INFO event-processor processed batch of 106 messages from events.raw (lag 126ms)\n#397 2026-11-20T14:45:41Z INFO event-processor processed batch of 92 messages from events.raw (lag 361ms)\n#417 2026-11-20T14:45:46Z INFO event-processor processed batch of 47 messages from events.raw (lag 49ms)\n#429 2026-11-20T14:45:50Z INFO event-processor processed batch of 74 messages from events.raw (lag 214ms)\n#451 2026-11-20T14:45:55Z INFO event-processor processed batch of 84 messages from events.raw (lag 110ms)\n#469 2026-11-20T14:45:59Z INFO event-processor processed batch of 73 messages from events.raw (lag 287ms)\n#488 2026-11-20T14:46:04Z INFO event-processor processed batch of 68 messages from events.raw (lag 223ms)\n#511 2026-11-20T14:46:09Z INFO event-processor processed batch of 95 messages from events.raw (lag 130ms)\n#523 2026-11-20T14:46:12Z INFO event-processor processed batch of 80 messages from events.raw (lag 316ms)\n#544 2026-11-20T14:46:17Z INFO event-processor processed batch of 85 messages from events.raw (lag 246ms)\n#559 2026-11-20T14:46:20Z INFO event-processor processed batch of 40 messages from events.raw (lag 70ms)\n#573 2026-11-20T14:46:23Z INFO event-processor processed batch of 93 messages from events.raw (lag 161ms)\n#592 2026-11-20T14:46:27Z INFO event-processor processed batch of 71 messages from events.raw (lag 183ms)\n#606 2026-11-20T14:46:31Z INFO event-processor processed batch of 67 messages from events.raw (lag 373ms)\n#620 2026-11-20T14:46:34Z INFO event-processor processed batch of 99 messages from events.raw (lag 197ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "720765",
+          "limit": 20
+        },
+        "output": "8 match(es):\n#2908 2026-11-20T14:56:14Z FATAL event-processor consumer aborted: recursion limit hit in expandReferences for msg-476560 at offset 720765\n#2949 2026-11-20T14:56:25Z INFO event-processor resuming events.raw at committed offset 720765\n#2968 2026-11-20T14:56:30Z FATAL event-processor unhandled exception processing msg-476560 (offset 720765): RangeError: Maximum call stack size exceeded at expandReferences\n#3047 2026-11-20T14:56:51Z INFO event-processor resuming events.raw at committed offset 720765\n#3062 2026-11-20T14:56:56Z FATAL event-processor process crashed on msg-476560@720765: RangeError: call stack overflow in expandReferences\n#3211 2026-11-20T14:57:37Z INFO event-processor resuming events.raw at committed offset 720765\n#3240 2026-11-20T14:57:44Z FATAL event-processor uncaught RangeError (stack size exceeded) while handling offset 720765 (msg-476560)\n#3492 2026-11-20T14:59:05Z INFO event-processor resuming events.raw at committed offset 720765"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 20
+        },
+        "output": "13 match(es):\n#1865 2026-11-20T14:51:52Z INFO ingest-api deploy: rolling out ingest-api v6.15.0 (build d516c0b), 3 pods\n#2382 2026-11-20T14:54:02Z INFO event-processor deploy: rolling out event-processor v4.13.7 (build ab5e687)\n#3019 2026-11-20T14:56:43Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3257 2026-11-20T14:57:48Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3588 2026-11-20T14:59:33Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3737 2026-11-20T15:00:14Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3903 2026-11-20T15:01:03Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4127 2026-11-20T15:02:08Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4393 2026-11-20T15:03:31Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4707 2026-11-20T15:05:04Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4842 2026-11-20T15:05:46Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#5143 2026-11-20T15:07:24Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#5322 2026-11-20T15:08:21Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "event-processor",
+          "query": "version",
+          "limit": 10
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 2382,
+          "before": 3,
+          "after": 12
+        },
+        "output": "#2379 2026-11-20T14:54:01Z INFO order-service [t-9262] order o-9226 accepted, calling payment-svc POST /charge\n#2380 2026-11-20T14:54:01Z INFO api-gateway [t-9262] POST /checkout 200 222ms\n#2381 2026-11-20T14:54:02Z INFO ingest-api [t-9265] event e-9227 accepted, calling enrichment-svc POST /enrich\n#2382 2026-11-20T14:54:02Z INFO event-processor deploy: rolling out event-processor v4.13.7 (build ab5e687)\n#2383 2026-11-20T14:54:02Z INFO enrichment-svc [t-9265] POST /enrich e-9227 ok 46ms\n#2384 2026-11-20T14:54:03Z INFO ingest-gateway [t-9265] POST /v1/events 200 87ms\n#2385 2026-11-20T14:54:03Z INFO report-cron scheduler heartbeat: 8 jobs registered, next run in 84s\n#2386 2026-11-20T14:54:03Z INFO ingest-api [t-9268] event e-9228 accepted, calling enrichment-svc POST /enrich\n#2387 2026-11-20T14:54:03Z INFO enrichment-svc [t-9268] POST /enrich e-9228 ok 27ms\n#2388 2026-11-20T14:54:03Z INFO ingest-gateway [t-9268] POST /v1/events 200 67ms\n#2389 2026-11-20T14:54:03Z INFO postgres checkpoint complete: wrote 355 buffers (4.7%)\n#2390 2026-11-20T14:54:04Z INFO redis stats: hits=11314 misses=591 evicted=0 connected_clients=38\n#2391 2026-11-20T14:54:04Z INFO ingest-api [t-9272] event e-9229 accepted, calling enrichment-svc POST /enrich\n#2392 2026-11-20T14:54:04Z INFO ingest-gateway [t-9272] POST /v1/events 200 53ms\n#2393 2026-11-20T14:54:05Z INFO order-service [t-9275] order o-9232 accepted, calling payment-svc POST /charge\n#2394 2026-11-20T14:54:05Z INFO payment-svc [t-9275] POST /charge o-9232 ok 56ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"bad_deploy\",\"confidence\":0.8,\"evidenceLines\":[2382,2908,2968,3062,3240,2949,3492],\"reasoning\":\"event-processor v4.13.7 (build ab5e687) was rolled out at 14:54:02 (#2382). About two minutes later the consumer aborted on msg-476560 at events.raw offset 720765 with a RangeError (stack overflow) in expandReferences (#2908, #2968, #3062, #3240). The process exits with code 1 and restarts, then resumes at the same committed offset 720765 each time (#2949, #3047, #3211, #3492), so the consumer is stuck on a poison message and lag keeps rising. The likely cause is the new release's recursive expandReferences overflowing on a deeply nested or self-referencing payload. The only other candidate is the message itself as a poison message. The deploy timing and the fact that the crash starts after the rollout point to the release, though I did not confirm the message content or the prior version's behaviour. Other services show no errors. report-cron's pandas ModuleNotFoundError (#3019) is a separate, unrelated failure.\",\"},{\"rootCause\":\"poison_message\",\"confidence\":0.5,\"evidenceLines\":[2908,2949,3047,3211,3492],\"reasoning\":\"msg-476560 at offset 720765 is redelivered on every restart and crashes the consumer, which is the signature of a poison message jamming a queue consumer. The payload's malformed nesting triggers the overflow. Fixing the release or skipping the offset would both resolve it, so this is an alternative reading of the same lines.\"}]",
+          "recommendedAction": "Roll back event-processor to the previous version (before v4.13.7), or hotfix expandReferences to be iterative or depth-limited. Then move past or quarantine the poison message msg-476560 at events.raw offset 720765 (dead-letter it), so the consumer can resume and drain the lag. Separately, fix report-cron's missing pandas dependency in image 2026.10.2."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.8,
+              "evidenceLines": [
+                2382,
+                2908,
+                2968,
+                3062,
+                3240,
+                2949,
+                3492
+              ],
+              "reasoning": "event-processor v4.13.7 (build ab5e687) was rolled out at 14:54:02 (#2382). About two minutes later the consumer aborted on msg-476560 at events.raw offset 720765 with a RangeError (stack overflow) in expandReferences (#2908, #2968, #3062, #3240). The process exits with code 1 and restarts, then resumes at the same committed offset 720765 each time (#2949, #3047, #3211, #3492), so the consumer is stuck on one message and lag keeps rising. The likely cause is the new release's recursive expandReferences overflowing on a deeply nested or self-referencing payload. The alternative is the message itself as a poison message. The deploy timing points to the release, though I did not confirm the message content or the prior version's behaviour. report-cron's pandas ModuleNotFoundError (#3019) is a separate, unrelated failure."
+            },
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.5,
+              "evidenceLines": [
+                2908,
+                2949,
+                3047,
+                3211,
+                3492
+              ],
+              "reasoning": "msg-476560 at offset 720765 is redelivered on every restart and crashes the consumer, which is the signature of a poison message jamming a queue consumer. Its malformed nesting triggers the overflow. Skipping or quarantining the offset would also resolve it, so this is an alternative reading of the same lines."
+            }
+          ],
+          "recommendedAction": "Roll back event-processor to the version before v4.13.7, or hotfix expandReferences to be iterative or depth-limited. Dead-letter or skip msg-476560 at events.raw offset 720765 so the consumer can resume and drain the lag. Separately, fix report-cron's missing pandas dependency in image 2026.10.2."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 8,
+    "toolCalls": 11,
+    "usage": {
+      "inputTokens": 18,
+      "outputTokens": 3179,
+      "cacheReadTokens": 73042,
+      "cacheWriteTokens": 16357
+    },
+    "durationMs": 15566,
+    "stopReason": "tool_use"
+  }
+}

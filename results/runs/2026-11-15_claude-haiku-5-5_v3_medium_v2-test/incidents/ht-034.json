@@ -1,0 +1,282 @@
+{
+  "score": {
+    "incidentId": "ht-034",
+    "difficulty": "medium",
+    "scenario": "external_outage/provider-5xx",
+    "truth": "external_outage",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.82,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 7,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 4,
+    "secondaryCited": 4,
+    "costUsd": 0.005264194999999999,
+    "durationMs": 20789,
+    "iterations": 8,
+    "toolCalls": 12,
+    "tokens": {
+      "input": 18,
+      "output": 4458,
+      "cacheRead": 83102,
+      "cacheWrite": 17619
+    }
+  },
+  "result": {
+    "incidentId": "ht-034",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.82,
+          "evidenceLines": [
+            1623,
+            1630,
+            1665,
+            1693,
+            1721,
+            1981,
+            2244
+          ],
+          "reasoning": "The /v1/notify 503s originate in template-svc's calls to the third-party email provider api.mailer.example. Starting at 18:49:12Z, template-svc gets 503 Bad Gateway from POST https://api.mailer.example/v3/send (#1623), repeated at #1630 and #1665, then 502 at #1693. Template-svc is otherwise healthy before and during this: /render calls succeed in ~20-80ms right up to 18:49, GC is normal, and the config reload at 18:38 changed 0 keys. The provider fails fast with HTTP 5xx rather than hanging, which points to the provider being down rather than to template-svc. Template-svc's breaker then opened at 18:50:29 (#1721) at an 85% failure rate. Notification-svc's TemplateClient.render then fails with 'circuit open' (#1760, #1941, #2032, #2259), and api-gateway returns 503 on /v1/notify (#1678, #2267). The breaker's half-open probes keep failing with 502 (#1981, #2244), so the outage is ongoing at the end of the window. The notification-svc and gateway failures are downstream of this. Analytics-forwarder 429s are a separate downstream effect and are not the cause."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.5,
+          "evidenceLines": [
+            1398,
+            1441,
+            1512,
+            1578
+          ],
+          "reasoning": "A separate, concurrent fault is the identity provider (idp.example) slowing down. It starts earlier, at 18:46:54Z, when auth-svc logs slow calls (3.9s, then 11.9s; #1398, #1441). Calls then time out after 30s (#1512, #1578). This backs up account-svc's connection pool to auth-svc (pool at capacity and checkout timeouts; these are symptoms and not cited). That causes edge-proxy POST /login 503s (for example #1731, #2045). This explains the login outage but not the /v1/notify alert directly. It is ranked lower because the alert is on /v1/notify, and its timing does not explain the notify failure. Two independent issues are likely overlapping in this window."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.1,
+          "evidenceLines": [
+            1641,
+            1710,
+            1746,
+            1799
+          ],
+          "reasoning": "Analytics-forwarder retries against analytics-ingest (429s, with batches dropped after 5 attempts) amplify load. However, this is a minor, non-user-facing effect and is not the cause of the /v1/notify failures. Listed only for completeness."
+        }
+      ],
+      "recommendedAction": "Escalate to the email provider (api.mailer.example) and confirm its status. Consider failing over to a secondary mail provider, or queueing notifications for later sending. Keep the template-svc circuit breaker in place so the provider is not hammered. Once the provider recovers, replay queued notifications. Separately, investigate the identity-provider slowdown, which is causing a /login outage (auth-svc to idp.example timeouts), and tune its timeouts and circuit breaking."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "49 match(es):\n#1398 2026-11-04T18:46:54Z WARN auth-svc [t-7540] identity provider call slow: 3932ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#1441 2026-11-04T18:47:19Z WARN auth-svc [t-7570] identity provider call slow: 11946ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#1512 2026-11-04T18:48:00Z ERROR auth-svc [t-7616] HTTP client: read timed out after 30000 ms waiting for idp.example\n#1514 2026-11-04T18:48:00Z ERROR account-svc [t-7616] POST /tokens -> auth-svc: context deadline exceeded after 30.0s (u-5447)\n#1578 2026-11-04T18:48:39Z ERROR auth-svc [t-7651] identity provider call FAILED: upstream timeout after 30000ms POST https://idp.example/oauth2/token\n#1579 2026-11-04T18:48:40Z ERROR account-svc [t-7651] AuthClient.issueToken timed out after 30000ms calling auth-svc POST /tokens (u-5475)\n#1623 2026-11-04T18:49:12Z ERROR template-svc [t-7670] email provider returned 503 Bad Gateway POST https://api.mailer.example/v3/send (x-request-id ff91a89)\n#1630 2026-11-04T18:49:20Z ERROR template-svc [t-7677] email provider -> HTTP 503 (request 58a28d0)\n#1641 2026-11-04T18:49:29Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 94 events (attempt 1/5, then dropped)\n#1665 2026-11-04T18:49:52Z ERROR template-svc [t-7690] email provider error response: status=503 body=\"Bad Gateway\" id=1122f31\n#1675 2026-11-04T18:49:58Z WARN account-svc HTTP connection pool to auth-svc at capacity (50/50 in use), 48 requests queued\n#1678 2026-11-04T18:50:01Z ERROR api-gateway [t-7694] POST /v1/notify 503 18485ms: upstream notification-svc returned 503 Service Unavailable\n#1693 2026-11-04T18:50:09Z ERROR template-svc [t-7704] email provider returned 502 Service Unavailable POST https://api.mailer.example/v3/send (x-request-id 5eb697e)\n#1710 2026-11-04T18:50:22Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 138 events (attempt 2/5, then dropped)\n#1721 2026-11-04T18:50:29Z WARN template-svc circuit breaker OPEN for api.mailer.example (failure rate 85% over 20 calls), failing fast for 30s\n#1726 2026-11-04T18:50:37Z ERROR auth-svc [t-7719] call to the identity provider aborted: no response within 30s\n#1728 2026-11-04T18:50:37Z ERROR account-svc [t-7719] upstream request to auth-svc failed: ReadTimeout (read timeout=30s) [u-5519]\n#1731 2026-11-04T18:50:43Z ERROR edge-proxy [t-7723] POST /login 503 28983ms: upstream account-svc returned 503 Service Unavailable\n#1746 2026-11-04T18:50:54Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 257 events (attempt 3/5, then dropped)\n#1760 2026-11-04T18:51:06Z ERROR notification-svc [t-7736] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#1786 2026-11-04T18:51:33Z ERROR api-gateway [t-7745] POST /v1/notify 503 8182ms: upstream notification-svc returned 503 Service Unavailable\n#1799 2026-11-04T18:51:39Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 337 events (attempt 4/5, then dropped)\n#1814 2026-11-04T18:51:57Z ERROR api-gateway [t-7757] POST /v1/notify 503 21925ms: upstream notification-svc returned 503 Service Unavailable\n#1821 2026-11-04T18:52:05Z ERROR edge-proxy [t-7759] POST /login 503 20266ms: upstream account-svc returned 503 Service Unavailable\n#1831 2026-11-04T18:52:17Z WARN account-svc HTTP connection pool to auth-svc at capacity (50/50 in use), 67 requests queued\n#1837 2026-11-04T18:52:24Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 53 events (attempt 5/5, then dropped)\n#1850 2026-11-04T18:52:39Z ERROR account-svc pool checkout timeout: no connection to auth-svc available after 5000ms\n#1895 2026-11-04T18:53:17Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 109 events (attempt 1/5, then dropped)\n#1906 2026-11-04T18:53:27Z ERROR api-gateway [t-7781] POST /v1/notify 503 14409ms: upstream notification-svc returned 503 Service Unavailable\n#1915 2026-11-04T18:53:32Z ERROR edge-proxy [t-7789] POST /login 503 21662ms: upstream account-svc returned 503 Service Unavailable\n#1931 2026-11-04T18:53:49Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 233 events (attempt 2/5, then dropped)\n#1941 2026-11-04T18:53:55Z ERROR notification-svc [t-7799] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#1981 2026-11-04T18:54:34Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 502, re-opening\n#1996 2026-11-04T18:54:44Z ERROR api-gateway [t-7818] POST /v1/notify 503 18976ms: upstream notification-svc returned 503 Service Unavailable\n#1998 2026-11-04T18:54:46Z ERROR edge-proxy [t-7820] POST /login 503 14009ms: upstream account-svc returned 503 Service Unavailable\n#2005 2026-11-04T18:54:52Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 79 events (attempt 3/5, then dropped)\n#2026 2026-11-04T18:55:19Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 69 events (attempt 4/5, then dropped)\n#2032 2026-11-04T18:55:24Z ERROR notification-svc [t-7824] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#2045 2026-11-04T18:55:39Z ERROR edge-proxy [t-7827] POST /login 503 17190ms: upstream account-svc returned 503 Service Unavailable\n#2080 2026-11-04T18:56:12Z ERROR api-gateway [t-7833] POST /v1/notify 503 27114ms: upstream notification-svc returned 503 Service Unavailable\n#2088 2026-11-04T18:56:22Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 78 events (attempt 5/5, then dropped)\n#2135 2026-11-04T18:57:02Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 217 events (attempt 1/5, then dropped)\n#2176 2026-11-04T18:57:33Z ERROR edge-proxy [t-7865] POST /login 503 9759ms: upstream account-svc returned 503 Service Unavailable\n#2185 2026-11-04T18:57:41Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 55 events (attempt 2/5, then dropped)\n#2209 2026-11-04T18:57:59Z ERROR edge-proxy [t-7880] POST /login 503 14300ms: upstream account-svc returned 503 Service Unavailable\n#2244 2026-11-04T18:58:29Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 502, re-opening\n#2259 2026-11-04T18:58:42Z ERROR notification-svc [t-7906] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#2267 2026-11-04T18:58:47Z ERROR api-gateway [t-7909] POST /v1/notify 503 26879ms: upstream notification-svc returned 503 Service Unavailable\n#2268 2026-11-04T18:58:47Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 186 events (attempt 3/5, then dropped)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "limit": 60
+        },
+        "output": "173 match(es), showing first 60:\n#5 2026-11-04T18:36:02Z INFO template-svc [t-6651] POST /render m-4685 ok 66ms\n#21 2026-11-04T18:36:10Z INFO template-svc [t-6666] POST /render m-4696 ok 39ms\n#44 2026-11-04T18:36:21Z DEBUG template-svc GC pause 25ms (young), heap 34%\n#81 2026-11-04T18:36:39Z INFO template-svc [t-6704] POST /render m-4732 ok 31ms\n#92 2026-11-04T18:36:44Z INFO template-svc [t-6708] POST /render m-4737 ok 66ms\n#99 2026-11-04T18:36:48Z INFO template-svc [t-6712] POST /render m-4741 ok 31ms\n#108 2026-11-04T18:36:50Z INFO template-svc [t-6717] POST /render m-4745 ok 75ms\n#120 2026-11-04T18:36:57Z DEBUG template-svc GC pause 15ms (young), heap 41%\n#145 2026-11-04T18:37:09Z INFO template-svc [t-6748] POST /render m-4767 ok 69ms\n#172 2026-11-04T18:37:22Z INFO template-svc [t-6767] POST /render m-4780 ok 52ms\n#195 2026-11-04T18:37:32Z DEBUG template-svc GC pause 21ms (young), heap 42%\n#205 2026-11-04T18:37:38Z INFO template-svc [t-6797] POST /render m-4798 ok 20ms\n#212 2026-11-04T18:37:40Z INFO template-svc [t-6802] POST /render m-4802 ok 82ms\n#243 2026-11-04T18:37:54Z INFO template-svc [t-6818] POST /render m-4818 ok 71ms\n#246 2026-11-04T18:37:56Z DEBUG template-svc GC pause 9ms (young), heap 44%\n#251 2026-11-04T18:37:58Z INFO template-svc [t-6825] POST /render m-4820 ok 65ms\n#257 2026-11-04T18:38:02Z INFO template-svc config reloaded from config-service (revision 802): 0 keys changed\n#267 2026-11-04T18:38:06Z INFO template-svc [t-6834] POST /render m-4832 ok 33ms\n#275 2026-11-04T18:38:10Z INFO template-svc [t-6835] POST /render m-4833 ok 34ms\n#301 2026-11-04T18:38:23Z INFO template-svc [t-6851] POST /render m-4846 ok 21ms\n#310 2026-11-04T18:38:27Z INFO template-svc [t-6861] POST /render m-4853 ok 22ms\n#316 2026-11-04T18:38:29Z DEBUG template-svc GC pause 7ms (young), heap 36%\n#321 2026-11-04T18:38:33Z INFO template-svc [t-6867] POST /render m-4858 ok 53ms\n#354 2026-11-04T18:38:47Z INFO template-svc [t-6882] POST /render m-4869 ok 56ms\n#363 2026-11-04T18:38:51Z DEBUG template-svc GC pause 20ms (young), heap 38%\n#365 2026-11-04T18:38:51Z INFO template-svc [t-6888] POST /render m-4874 ok 29ms\n#393 2026-11-04T18:39:06Z INFO template-svc [t-6908] POST /render m-4889 ok 36ms\n#407 2026-11-04T18:39:13Z DEBUG template-svc GC pause 11ms (young), heap 41%\n#415 2026-11-04T18:39:17Z INFO template-svc [t-6920] POST /render m-4897 ok 62ms\n#422 2026-11-04T18:39:21Z INFO template-svc [t-6927] POST /render m-4903 ok 42ms\n#457 2026-11-04T18:39:37Z INFO template-svc [t-6950] POST /render m-4923 ok 42ms\n#466 2026-11-04T18:39:40Z INFO template-svc [t-6952] POST /render m-4928 ok 77ms\n#474 2026-11-04T18:39:44Z DEBUG template-svc GC pause 17ms (young), heap 39%\n#487 2026-11-04T18:39:50Z INFO template-svc [t-6962] POST /render m-4939 ok 33ms\n#525 2026-11-04T18:40:07Z INFO template-svc [t-6992] POST /render m-4954 ok 60ms\n#532 2026-11-04T18:40:11Z INFO template-svc [t-6993] POST /render m-4955 ok 44ms\n#538 2026-11-04T18:40:14Z INFO template-svc [t-6999] POST /render m-4959 ok 41ms\n#546 2026-11-04T18:40:15Z INFO template-svc [t-7003] POST /render m-4964 ok 51ms\n#555 2026-11-04T18:40:20Z DEBUG template-svc GC pause 4ms (young), heap 39%\n#560 2026-11-04T18:40:22Z INFO template-svc [t-7014] POST /render m-4971 ok 58ms\n#569 2026-11-04T18:40:27Z INFO template-svc [t-7016] POST /render m-4975 ok 72ms\n#606 2026-11-04T18:40:42Z INFO template-svc [t-7038] POST /render m-4993 ok 26ms\n#611 2026-11-04T18:40:45Z DEBUG template-svc GC pause 19ms (young), heap 35%\n#621 2026-11-04T18:40:50Z INFO template-svc [t-7050] POST /render m-5000 ok 47ms\n#629 2026-11-04T18:40:53Z INFO template-svc [t-7053] POST /render m-5004 ok 58ms\n#641 2026-11-04T18:40:58Z INFO template-svc [t-7062] POST /render m-5012 ok 34ms\n#654 2026-11-04T18:41:03Z INFO template-svc [t-7068] POST /render m-5018 ok 60ms\n#662 2026-11-04T18:41:06Z INFO template-svc [t-7075] POST /render m-5022 ok 56ms\n#686 2026-11-04T18:41:18Z DEBUG template-svc GC pause 25ms (young), heap 36%\n#723 2026-11-04T18:41:36Z INFO template-svc [t-7112] POST /render m-5050 ok 20ms\n#733 2026-11-04T18:41:41Z INFO template-svc [t-7122] POST /render m-5059 ok 61ms\n#759 2026-11-04T18:41:54Z DEBUG template-svc GC pause 19ms (young), heap 37%\n#802 2026-11-04T18:42:13Z DEBUG template-svc GC pause 25ms (young), heap 32%\n#814 2026-11-04T18:42:20Z INFO template-svc [t-7167] POST /render m-5098 ok 62ms\n#821 2026-11-04T18:42:22Z INFO template-svc [t-7173] POST /render m-5103 ok 54ms\n#843 2026-11-04T18:42:33Z INFO template-svc [t-7185] POST /render m-5115 ok 58ms\n#855 2026-11-04T18:42:39Z DEBUG template-svc GC pause 22ms (young), heap 38%\n#858 2026-11-04T18:42:39Z INFO template-svc [t-7196] POST /render m-5121 ok 72ms\n#867 2026-11-04T18:42:41Z INFO template-svc [t-7202] POST /render m-5128 ok 65ms\n#872 2026-11-04T18:42:43Z INFO template-svc [t-7203] POST /render m-5131 ok 30ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "18:40:00Z",
+          "until": "18:49:15Z",
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "tool error: can't read time \"18:40:00Z\": use an ISO timestamp like 2026-11-04T18:36:00Z or HH:MM:SS",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "mailer",
+          "limit": 40
+        },
+        "output": "5 match(es):\n#1623 2026-11-04T18:49:12Z ERROR template-svc [t-7670] email provider returned 503 Bad Gateway POST https://api.mailer.example/v3/send (x-request-id ff91a89)\n#1693 2026-11-04T18:50:09Z ERROR template-svc [t-7704] email provider returned 502 Service Unavailable POST https://api.mailer.example/v3/send (x-request-id 5eb697e)\n#1721 2026-11-04T18:50:29Z WARN template-svc circuit breaker OPEN for api.mailer.example (failure rate 85% over 20 calls), failing fast for 30s\n#1981 2026-11-04T18:54:34Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 502, re-opening\n#2244 2026-11-04T18:58:29Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 502, re-opening"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "2026-11-04T18:36:00Z",
+          "until": "2026-11-04T18:49:15Z",
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "7 match(es):\n#1398 2026-11-04T18:46:54Z WARN auth-svc [t-7540] identity provider call slow: 3932ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#1441 2026-11-04T18:47:19Z WARN auth-svc [t-7570] identity provider call slow: 11946ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#1512 2026-11-04T18:48:00Z ERROR auth-svc [t-7616] HTTP client: read timed out after 30000 ms waiting for idp.example\n#1514 2026-11-04T18:48:00Z ERROR account-svc [t-7616] POST /tokens -> auth-svc: context deadline exceeded after 30.0s (u-5447)\n#1578 2026-11-04T18:48:39Z ERROR auth-svc [t-7651] identity provider call FAILED: upstream timeout after 30000ms POST https://idp.example/oauth2/token\n#1579 2026-11-04T18:48:40Z ERROR account-svc [t-7651] AuthClient.issueToken timed out after 30000ms calling auth-svc POST /tokens (u-5475)\n#1623 2026-11-04T18:49:12Z ERROR template-svc [t-7670] email provider returned 503 Bad Gateway POST https://api.mailer.example/v3/send (x-request-id ff91a89)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "idp.example",
+          "limit": 40
+        },
+        "output": "4 match(es):\n#1398 2026-11-04T18:46:54Z WARN auth-svc [t-7540] identity provider call slow: 3932ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#1441 2026-11-04T18:47:19Z WARN auth-svc [t-7570] identity provider call slow: 11946ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#1512 2026-11-04T18:48:00Z ERROR auth-svc [t-7616] HTTP client: read timed out after 30000 ms waiting for idp.example\n#1578 2026-11-04T18:48:39Z ERROR auth-svc [t-7651] identity provider call FAILED: upstream timeout after 30000ms POST https://idp.example/oauth2/token"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1623,
+          "before": 12,
+          "after": 6
+        },
+        "output": "#1611 2026-11-04T18:49:01Z DEBUG template-svc GC pause 18ms (young), heap 30%\n#1612 2026-11-04T18:49:02Z DEBUG notification-svc GC pause 19ms (young), heap 40%\n#1613 2026-11-04T18:49:04Z INFO notif-db InnoDB: page cleaner flushed 383 pages, buffer pool hit rate 98.6%\n#1614 2026-11-04T18:49:05Z INFO notif-worker processed batch of 95 messages from notifications.outbound (lag 371ms)\n#1615 2026-11-04T18:49:06Z INFO notification-svc [t-7668] message m-5488 accepted, calling template-svc POST /render\n#1616 2026-11-04T18:49:06Z INFO api-gateway [t-7668] POST /v1/notify 200 149ms\n#1617 2026-11-04T18:49:07Z INFO analytics-forwarder forwarded 1699 events to analytics-ingest\n#1618 2026-11-04T18:49:07Z INFO audit-consumer processed batch of 112 messages from audit.events (lag 241ms)\n#1619 2026-11-04T18:49:09Z INFO redis stats: hits=12425 misses=416 evicted=0 connected_clients=44\n#1620 2026-11-04T18:49:10Z INFO session-cache stats: hits=11527 misses=564 evicted=0 connected_clients=55\n#1621 2026-11-04T18:49:10Z INFO notif-worker processed batch of 28 messages from notifications.outbound (lag 206ms)\n#1622 2026-11-04T18:49:11Z DEBUG account-svc GC pause 8ms (young), heap 38%\n#1623 2026-11-04T18:49:12Z ERROR template-svc [t-7670] email provider returned 503 Bad Gateway POST https://api.mailer.example/v3/send (x-request-id ff91a89)\n#1624 2026-11-04T18:49:13Z INFO accounts-db checkpoint complete: wrote 1297 buffers (2.7%)\n#1625 2026-11-04T18:49:14Z INFO account-svc [t-7673] user u-5490 accepted, calling auth-svc POST /tokens\n#1626 2026-11-04T18:49:14Z INFO edge-proxy [t-7673] POST /login 200 115ms\n#1627 2026-11-04T18:49:15Z INFO audit-consumer processed batch of 67 messages from audit.events (lag 210ms)\n#1628 2026-11-04T18:49:18Z INFO notif-worker processed batch of 82 messages from notifications.outbound (lag 358ms)\n#1629 2026-11-04T18:49:19Z INFO status-poller poll cycle complete: 33 targets checked in 481ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "since": "2026-11-04T18:47:00Z",
+          "until": "2026-11-04T18:50:00Z",
+          "limit": 60
+        },
+        "output": "28 match(es):\n#1420 2026-11-04T18:47:07Z INFO template-svc [t-7555] POST /render m-5408 ok 25ms\n#1426 2026-11-04T18:47:09Z INFO template-svc [t-7560] POST /render m-5410 ok 20ms\n#1429 2026-11-04T18:47:12Z DEBUG template-svc GC pause 19ms (young), heap 32%\n#1438 2026-11-04T18:47:18Z INFO template-svc [t-7566] POST /render m-5414 ok 63ms\n#1456 2026-11-04T18:47:27Z INFO template-svc [t-7581] POST /render m-5421 ok 24ms\n#1470 2026-11-04T18:47:39Z DEBUG template-svc GC pause 20ms (young), heap 42%\n#1472 2026-11-04T18:47:39Z INFO template-svc [t-7590] POST /render m-5430 ok 76ms\n#1480 2026-11-04T18:47:43Z INFO template-svc [t-7597] POST /render m-5434 ok 38ms\n#1485 2026-11-04T18:47:46Z INFO template-svc [t-7598] POST /render m-5435 ok 34ms\n#1508 2026-11-04T18:47:57Z INFO template-svc [t-7612] POST /render m-5445 ok 39ms\n#1519 2026-11-04T18:48:03Z INFO template-svc [t-7620] POST /render m-5451 ok 65ms\n#1521 2026-11-04T18:48:05Z DEBUG template-svc GC pause 17ms (young), heap 43%\n#1527 2026-11-04T18:48:07Z INFO template-svc [t-7626] POST /render m-5453 ok 33ms\n#1534 2026-11-04T18:48:11Z INFO template-svc [t-7627] POST /render m-5456 ok 28ms\n#1562 2026-11-04T18:48:28Z INFO template-svc [t-7647] POST /render m-5468 ok 37ms\n#1566 2026-11-04T18:48:31Z DEBUG template-svc GC pause 11ms (young), heap 36%\n#1569 2026-11-04T18:48:32Z INFO template-svc [t-7648] POST /render m-5471 ok 30ms\n#1574 2026-11-04T18:48:37Z INFO template-svc [t-7650] POST /render m-5472 ok 79ms\n#1581 2026-11-04T18:48:41Z INFO template-svc [t-7652] POST /render m-5476 ok 69ms\n#1593 2026-11-04T18:48:48Z INFO template-svc [t-7658] POST /render m-5478 ok 38ms\n#1597 2026-11-04T18:48:51Z INFO template-svc [t-7662] POST /render m-5480 ok 59ms\n#1601 2026-11-04T18:48:55Z INFO template-svc [t-7664] POST /render m-5483 ok 57ms\n#1611 2026-11-04T18:49:01Z DEBUG template-svc GC pause 18ms (young), heap 30%\n#1623 2026-11-04T18:49:12Z ERROR template-svc [t-7670] email provider returned 503 Bad Gateway POST https://api.mailer.example/v3/send (x-request-id ff91a89)\n#1630 2026-11-04T18:49:20Z ERROR template-svc [t-7677] email provider -> HTTP 503 (request 58a28d0)\n#1632 2026-11-04T18:49:25Z DEBUG template-svc GC pause 23ms (young), heap 28%\n#1665 2026-11-04T18:49:52Z ERROR template-svc [t-7690] email provider error response: status=503 body=\"Bad Gateway\" id=1122f31\n#1670 2026-11-04T18:49:55Z DEBUG template-svc GC pause 24ms (young), heap 32%"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-7670"
+        },
+        "output": "1 line(s) for t-7670:\n#1623 2026-11-04T18:49:12Z ERROR template-svc [t-7670] email provider returned 503 Bad Gateway POST https://api.mailer.example/v3/send (x-request-id ff91a89)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "email provider",
+          "limit": 40
+        },
+        "output": "4 match(es):\n#1623 2026-11-04T18:49:12Z ERROR template-svc [t-7670] email provider returned 503 Bad Gateway POST https://api.mailer.example/v3/send (x-request-id ff91a89)\n#1630 2026-11-04T18:49:20Z ERROR template-svc [t-7677] email provider -> HTTP 503 (request 58a28d0)\n#1665 2026-11-04T18:49:52Z ERROR template-svc [t-7690] email provider error response: status=503 body=\"Bad Gateway\" id=1122f31\n#1693 2026-11-04T18:50:09Z ERROR template-svc [t-7704] email provider returned 502 Service Unavailable POST https://api.mailer.example/v3/send (x-request-id 5eb697e)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 20
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "level": "WARN",
+          "limit": 30
+        },
+        "output": "7 match(es):\n#1623 2026-11-04T18:49:12Z ERROR template-svc [t-7670] email provider returned 503 Bad Gateway POST https://api.mailer.example/v3/send (x-request-id ff91a89)\n#1630 2026-11-04T18:49:20Z ERROR template-svc [t-7677] email provider -> HTTP 503 (request 58a28d0)\n#1665 2026-11-04T18:49:52Z ERROR template-svc [t-7690] email provider error response: status=503 body=\"Bad Gateway\" id=1122f31\n#1693 2026-11-04T18:50:09Z ERROR template-svc [t-7704] email provider returned 502 Service Unavailable POST https://api.mailer.example/v3/send (x-request-id 5eb697e)\n#1721 2026-11-04T18:50:29Z WARN template-svc circuit breaker OPEN for api.mailer.example (failure rate 85% over 20 calls), failing fast for 30s\n#1981 2026-11-04T18:54:34Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 502, re-opening\n#2244 2026-11-04T18:58:29Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 502, re-opening"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.82,
+              "evidenceLines": [
+                1623,
+                1630,
+                1665,
+                1693,
+                1721,
+                1981,
+                2244
+              ],
+              "reasoning": "The /v1/notify 503s originate in template-svc's calls to the third-party email provider api.mailer.example. Starting at 18:49:12Z, template-svc gets 503 Bad Gateway from POST https://api.mailer.example/v3/send (#1623), repeated at #1630, #1665, and then 502 at #1693. Template-svc's own service is otherwise healthy before and during this: /render calls succeed in ~20-80ms right up to 18:49, GC is normal, and the config reload at 18:38 changed 0 keys. The provider fails fast with HTTP 5xx rather than hanging, which points to the provider being down rather than to template-svc. template-svc's breaker then opened at 18:50:29 (#1721) at 85% failure rate. Notification-svc's TemplateClient.render then fails with 'circuit open' (#1760, #1941, #2032, #2259), and api-gateway returns 503 on /v1/notify (#1678, #2267). The breaker's half-open probes keep failing with 502 (#1981, #2244), so the outage is still ongoing at the end of the window. The 'slow'/'overload' behaviour in notification is downstream of this. Analytics-forwarder 429s (#1641 onward) are a separate, unrelated downstream effect and are not the cause.",
+              "recommendedAction": "Escalate to the email provider (api.mailer.example) and confirm its status. Consider failing over to a secondary mail provider or queueing notifications for later sending. Keep the template-svc circuit breaker in place to avoid hammering the provider. Once the provider recovers, replay queued notifications. Separately, investigate the identity-provider slowdown below, which is causing a /login outage."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.5,
+              "evidenceLines": [
+                1398,
+                1441,
+                1512,
+                1578
+              ],
+              "reasoning": "A separate, concurrent fault is the identity provider (idp.example) slowing down. It starts earlier, at 18:46:54Z, when auth-svc logs slow calls (3.9s, then 11.9s; #1398, #1441). Calls then time out after 30s (#1512, #1578). This backs up account-svc's connection pool to auth-svc (pool at capacity, checkout timeouts; not cited as evidence since it is a symptom), which causes edge-proxy POST /login 503s (for example #1731, #2045). This explains the login outage but not the /v1/notify alert directly. It is ranked lower because the alert is on /v1/notify, and its timing does not explain the notify failure. Two independent issues are likely overlapping in this window.",
+              "recommendedAction": "Investigate the identity provider's latency. Consider raising or tuning the auth-svc timeout and circuit breaking for idp calls, and shedding load on account-svc to protect the auth-svc pool."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.82,
+              "evidenceLines": [
+                1623,
+                1630,
+                1665,
+                1693,
+                1721,
+                1981,
+                2244
+              ],
+              "reasoning": "The /v1/notify 503s originate in template-svc's calls to the third-party email provider api.mailer.example. Starting at 18:49:12Z, template-svc gets 503 Bad Gateway from POST https://api.mailer.example/v3/send (#1623), repeated at #1630 and #1665, then 502 at #1693. Template-svc is otherwise healthy before and during this: /render calls succeed in ~20-80ms right up to 18:49, GC is normal, and the config reload at 18:38 changed 0 keys. The provider fails fast with HTTP 5xx rather than hanging, which points to the provider being down rather than to template-svc. Template-svc's breaker then opened at 18:50:29 (#1721) at an 85% failure rate. Notification-svc's TemplateClient.render then fails with 'circuit open' (#1760, #1941, #2032, #2259), and api-gateway returns 503 on /v1/notify (#1678, #2267). The breaker's half-open probes keep failing with 502 (#1981, #2244), so the outage is ongoing at the end of the window. The notification-svc and gateway failures are downstream of this. Analytics-forwarder 429s are a separate downstream effect and are not the cause.",
+              "recommendedAction": "Escalate to the email provider (api.mailer.example) and confirm its status. Consider failing over to a secondary mail provider, or queueing notifications for later sending. Keep the template-svc circuit breaker in place so the provider is not hammered. Once the provider recovers, replay queued notifications. Separately, investigate the identity-provider slowdown below, which is causing a /login outage."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.5,
+              "evidenceLines": [
+                1398,
+                1441,
+                1512,
+                1578
+              ],
+              "reasoning": "A separate, concurrent fault is the identity provider (idp.example) slowing down. It starts earlier, at 18:46:54Z, when auth-svc logs slow calls (3.9s, then 11.9s; #1398, #1441). Calls then time out after 30s (#1512, #1578). This backs up account-svc's connection pool to auth-svc (pool at capacity and checkout timeouts; these are symptoms and not cited). That causes edge-proxy POST /login 503s (for example #1731, #2045). This explains the login outage but not the /v1/notify alert directly. It is ranked lower because the alert is on /v1/notify, and its timing does not explain the notify failure. Two independent issues are likely overlapping in this window.",
+              "recommendedAction": "Investigate the identity provider's latency. Tune auth-svc's timeout and circuit breaking for idp calls, and shed load on account-svc to protect the auth-svc connection pool."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.1,
+              "evidenceLines": [
+                1641,
+                1710,
+                1746,
+                1799
+              ],
+              "reasoning": "Analytics-forwarder retries against analytics-ingest (429s, with batches dropped after 5 attempts) amplify load. However, this is a minor, non-user-facing effect and is not the cause of the /v1/notify failures. Listed only for completeness.",
+              "recommendedAction": "Add backoff and rate limiting to analytics-forwarder retries so batches are not dropped."
+            }
+          ],
+          "recommendedAction": "Escalate to the email provider (api.mailer.example) and confirm its status. Consider failing over to a secondary mail provider, or queueing notifications for later sending. Keep the template-svc circuit breaker in place so the provider is not hammered. Once the provider recovers, replay queued notifications. Separately, investigate the identity-provider slowdown, which is causing a /login outage (auth-svc to idp.example timeouts), and tune its timeouts and circuit breaking."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 8,
+    "toolCalls": 12,
+    "usage": {
+      "inputTokens": 18,
+      "outputTokens": 4458,
+      "cacheReadTokens": 83102,
+      "cacheWriteTokens": 17619
+    },
+    "durationMs": 20789,
+    "stopReason": "tool_use"
+  }
+}

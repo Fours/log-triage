@@ -1,0 +1,234 @@
+{
+  "score": {
+    "incidentId": "ht-033",
+    "difficulty": "easy",
+    "scenario": "dependency_timeout/external-hang",
+    "truth": "dependency_timeout",
+    "acceptable": [
+      "external_outage"
+    ],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 5,
+      "precision": 0.7142857142857143,
+      "recall": 0.8333333333333334,
+      "f1": 0.7692307692307692
+    },
+    "herringsCited": 2,
+    "costUsd": 0.0031558199999999997,
+    "durationMs": 14342,
+    "iterations": 7,
+    "toolCalls": 10,
+    "tokens": {
+      "input": 16,
+      "output": 2926,
+      "cacheRead": 38497,
+      "cacheWrite": 10450
+    }
+  },
+  "result": {
+    "incidentId": "ht-033",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.85,
+          "evidenceLines": [
+            727,
+            757,
+            845,
+            929,
+            930,
+            931,
+            995
+          ],
+          "reasoning": "The earliest anomaly on the checkout path is payment-svc's card processor calls slowing at 18:04:54 (#727, 3576ms vs 2000ms soft threshold), escalating to 11.6s at 18:05:30 (#757), then hard failures after 30s timeouts from 18:07:14 (#845) and 18:08:43 (#929). Calls hang rather than fail fast, so this is a hung external dependency. order-service's connection pool to payment-svc then saturated (50/50, 29 queued, #931) and pool checkouts timed out (#995). api-gateway 503s (#906, #1019) are downstream symptoms. The metrics-agent remote-write queue overflow (#334, #518, etc.) starts earlier but does not affect checkout and is a red herring. Postgres, redis, and order-consumer show no errors. The logs do not show the card processor's side, so the root is inferred from payment-svc's view of it."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.25,
+          "evidenceLines": [
+            727,
+            845,
+            929
+          ],
+          "reasoning": "The card processor could be down or degraded on its side. This would fit if it returned fast errors or reported itself down, but the logs show hangs and timeouts, so dependency_timeout is the better fit."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.1,
+          "evidenceLines": [
+            334,
+            518,
+            931
+          ],
+          "reasoning": "The metrics-agent queue at capacity and the order-service pool at 50/50 look like resource limits, but both are downstream of the payment hangs."
+        }
+      ],
+      "recommendedAction": "Engage the card processor (api.cardproc.example) owner and check their status and latency. Add a tighter timeout and circuit breaker on payment-svc's card processor calls, since the 30s hang holds order-service's pool. Consider failing checkout fast or queuing payments while the processor is degraded. Separately, fix the metrics-agent remote-write backpressure, since it is dropping samples."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "21 match(es):\n#334 2026-11-14T17:59:27Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 363 samples\n#518 2026-11-14T18:02:06Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1060 samples\n#589 2026-11-14T18:03:05Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1030 samples\n#725 2026-11-14T18:04:51Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 682 samples\n#727 2026-11-14T18:04:54Z WARN payment-svc [t-4964] card processor call slow: 3576ms (soft threshold 2000ms) POST https://api.cardproc.example/v1/charges\n#757 2026-11-14T18:05:30Z WARN payment-svc [t-4972] card processor call slow: 11636ms (soft threshold 2000ms) POST https://api.cardproc.example/v1/charges\n#833 2026-11-14T18:07:02Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 212 samples\n#845 2026-11-14T18:07:14Z ERROR payment-svc [t-4996] card processor call FAILED: upstream timeout after 30000ms POST https://api.cardproc.example/v1/charges\n#846 2026-11-14T18:07:14Z ERROR order-service [t-4996] PaymentClient.charge timed out after 30000ms calling payment-svc POST /charge (o-1656)\n#906 2026-11-14T18:08:18Z ERROR api-gateway [t-5016] POST /checkout 503 21113ms: upstream order-service returned 503 Service Unavailable\n#926 2026-11-14T18:08:41Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1756 samples\n#929 2026-11-14T18:08:43Z ERROR payment-svc [t-5026] call to the card processor aborted: no response within 30s\n#930 2026-11-14T18:08:43Z ERROR order-service [t-5026] upstream request to payment-svc failed: ReadTimeout (read timeout=30s) [o-1671]\n#931 2026-11-14T18:08:45Z WARN order-service HTTP connection pool to payment-svc at capacity (50/50 in use), 29 requests queued\n#995 2026-11-14T18:10:10Z ERROR order-service pool checkout timeout: no connection to payment-svc available after 5000ms\n#1002 2026-11-14T18:10:17Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 870 samples\n#1019 2026-11-14T18:10:39Z ERROR api-gateway [t-5046] POST /checkout 503 29077ms: upstream order-service returned 503 Service Unavailable\n#1098 2026-11-14T18:12:18Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 693 samples\n#1128 2026-11-14T18:12:47Z ERROR api-gateway [t-5076] POST /checkout 503 15074ms: upstream order-service returned 503 Service Unavailable\n#1189 2026-11-14T18:13:50Z ERROR api-gateway [t-5102] POST /checkout 503 6358ms: upstream order-service returned 503 Service Unavailable\n#1218 2026-11-14T18:14:37Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1086 samples"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "metrics-agent",
+          "level": "ERROR"
+        },
+        "output": "9 match(es):\n#334 2026-11-14T17:59:27Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 363 samples\n#518 2026-11-14T18:02:06Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1060 samples\n#589 2026-11-14T18:03:05Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1030 samples\n#725 2026-11-14T18:04:51Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 682 samples\n#833 2026-11-14T18:07:02Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 212 samples\n#926 2026-11-14T18:08:41Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1756 samples\n#1002 2026-11-14T18:10:17Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 870 samples\n#1098 2026-11-14T18:12:18Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 693 samples\n#1218 2026-11-14T18:14:37Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1086 samples"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "since": "17:55:00",
+          "until": "18:05:00"
+        },
+        "output": "tool error: since (17:55:00) is after until (18:05:00)",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "cardproc",
+          "until": "18:04:50"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "since": "17:55:00",
+          "until": "18:05:00"
+        },
+        "output": "tool error: since (17:55:00) is after until (18:05:00)",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "card processor",
+          "since": "17:55:00",
+          "until": "18:05:00"
+        },
+        "output": "tool error: since (17:55:00) is after until (18:05:00)",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "since": "2026-11-14T17:55:00Z",
+          "until": "2026-11-14T18:05:00Z"
+        },
+        "output": "97 match(es), showing first 25:\n#1 2026-11-14T17:55:01Z DEBUG payment-svc GC pause 14ms (young), heap 29%\n#16 2026-11-14T17:55:15Z DEBUG payment-svc GC pause 16ms (young), heap 36%\n#22 2026-11-14T17:55:21Z INFO payment-svc [t-4626] POST /charge o-1364 ok 74ms\n#27 2026-11-14T17:55:23Z INFO payment-svc [t-4628] POST /charge o-1366 ok 70ms\n#34 2026-11-14T17:55:28Z INFO payment-svc [t-4629] POST /charge o-1368 ok 75ms\n#40 2026-11-14T17:55:32Z DEBUG payment-svc GC pause 25ms (young), heap 32%\n#48 2026-11-14T17:55:40Z INFO payment-svc [t-4635] POST /charge o-1374 ok 24ms\n#55 2026-11-14T17:55:44Z INFO payment-svc [t-4637] POST /charge o-1376 ok 52ms\n#61 2026-11-14T17:55:48Z INFO payment-svc [t-4641] POST /charge o-1378 ok 33ms\n#64 2026-11-14T17:55:50Z INFO payment-svc [t-4645] POST /charge o-1380 ok 44ms\n#68 2026-11-14T17:55:53Z DEBUG payment-svc GC pause 16ms (young), heap 30%\n#78 2026-11-14T17:56:02Z INFO payment-svc [t-4649] POST /charge o-1384 ok 22ms\n#88 2026-11-14T17:56:12Z DEBUG payment-svc GC pause 11ms (young), heap 42%\n#99 2026-11-14T17:56:20Z INFO payment-svc [t-4661] POST /charge o-1390 ok 65ms\n#105 2026-11-14T17:56:26Z INFO payment-svc [t-4663] POST /charge o-1391 ok 86ms\n#110 2026-11-14T17:56:28Z INFO payment-svc [t-4664] POST /charge o-1394 ok 80ms\n#121 2026-11-14T17:56:36Z DEBUG payment-svc GC pause 16ms (young), heap 40%\n#128 2026-11-14T17:56:42Z INFO payment-svc [t-4673] POST /charge o-1400 ok 78ms\n#139 2026-11-14T17:56:51Z INFO payment-svc [t-4678] POST /charge o-1404 ok 59ms\n#145 2026-11-14T17:56:56Z INFO payment-svc [t-4682] POST /charge o-1407 ok 20ms\n#150 2026-11-14T17:57:00Z DEBUG payment-svc GC pause 10ms (young), heap 28%\n#152 2026-11-14T17:57:02Z INFO payment-svc [t-4684] POST /charge o-1410 ok 26ms\n#169 2026-11-14T17:57:16Z DEBUG payment-svc GC pause 11ms (young), heap 42%\n#184 2026-11-14T17:57:29Z DEBUG payment-svc GC pause 15ms (young), heap 36%\n#198 2026-11-14T17:57:42Z INFO payment-svc [t-4706] POST /charge o-1430 ok 68ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "card processor",
+          "since": "2026-11-14T17:55:00Z",
+          "until": "2026-11-14T18:05:00Z"
+        },
+        "output": "1 match(es):\n#727 2026-11-14T18:04:54Z WARN payment-svc [t-4964] card processor call slow: 3576ms (soft threshold 2000ms) POST https://api.cardproc.example/v1/charges"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "level": "WARN"
+        },
+        "output": "4 match(es):\n#727 2026-11-14T18:04:54Z WARN payment-svc [t-4964] card processor call slow: 3576ms (soft threshold 2000ms) POST https://api.cardproc.example/v1/charges\n#757 2026-11-14T18:05:30Z WARN payment-svc [t-4972] card processor call slow: 11636ms (soft threshold 2000ms) POST https://api.cardproc.example/v1/charges\n#845 2026-11-14T18:07:14Z ERROR payment-svc [t-4996] card processor call FAILED: upstream timeout after 30000ms POST https://api.cardproc.example/v1/charges\n#929 2026-11-14T18:08:43Z ERROR payment-svc [t-5026] call to the card processor aborted: no response within 30s"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 727,
+          "before": 15,
+          "after": 5
+        },
+        "output": "#712 2026-11-14T18:04:44Z INFO order-consumer processed batch of 71 messages from orders.events (lag 297ms)\n#713 2026-11-14T18:04:44Z DEBUG api-gateway upstream health: order-service ok, payment-svc ok\n#714 2026-11-14T18:04:47Z INFO order-service [t-4957] order o-1625 accepted, calling payment-svc POST /charge\n#715 2026-11-14T18:04:48Z INFO payment-svc [t-4957] POST /charge o-1625 ok 64ms\n#716 2026-11-14T18:04:48Z INFO api-gateway [t-4957] POST /checkout 200 206ms\n#717 2026-11-14T18:04:48Z INFO redis stats: hits=13553 misses=764 evicted=0 connected_clients=58\n#718 2026-11-14T18:04:48Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 2\n#719 2026-11-14T18:04:50Z INFO order-consumer processed batch of 75 messages from orders.events (lag 108ms)\n#720 2026-11-14T18:04:50Z INFO order-service [t-4960] order o-1628 accepted, calling payment-svc POST /charge\n#721 2026-11-14T18:04:50Z INFO payment-svc [t-4960] POST /charge o-1628 ok 74ms\n#722 2026-11-14T18:04:50Z INFO api-gateway [t-4960] POST /checkout 200 178ms\n#723 2026-11-14T18:04:51Z INFO metrics-agent flushed 6917 series to remote-write in 133ms\n#724 2026-11-14T18:04:51Z DEBUG payment-svc GC pause 9ms (young), heap 29%\n#725 2026-11-14T18:04:51Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 682 samples\n#726 2026-11-14T18:04:53Z INFO analytics-forwarder forwarded 976 events to analytics-ingest\n#727 2026-11-14T18:04:54Z WARN payment-svc [t-4964] card processor call slow: 3576ms (soft threshold 2000ms) POST https://api.cardproc.example/v1/charges\n#728 2026-11-14T18:04:55Z INFO order-service [t-4965] order o-1629 accepted, calling payment-svc POST /charge\n#729 2026-11-14T18:04:55Z INFO order-consumer processed batch of 23 messages from orders.events (lag 249ms)\n#730 2026-11-14T18:04:55Z INFO api-gateway [t-4965] POST /checkout 200 114ms\n#731 2026-11-14T18:04:55Z DEBUG order-service GC pause 9ms (young), heap 36%\n#732 2026-11-14T18:04:57Z INFO redis stats: hits=14310 misses=234 evicted=0 connected_clients=43"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"dependency_timeout\",\"confidence\":0.85,\"evidenceLines\":[727,757,845,929,930,931,995],\"reasoning\":\"The earliest anomaly on the checkout path is payment-svc's card processor calls slowing at 18:04:54 (#727, 3576ms vs 2000ms soft threshold), escalating to 11.6s at 18:05:30 (#757), then hard failures after 30s timeouts from 18:07:14 (#845) and 18:08:43 (#929). Calls hang rather than fail fast, so this is a hung external dependency. order-service's connection pool to payment-svc then saturated (50/50, 29 queued, #931) and pool checkouts timed out (#995), and api-gateway returned 503s after 6-29s (#906, #1019), which are downstream symptoms. The metrics-agent remote-write queue overflow (#334, #518, etc.) starts earlier but has no effect on checkout and is a red herring. Postgres, redis, and order-consumer show no errors. Caveat: the logs do not show the card processor's own side, so the root is inferred from payment-svc's view of it.\",\"},{\"rootCause\":\"external_outage\",\"confidence\":0.25,\"evidenceLines\":[727,845,929],\"reasoning\":\"The card processor could be down or degraded on its side. This would fit if its status page or error responses showed it failing, but the logs here show hangs and timeouts rather than fast 5xx responses, so dependency_timeout is the better fit.\"},{\"rootCause\":\"resource_exhaustion\",\"confidence\":0.1,\"evidenceLines\":[334,518,931],\"reasoning\":\"The metrics-agent queue at capacity and the order-service connection pool at 50/50 look like resource limits, but they are downstream of the payment hangs. Pool saturation followed the slow calls rather than causing them.\"}]",
+          "recommendedAction": "Engage the card processor (api.cardproc.example) owner and check their status and latency. Add a tighter timeout and circuit breaker on payment-svc's card processor calls (the 30s hang is too long) so order-service's pool is not held. Consider failing checkout fast or queuing payments while the processor is degraded. Separately, raise the metrics-agent remote-write queue capacity or fix its exporter backpressure, since it is dropping samples."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.85,
+              "evidenceLines": [
+                727,
+                757,
+                845,
+                929,
+                930,
+                931,
+                995
+              ],
+              "reasoning": "The earliest anomaly on the checkout path is payment-svc's card processor calls slowing at 18:04:54 (#727, 3576ms vs 2000ms soft threshold), escalating to 11.6s at 18:05:30 (#757), then hard failures after 30s timeouts from 18:07:14 (#845) and 18:08:43 (#929). Calls hang rather than fail fast, so this is a hung external dependency. order-service's connection pool to payment-svc then saturated (50/50, 29 queued, #931) and pool checkouts timed out (#995). api-gateway 503s (#906, #1019) are downstream symptoms. The metrics-agent remote-write queue overflow (#334, #518, etc.) starts earlier but does not affect checkout and is a red herring. Postgres, redis, and order-consumer show no errors. The logs do not show the card processor's side, so the root is inferred from payment-svc's view of it."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.25,
+              "evidenceLines": [
+                727,
+                845,
+                929
+              ],
+              "reasoning": "The card processor could be down or degraded on its side. This would fit if it returned fast errors or reported itself down, but the logs show hangs and timeouts, so dependency_timeout is the better fit."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.1,
+              "evidenceLines": [
+                334,
+                518,
+                931
+              ],
+              "reasoning": "The metrics-agent queue at capacity and the order-service pool at 50/50 look like resource limits, but both are downstream of the payment hangs."
+            }
+          ],
+          "recommendedAction": "Engage the card processor (api.cardproc.example) owner and check their status and latency. Add a tighter timeout and circuit breaker on payment-svc's card processor calls, since the 30s hang holds order-service's pool. Consider failing checkout fast or queuing payments while the processor is degraded. Separately, fix the metrics-agent remote-write backpressure, since it is dropping samples."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 7,
+    "toolCalls": 10,
+    "usage": {
+      "inputTokens": 16,
+      "outputTokens": 2926,
+      "cacheReadTokens": 38497,
+      "cacheWriteTokens": 10450
+    },
+    "durationMs": 14342,
+    "stopReason": "tool_use"
+  }
+}

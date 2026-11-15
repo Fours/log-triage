@@ -1,0 +1,197 @@
+{
+  "score": {
+    "incidentId": "ht-028",
+    "difficulty": "hard",
+    "scenario": "data_integrity/partial-migration",
+    "truth": "data_integrity",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 10,
+      "correct": 7,
+      "precision": 0.7,
+      "recall": 1,
+      "f1": 0.8235294117647058
+    },
+    "herringsCited": 2,
+    "secondaryCited": 0,
+    "costUsd": 0.0043031599999999995,
+    "durationMs": 14679,
+    "iterations": 6,
+    "toolCalls": 7,
+    "tokens": {
+      "input": 14,
+      "output": 3355,
+      "cacheRead": 56601,
+      "cacheWrite": 16466
+    }
+  },
+  "result": {
+    "incidentId": "ht-028",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.9,
+          "evidenceLines": [
+            3380,
+            3384,
+            3444,
+            3575,
+            3694,
+            3727,
+            3762,
+            3882,
+            3901,
+            4050
+          ],
+          "reasoning": "Migration 0110_add_region_id on order-service ran as three non-transactional DDL steps. Step 1 renamed orders.region_id to region_id_old and committed (#3384). Step 2 failed with a lock timeout on orders (#3444), so step 3 never ran. Step 1 was not rolled back, leaving the schema half-applied with no region_id column. order-service queries touching region_id fail (#3727, #3901, #4050), and postgres rejects them (#3575, #3882). The api-gateway POST /checkout 500s (#3611 onward) are the downstream effect. Checkouts succeeded until 03:57:55, the migration time. The enrichment-svc refusals, report-cron pandas error, and flag-sync unknown-flag warnings are separate and do not explain checkout 500s."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.3,
+          "evidenceLines": [
+            3439,
+            3620
+          ],
+          "reasoning": "Alternative: flag-sync repeatedly reports invalid flag keys in staging-2, which could be a misconfiguration. These flags keep cached values and do not touch the checkout path, and the 500s match the postgres column error, so this is a weak alternative."
+        }
+      ],
+      "recommendedAction": "Pause the order-service migration 0110 pipeline. Restore the schema by renaming orders.region_id_old back to region_id (or restore from backup). Clear whatever holds the lock on orders that caused the step 2 timeout. Re-run the migration as a single transactional step, or in safe split steps with retries. Then confirm the POST /checkout 500 rate returns to baseline. Follow up separately on the enrichment-svc connection refusals in ingest-api and the report-cron missing pandas dependency."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "69 match(es), showing first 60:\n#1300 2026-10-12T03:48:31Z WARN api-gateway TLS certificate for *.internal.example expires in 26 days\n#1786 2026-10-12T03:50:32Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2160 2026-10-12T03:52:07Z WARN api-gateway disk usage 82% on /var/log (threshold 75%)\n#2192 2026-10-12T03:52:14Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2329 2026-10-12T03:52:50Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2766 2026-10-12T03:54:39Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2943 2026-10-12T03:55:28Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2954 2026-10-12T03:55:31Z ERROR ingest-gateway [t-9558] POST /v1/events 503 8747ms: upstream ingest-api returned 503 Service Unavailable\n#3000 2026-10-12T03:55:44Z ERROR ingest-api [t-9579] POST /enrich to enrichment-svc.internal:9090 failed: Connection refused\n#3095 2026-10-12T03:56:13Z ERROR ingest-api [t-9633] EnrichClient.enrich failed: connect ECONNREFUSED 10.38.203.61:9090 (enrichment-svc.internal)\n#3424 2026-10-12T03:57:48Z ERROR ingest-api [t-9823] dial tcp 10.38.203.61:9090: connect: connection refused (calling enrichment-svc)\n#3439 2026-10-12T03:57:53Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#3463 2026-10-12T03:58:00Z ERROR ingest-api [t-9841] POST /enrich to enrichment-svc.internal:9090 failed: Connection refused\n#3515 2026-10-12T03:58:15Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3554 2026-10-12T03:58:26Z ERROR ingest-gateway [t-9904] POST /v1/events 503 23566ms: upstream ingest-api returned 503 Service Unavailable\n#3575 2026-10-12T03:58:36Z ERROR postgres ERROR:  column orders.region_id does not exist (SQLSTATE 42703)\n#3611 2026-10-12T03:59:01Z ERROR api-gateway [t-9925] POST /checkout 500 27223ms: upstream order-service returned 500 Internal Server Error\n#3620 2026-10-12T03:59:03Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#3655 2026-10-12T03:59:29Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3678 2026-10-12T03:59:44Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3694 2026-10-12T03:59:53Z ERROR postgres statement failed: undefined_column, no attribute region_id on orders\n#3727 2026-10-12T04:00:11Z ERROR order-service [t-9952] query on orders failed for o-6187: column \"region_id\" does not exist\n#3732 2026-10-12T04:00:13Z ERROR ingest-gateway [t-9955] POST /v1/events 503 6937ms: upstream ingest-api returned 503 Service Unavailable\n#3743 2026-10-12T04:00:21Z ERROR api-gateway [t-9958] POST /checkout 500 15113ms: upstream order-service returned 500 Internal Server Error\n#3751 2026-10-12T04:00:27Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#3762 2026-10-12T04:00:34Z ERROR postgres query referencing orders.region_id rejected: the column is not in the current schema\n#3782 2026-10-12T04:00:48Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3797 2026-10-12T04:00:59Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#3822 2026-10-12T04:01:16Z ERROR api-gateway [t-9964] POST /checkout 500 22088ms: upstream order-service returned 500 Internal Server Error\n#3856 2026-10-12T04:01:42Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3882 2026-10-12T04:02:02Z ERROR postgres column \"region_id\" of relation \"orders\" does not exist at character 82\n#3901 2026-10-12T04:02:11Z ERROR order-service [t-9977] query on orders failed for o-6199: column \"region_id\" does not exist\n#3905 2026-10-12T04:02:13Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3940 2026-10-12T04:02:34Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#3951 2026-10-12T04:02:43Z ERROR api-gateway [t-9985] POST /checkout 500 28135ms: upstream order-service returned 500 Internal Server Error\n#4007 2026-10-12T04:03:21Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#4021 2026-10-12T04:03:28Z ERROR api-gateway [t-9999] POST /checkout 500 27401ms: upstream order-service returned 500 Internal Server Error\n#4033 2026-10-12T04:03:38Z ERROR ingest-gateway [t-10003] POST /v1/events 503 7753ms: upstream ingest-api returned 503 Service Unavailable\n#4045 2026-10-12T04:03:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4050 2026-10-12T04:03:47Z ERROR order-service [t-10008] query on orders failed for o-6219: column \"region_id\" does not exist\n#4053 2026-10-12T04:03:50Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#4095 2026-10-12T04:04:20Z ERROR api-gateway [t-10015] POST /checkout 500 12127ms: upstream order-service returned 500 Internal Server Error\n#4119 2026-10-12T04:04:34Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4178 2026-10-12T04:05:09Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#4222 2026-10-12T04:05:37Z ERROR ingest-gateway [t-10049] POST /v1/events 503 19825ms: upstream ingest-api returned 503 Service Unavailable\n#4225 2026-10-12T04:05:38Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#4246 2026-10-12T04:05:51Z ERROR api-gateway [t-10057] POST /checkout 500 29133ms: upstream order-service returned 500 Internal Server Error\n#4271 2026-10-12T04:06:05Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4305 2026-10-12T04:06:26Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#4351 2026-10-12T04:06:59Z ERROR order-service [t-10073] query on orders failed for o-6269: column \"region_id\" does not exist\n#4363 2026-10-12T04:07:06Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#4364 2026-10-12T04:07:06Z ERROR api-gateway [t-10075] POST /checkout 500 18078ms: upstream order-service returned 500 Internal Server Error\n#4394 2026-10-12T04:07:27Z ERROR ingest-gateway [t-10080] POST /v1/events 503 6682ms: upstream ingest-api returned 503 Service Unavailable\n#4416 2026-10-12T04:07:41Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#4435 2026-10-12T04:07:57Z ERROR api-gateway [t-10084] POST /checkout 500 25902ms: upstream order-service returned 500 Internal Server Error\n#4444 2026-10-12T04:08:04Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4480 2026-10-12T04:08:27Z ERROR order-service [t-10094] query on orders failed for o-6281: column \"region_id\" does not exist\n#4511 2026-10-12T04:08:51Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#4541 2026-10-12T04:09:11Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#4568 2026-10-12T04:09:26Z ERROR api-gateway [t-10104] POST /checkout 500 27169ms: upstream order-service returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "api-gateway",
+          "level": "ERROR",
+          "limit": 20
+        },
+        "output": "12 match(es):\n#3611 2026-10-12T03:59:01Z ERROR api-gateway [t-9925] POST /checkout 500 27223ms: upstream order-service returned 500 Internal Server Error\n#3743 2026-10-12T04:00:21Z ERROR api-gateway [t-9958] POST /checkout 500 15113ms: upstream order-service returned 500 Internal Server Error\n#3822 2026-10-12T04:01:16Z ERROR api-gateway [t-9964] POST /checkout 500 22088ms: upstream order-service returned 500 Internal Server Error\n#3951 2026-10-12T04:02:43Z ERROR api-gateway [t-9985] POST /checkout 500 28135ms: upstream order-service returned 500 Internal Server Error\n#4021 2026-10-12T04:03:28Z ERROR api-gateway [t-9999] POST /checkout 500 27401ms: upstream order-service returned 500 Internal Server Error\n#4095 2026-10-12T04:04:20Z ERROR api-gateway [t-10015] POST /checkout 500 12127ms: upstream order-service returned 500 Internal Server Error\n#4246 2026-10-12T04:05:51Z ERROR api-gateway [t-10057] POST /checkout 500 29133ms: upstream order-service returned 500 Internal Server Error\n#4364 2026-10-12T04:07:06Z ERROR api-gateway [t-10075] POST /checkout 500 18078ms: upstream order-service returned 500 Internal Server Error\n#4435 2026-10-12T04:07:57Z ERROR api-gateway [t-10084] POST /checkout 500 25902ms: upstream order-service returned 500 Internal Server Error\n#4568 2026-10-12T04:09:26Z ERROR api-gateway [t-10104] POST /checkout 500 27169ms: upstream order-service returned 500 Internal Server Error\n#4665 2026-10-12T04:10:34Z ERROR api-gateway [t-10118] POST /checkout 500 29155ms: upstream order-service returned 500 Internal Server Error\n#4772 2026-10-12T04:11:52Z ERROR api-gateway [t-10133] POST /checkout 500 19895ms: upstream order-service returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "region_id",
+          "limit": 15
+        },
+        "output": "13 match(es):\n#3380 2026-10-12T03:57:36Z INFO order-service migrate: applying 0110_add_region_id (3 steps) to postgres\n#3384 2026-10-12T03:57:38Z INFO order-service migrate: 0110_add_region_id step 1/3 ok: renamed column orders.region_id -> region_id_old\n#3444 2026-10-12T03:57:55Z INFO order-service migrate: 0110_add_region_id step 2/3 failed: lock timeout on orders; step 1 already committed (non-transactional DDL), not rolled back\n#3575 2026-10-12T03:58:36Z ERROR postgres ERROR:  column orders.region_id does not exist (SQLSTATE 42703)\n#3694 2026-10-12T03:59:53Z ERROR postgres statement failed: undefined_column, no attribute region_id on orders\n#3727 2026-10-12T04:00:11Z ERROR order-service [t-9952] query on orders failed for o-6187: column \"region_id\" does not exist\n#3762 2026-10-12T04:00:34Z ERROR postgres query referencing orders.region_id rejected: the column is not in the current schema\n#3882 2026-10-12T04:02:02Z ERROR postgres column \"region_id\" of relation \"orders\" does not exist at character 82\n#3901 2026-10-12T04:02:11Z ERROR order-service [t-9977] query on orders failed for o-6199: column \"region_id\" does not exist\n#4050 2026-10-12T04:03:47Z ERROR order-service [t-10008] query on orders failed for o-6219: column \"region_id\" does not exist\n#4351 2026-10-12T04:06:59Z ERROR order-service [t-10073] query on orders failed for o-6269: column \"region_id\" does not exist\n#4480 2026-10-12T04:08:27Z ERROR order-service [t-10094] query on orders failed for o-6281: column \"region_id\" does not exist\n#4751 2026-10-12T04:11:36Z ERROR order-service [t-10128] query on orders failed for o-6310: column \"region_id\" does not exist"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "postgres",
+          "limit": 60
+        },
+        "output": "148 match(es), showing first 60:\n#31 2026-10-12T03:43:08Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 26\n#91 2026-10-12T03:43:22Z INFO postgres checkpoint complete: wrote 203 buffers (1.8%)\n#122 2026-10-12T03:43:30Z INFO postgres checkpoint complete: wrote 434 buffers (3.3%)\n#179 2026-10-12T03:43:44Z INFO postgres checkpoint complete: wrote 905 buffers (2.8%)\n#224 2026-10-12T03:43:56Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 28\n#278 2026-10-12T03:44:10Z INFO postgres checkpoint complete: wrote 651 buffers (7.0%)\n#328 2026-10-12T03:44:22Z INFO postgres checkpoint complete: wrote 1269 buffers (3.5%)\n#376 2026-10-12T03:44:35Z INFO postgres checkpoint complete: wrote 864 buffers (2.5%)\n#418 2026-10-12T03:44:46Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 22\n#462 2026-10-12T03:44:57Z INFO postgres checkpoint complete: wrote 745 buffers (3.8%)\n#497 2026-10-12T03:45:07Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 40\n#546 2026-10-12T03:45:20Z INFO postgres checkpoint complete: wrote 1303 buffers (7.7%)\n#604 2026-10-12T03:45:35Z INFO postgres checkpoint complete: wrote 725 buffers (7.4%)\n#641 2026-10-12T03:45:45Z INFO postgres checkpoint complete: wrote 869 buffers (5.9%)\n#690 2026-10-12T03:45:58Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 19\n#740 2026-10-12T03:46:11Z INFO postgres checkpoint complete: wrote 689 buffers (7.7%)\n#775 2026-10-12T03:46:19Z INFO postgres checkpoint complete: wrote 689 buffers (5.7%)\n#814 2026-10-12T03:46:29Z INFO postgres checkpoint complete: wrote 440 buffers (1.4%)\n#861 2026-10-12T03:46:41Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 8\n#896 2026-10-12T03:46:50Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 10\n#963 2026-10-12T03:47:05Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 24\n#997 2026-10-12T03:47:14Z INFO postgres checkpoint complete: wrote 583 buffers (3.8%)\n#1052 2026-10-12T03:47:28Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 11\n#1118 2026-10-12T03:47:41Z INFO postgres checkpoint complete: wrote 784 buffers (5.3%)\n#1148 2026-10-12T03:47:50Z INFO postgres checkpoint complete: wrote 701 buffers (5.7%)\n#1201 2026-10-12T03:48:04Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 29\n#1240 2026-10-12T03:48:15Z INFO postgres checkpoint complete: wrote 363 buffers (3.8%)\n#1294 2026-10-12T03:48:29Z INFO postgres checkpoint complete: wrote 416 buffers (4.0%)\n#1350 2026-10-12T03:48:42Z INFO postgres checkpoint complete: wrote 613 buffers (3.6%)\n#1392 2026-10-12T03:48:53Z INFO postgres checkpoint complete: wrote 790 buffers (4.9%)\n#1434 2026-10-12T03:49:04Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 26\n#1484 2026-10-12T03:49:16Z INFO postgres checkpoint complete: wrote 939 buffers (4.5%)\n#1523 2026-10-12T03:49:25Z INFO postgres checkpoint complete: wrote 1282 buffers (4.2%)\n#1577 2026-10-12T03:49:39Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 12\n#1615 2026-10-12T03:49:48Z INFO postgres checkpoint complete: wrote 412 buffers (2.8%)\n#1664 2026-10-12T03:50:01Z INFO postgres checkpoint complete: wrote 690 buffers (6.1%)\n#1701 2026-10-12T03:50:11Z INFO postgres checkpoint complete: wrote 917 buffers (1.9%)\n#1761 2026-10-12T03:50:26Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 2\n#1818 2026-10-12T03:50:39Z INFO postgres checkpoint complete: wrote 560 buffers (7.8%)\n#1874 2026-10-12T03:50:54Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 14\n#1907 2026-10-12T03:51:02Z INFO postgres checkpoint complete: wrote 318 buffers (6.2%)\n#1960 2026-10-12T03:51:16Z INFO postgres checkpoint complete: wrote 812 buffers (2.3%)\n#2020 2026-10-12T03:51:31Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 20\n#2077 2026-10-12T03:51:46Z INFO postgres checkpoint complete: wrote 1034 buffers (1.1%)\n#2111 2026-10-12T03:51:55Z INFO postgres checkpoint complete: wrote 211 buffers (2.8%)\n#2161 2026-10-12T03:52:07Z INFO postgres checkpoint complete: wrote 280 buffers (5.7%)\n#2222 2026-10-12T03:52:21Z INFO postgres checkpoint complete: wrote 738 buffers (3.6%)\n#2270 2026-10-12T03:52:34Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 23\n#2319 2026-10-12T03:52:48Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 39\n#2380 2026-10-12T03:53:03Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 34\n#2444 2026-10-12T03:53:17Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 29\n#2485 2026-10-12T03:53:28Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 26\n#2548 2026-10-12T03:53:43Z INFO postgres checkpoint complete: wrote 679 buffers (7.4%)\n#2602 2026-10-12T03:53:57Z INFO postgres checkpoint complete: wrote 1184 buffers (4.0%)\n#2639 2026-10-12T03:54:06Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 40\n#2694 2026-10-12T03:54:20Z INFO postgres checkpoint complete: wrote 950 buffers (7.1%)\n#2742 2026-10-12T03:54:33Z INFO postgres checkpoint complete: wrote 1210 buffers (7.3%)\n#2793 2026-10-12T03:54:46Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 24\n#2843 2026-10-12T03:54:57Z INFO postgres checkpoint complete: wrote 920 buffers (7.5%)\n#2875 2026-10-12T03:55:07Z INFO postgres checkpoint complete: wrote 468 buffers (7.9%)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "migration",
+          "limit": 20
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 3444,
+          "before": 12,
+          "after": 4
+        },
+        "output": "#3432 2026-10-12T03:57:51Z INFO api-gateway [t-9826] POST /checkout 200 146ms\n#3433 2026-10-12T03:57:52Z INFO order-consumer processed batch of 47 messages from orders.events (lag 397ms)\n#3434 2026-10-12T03:57:52Z INFO event-processor processed batch of 23 messages from events.raw (lag 363ms)\n#3435 2026-10-12T03:57:52Z INFO order-service [t-9828] order o-6097 accepted, calling payment-svc POST /charge\n#3436 2026-10-12T03:57:53Z INFO payment-svc [t-9828] POST /charge o-6097 ok 72ms\n#3437 2026-10-12T03:57:53Z INFO api-gateway [t-9828] POST /checkout 200 177ms\n#3438 2026-10-12T03:57:53Z INFO flag-sync synced 123 feature flags from flag service (etag 24ac699)\n#3439 2026-10-12T03:57:53Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#3440 2026-10-12T03:57:53Z DEBUG payment-svc GC pause 5ms (young), heap 32%\n#3441 2026-10-12T03:57:54Z INFO order-service [t-9829] order o-6098 accepted, calling payment-svc POST /charge\n#3442 2026-10-12T03:57:54Z INFO payment-svc [t-9829] POST /charge o-6098 ok 32ms\n#3443 2026-10-12T03:57:54Z INFO api-gateway [t-9829] POST /checkout 200 158ms\n#3444 2026-10-12T03:57:55Z INFO order-service migrate: 0110_add_region_id step 2/3 failed: lock timeout on orders; step 1 already committed (non-transactional DDL), not rolled back\n#3445 2026-10-12T03:57:55Z INFO order-service [t-9830] order o-6099 accepted, calling payment-svc POST /charge\n#3446 2026-10-12T03:57:55Z INFO payment-svc [t-9830] POST /charge o-6099 ok 62ms\n#3447 2026-10-12T03:57:55Z INFO api-gateway [t-9830] POST /checkout 200 166ms\n#3448 2026-10-12T03:57:56Z INFO order-service [t-9832] order o-6100 accepted, calling payment-svc POST /charge"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "lock",
+          "limit": 15
+        },
+        "output": "1 match(es):\n#3444 2026-10-12T03:57:55Z INFO order-service migrate: 0110_add_region_id step 2/3 failed: lock timeout on orders; step 1 already committed (non-transactional DDL), not rolled back"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"data_integrity\",\"confidence\":0.9,\"evidenceLines\":[3380,3384,3444,3575,3694,3727,3762,3882,3901,4050],\"reasoning\":\"Migration 0110_add_region_id on order-service ran as three non-transactional DDL steps. Step 1 renamed orders.region_id to region_id_old and committed (#3384). Step 2 then failed with a lock timeout on orders (#3444), and step 3 never ran. Step 1 was not rolled back, so the schema is half-applied and the live orders table has no region_id column. Every order-service query touching region_id now fails (#3727, #3901, #4050, #4751), and postgres rejects them (#3575, #3882). api-gateway's POST /checkout 500s are the downstream effect: order-service returns 500 for each checkout (#3611 onward). Checkouts succeeded until 03:57:55 and began failing right after the migration. The 500 rate is caused by the schema break, not by gateway or payment issues. Not part of this incident: the ingest-api enrichment-svc connection-refused errors (#3000-#3463), the report-cron pandas ModuleNotFoundError (#1786), and the flag-sync unknown-flag warnings (#3439). These are separate issues and do not explain checkout 500s.\",\"},{\"rootCause\":\"config_error\",\"confidence\":0.3,\"evidenceLines\":[3439,3620],\"reasoning\":\"Alternative reading: flag-sync repeatedly reports invalid flag keys in staging-2, which could be a misconfiguration. However, these flags only keep cached values and never touch the checkout path, and the checkout 500s match the postgres column error, not a flag. This is a weak alternative and is not the cause.\"}]",
+          "recommendedAction": "Stop the bleeding: roll back or pause the order-service migration 0110 pipeline. Restore the schema by renaming orders.region_id_old back to region_id (or restore from backup). Confirm that the lock holder that caused the step 2 lock timeout is cleared, then re-run the migration as a single transactional step, or split it into safe steps with retries. Afterwards, verify that POST /checkout 500 rate returns to baseline. Separately, investigate the enrichment-svc connection-refused errors in ingest-api and the report-cron missing pandas dependency as follow-ups."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"data_integrity\",\"confidence\":0.9,\"evidenceLines\":[3380,3384,3444,3575,3694,3727,3762,3882,3901,4050],\"reasoning\":\"Migration 0110_add_region_id on order-service ran as three non-transactional DDL steps. Step 1 renamed orders.region_id to region_id_old and committed (#3384). Step 2 then failed with a lock timeout on orders (#3444), and step 3 never ran. Step 1 was not rolled back, so the schema is half-applied and the live orders table has no region_id column. Every order-service query touching region_id now fails (#3727, #3901, #4050, #4751), and postgres rejects them (#3575, #3882). api-gateway's POST /checkout 500s are the downstream effect: order-service returns 500 for each checkout (#3611 onward). Checkouts succeeded until 03:57:55 and began failing right after the migration. Not part of this incident: the ingest-api enrichment-svc connection-refused errors (#3000-#3463), the report-cron pandas ModuleNotFoundError (#1786), and the flag-sync unknown-flag warnings (#3439). These do not explain checkout 500s.\",\"},{\"rootCause\":\"config_error\",\"confidence\":0.3,\"evidenceLines\":[3439,3620],\"reasoning\":\"Alternative reading: flag-sync repeatedly reports invalid flag keys in staging-2, which could be a misconfiguration. However, these flags only keep cached values and never touch the checkout path, and the checkout 500s match the postgres column error, not a flag. This is a weak alternative and is not the cause.\"}]",
+          "recommendedAction": "Stop the bleeding: roll back or pause the order-service migration 0110 pipeline. Restore the schema by renaming orders.region_id_old back to region_id (or restore from backup). Confirm that the lock holder behind the step 2 lock timeout is cleared, then re-run the migration as a single transactional step, or split it into safe steps with retries. Afterwards, verify that the POST /checkout 500 rate returns to baseline. Separately, investigate the enrichment-svc connection-refused errors in ingest-api and the report-cron missing pandas dependency as follow-ups."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                3380,
+                3384,
+                3444,
+                3575,
+                3694,
+                3727,
+                3762,
+                3882,
+                3901,
+                4050
+              ],
+              "reasoning": "Migration 0110_add_region_id on order-service ran as three non-transactional DDL steps. Step 1 renamed orders.region_id to region_id_old and committed (#3384). Step 2 failed with a lock timeout on orders (#3444), so step 3 never ran. Step 1 was not rolled back, leaving the schema half-applied with no region_id column. order-service queries touching region_id fail (#3727, #3901, #4050), and postgres rejects them (#3575, #3882). The api-gateway POST /checkout 500s (#3611 onward) are the downstream effect. Checkouts succeeded until 03:57:55, the migration time. The enrichment-svc refusals, report-cron pandas error, and flag-sync unknown-flag warnings are separate and do not explain checkout 500s."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.3,
+              "evidenceLines": [
+                3439,
+                3620
+              ],
+              "reasoning": "Alternative: flag-sync repeatedly reports invalid flag keys in staging-2, which could be a misconfiguration. These flags keep cached values and do not touch the checkout path, and the 500s match the postgres column error, so this is a weak alternative."
+            }
+          ],
+          "recommendedAction": "Pause the order-service migration 0110 pipeline. Restore the schema by renaming orders.region_id_old back to region_id (or restore from backup). Clear whatever holds the lock on orders that caused the step 2 timeout. Re-run the migration as a single transactional step, or in safe split steps with retries. Then confirm the POST /checkout 500 rate returns to baseline. Follow up separately on the enrichment-svc connection refusals in ingest-api and the report-cron missing pandas dependency."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 7,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 3355,
+      "cacheReadTokens": 56601,
+      "cacheWriteTokens": 16466
+    },
+    "durationMs": 14679,
+    "stopReason": "tool_use"
+  }
+}

@@ -1,0 +1,185 @@
+{
+  "score": {
+    "incidentId": "ht-043",
+    "difficulty": "easy",
+    "scenario": "bad_deploy/dependency-contract-change",
+    "truth": "bad_deploy",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "bad_deploy",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 3,
+      "precision": 0.6,
+      "recall": 0.6,
+      "f1": 0.6
+    },
+    "herringsCited": 0,
+    "costUsd": 0.003109085,
+    "durationMs": 11383,
+    "iterations": 6,
+    "toolCalls": 8,
+    "tokens": {
+      "input": 14,
+      "output": 2433,
+      "cacheRead": 38431,
+      "cacheWrite": 12055
+    }
+  },
+  "result": {
+    "incidentId": "ht-043",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.88,
+          "evidenceLines": [
+            1091,
+            1119,
+            1159,
+            1197,
+            1329
+          ],
+          "reasoning": "auth-svc v2.13.0 rolled out at 16:22:47 (#1091) and started at 16:23:06 with 'response serializer v2 enabled' (#1119). Right after that, account-svc fails to decode auth-svc POST /tokens replies because the required 'status' field is missing; the reply only has keys id, state, updatedAt (#1159). account-svc then returns 502 upstream and edge-proxy surfaces POST /login 502s (#1197, #1329). Failures recur through 16:36 (#1225, #1261, #1452, #1657). auth-svc logs no errors, consistent with a response-contract break. The status-poller healthcheck timeouts against deprecated legacy-inventory (#672, #896, etc.) are unrelated noise and do not explain the 502s. The slow audit_log seq-scan (#440) is not on the login path."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.15,
+          "evidenceLines": [
+            1119,
+            1159
+          ],
+          "reasoning": "The serializer v2 toggle enabled at startup could be read as a config change. It is the same fault though: the v2 serializer omits 'status'. Ranked lower because it arrived with the v2.13.0 release."
+        }
+      ],
+      "recommendedAction": "Roll back auth-svc to v2.12.6 (or disable the response serializer v2 setting) so /tokens returns the 'status' field account-svc requires. Confirm POST /login 502s stop in edge-proxy. Afterwards, add a contract test between auth-svc /tokens and account-svc, and separately retire the deprecated legacy-inventory healthcheck timing out in status-poller."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "17 match(es):\n#440 2026-11-20T16:14:07Z WARN accounts-db slow query 1268ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#672 2026-11-20T16:17:19Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#896 2026-11-20T16:20:24Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#978 2026-11-20T16:21:20Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1159 2026-11-20T16:23:50Z ERROR account-svc [t-2231] failed to decode auth-svc POST /tokens response for u-7902: missing required field \"status\" (got keys: id, state, updatedAt)\n#1197 2026-11-20T16:24:45Z ERROR edge-proxy [t-2238] POST /login 502 7568ms: upstream account-svc returned 502 Bad Gateway\n#1223 2026-11-20T16:25:16Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1225 2026-11-20T16:25:18Z ERROR account-svc [t-2242] schema validation error on auth-svc reply (u-7913): required property 'status' not found\n#1261 2026-11-20T16:26:06Z ERROR account-svc [t-2248] failed to decode auth-svc POST /tokens response for u-7919: missing required field \"status\" (got keys: id, state, updatedAt)\n#1324 2026-11-20T16:27:38Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1329 2026-11-20T16:27:40Z ERROR edge-proxy [t-2257] POST /login 502 14751ms: upstream account-svc returned 502 Bad Gateway\n#1373 2026-11-20T16:28:53Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1452 2026-11-20T16:30:59Z ERROR edge-proxy [t-2262] POST /login 502 29514ms: upstream account-svc returned 502 Bad Gateway\n#1482 2026-11-20T16:31:46Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1567 2026-11-20T16:33:55Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1657 2026-11-20T16:36:01Z ERROR edge-proxy [t-2286] POST /login 502 23079ms: upstream account-svc returned 502 Bad Gateway\n#1675 2026-11-20T16:36:25Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "status-poller",
+          "level": "ERROR"
+        },
+        "output": "9 match(es):\n#672 2026-11-20T16:17:19Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#896 2026-11-20T16:20:24Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#978 2026-11-20T16:21:20Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1223 2026-11-20T16:25:16Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1324 2026-11-20T16:27:38Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1373 2026-11-20T16:28:53Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1482 2026-11-20T16:31:46Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1567 2026-11-20T16:33:55Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1675 2026-11-20T16:36:25Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "limit": 60
+        },
+        "output": "203 match(es), showing first 60:\n#10 2026-11-20T16:08:11Z DEBUG auth-svc GC pause 6ms (young), heap 32%\n#14 2026-11-20T16:08:14Z INFO auth-svc [t-1723] POST /tokens u-7479 ok 80ms\n#24 2026-11-20T16:08:22Z INFO auth-svc [t-1727] POST /tokens u-7481 ok 58ms\n#32 2026-11-20T16:08:29Z DEBUG auth-svc GC pause 8ms (young), heap 43%\n#36 2026-11-20T16:08:31Z INFO auth-svc [t-1732] POST /tokens u-7485 ok 69ms\n#43 2026-11-20T16:08:36Z INFO auth-svc [t-1734] POST /tokens u-7486 ok 25ms\n#50 2026-11-20T16:08:43Z DEBUG auth-svc GC pause 10ms (young), heap 34%\n#56 2026-11-20T16:08:46Z INFO auth-svc [t-1737] POST /tokens u-7490 ok 70ms\n#67 2026-11-20T16:08:58Z INFO auth-svc [t-1741] POST /tokens u-7495 ok 71ms\n#71 2026-11-20T16:09:01Z DEBUG auth-svc GC pause 18ms (young), heap 33%\n#83 2026-11-20T16:09:12Z INFO auth-svc [t-1745] POST /tokens u-7501 ok 48ms\n#90 2026-11-20T16:09:18Z DEBUG auth-svc GC pause 23ms (young), heap 42%\n#96 2026-11-20T16:09:22Z INFO auth-svc [t-1751] POST /tokens u-7504 ok 88ms\n#99 2026-11-20T16:09:25Z INFO auth-svc [t-1752] POST /tokens u-7506 ok 88ms\n#108 2026-11-20T16:09:31Z INFO auth-svc [t-1755] POST /tokens u-7509 ok 48ms\n#115 2026-11-20T16:09:36Z DEBUG auth-svc GC pause 14ms (young), heap 42%\n#124 2026-11-20T16:09:45Z INFO auth-svc [t-1762] POST /tokens u-7515 ok 84ms\n#132 2026-11-20T16:09:53Z DEBUG auth-svc GC pause 12ms (young), heap 42%\n#143 2026-11-20T16:10:02Z INFO auth-svc [t-1775] POST /tokens u-7523 ok 43ms\n#147 2026-11-20T16:10:06Z DEBUG auth-svc GC pause 6ms (young), heap 35%\n#151 2026-11-20T16:10:08Z INFO auth-svc [t-1776] POST /tokens u-7526 ok 30ms\n#158 2026-11-20T16:10:13Z INFO auth-svc [t-1780] POST /tokens u-7529 ok 90ms\n#163 2026-11-20T16:10:17Z INFO auth-svc [t-1781] POST /tokens u-7532 ok 63ms\n#178 2026-11-20T16:10:30Z DEBUG auth-svc GC pause 8ms (young), heap 36%\n#196 2026-11-20T16:10:48Z DEBUG auth-svc GC pause 9ms (young), heap 40%\n#204 2026-11-20T16:10:55Z INFO auth-svc [t-1804] POST /tokens u-7544 ok 90ms\n#216 2026-11-20T16:11:04Z DEBUG auth-svc GC pause 9ms (young), heap 28%\n#227 2026-11-20T16:11:13Z INFO auth-svc [t-1816] POST /tokens u-7551 ok 74ms\n#234 2026-11-20T16:11:18Z INFO auth-svc [t-1820] POST /tokens u-7554 ok 62ms\n#236 2026-11-20T16:11:18Z DEBUG auth-svc GC pause 15ms (young), heap 38%\n#243 2026-11-20T16:11:24Z INFO auth-svc [t-1825] POST /tokens u-7559 ok 35ms\n#249 2026-11-20T16:11:29Z INFO auth-svc [t-1826] POST /tokens u-7561 ok 64ms\n#259 2026-11-20T16:11:35Z INFO auth-svc [t-1831] POST /tokens u-7564 ok 86ms\n#263 2026-11-20T16:11:38Z INFO auth-svc [t-1833] POST /tokens u-7567 ok 24ms\n#267 2026-11-20T16:11:41Z DEBUG auth-svc GC pause 4ms (young), heap 42%\n#272 2026-11-20T16:11:46Z INFO auth-svc [t-1839] POST /tokens u-7570 ok 54ms\n#288 2026-11-20T16:11:57Z INFO auth-svc [t-1848] POST /tokens u-7578 ok 63ms\n#292 2026-11-20T16:12:00Z DEBUG auth-svc GC pause 25ms (young), heap 39%\n#299 2026-11-20T16:12:06Z INFO auth-svc [t-1851] POST /tokens u-7581 ok 40ms\n#304 2026-11-20T16:12:09Z INFO auth-svc [t-1853] POST /tokens u-7582 ok 37ms\n#313 2026-11-20T16:12:18Z DEBUG auth-svc GC pause 16ms (young), heap 28%\n#320 2026-11-20T16:12:22Z INFO auth-svc [t-1860] POST /tokens u-7585 ok 71ms\n#339 2026-11-20T16:12:39Z DEBUG auth-svc GC pause 25ms (young), heap 42%\n#347 2026-11-20T16:12:45Z INFO auth-svc [t-1871] POST /tokens u-7596 ok 78ms\n#356 2026-11-20T16:12:54Z DEBUG auth-svc GC pause 4ms (young), heap 28%\n#358 2026-11-20T16:12:55Z INFO auth-svc [t-1876] POST /tokens u-7599 ok 36ms\n#368 2026-11-20T16:13:03Z INFO auth-svc [t-1884] POST /tokens u-7602 ok 46ms\n#372 2026-11-20T16:13:07Z INFO auth-svc [t-1886] POST /tokens u-7604 ok 24ms\n#384 2026-11-20T16:13:16Z INFO auth-svc [t-1891] POST /tokens u-7606 ok 66ms\n#386 2026-11-20T16:13:17Z DEBUG auth-svc GC pause 25ms (young), heap 41%\n#391 2026-11-20T16:13:23Z INFO auth-svc [t-1892] POST /tokens u-7609 ok 51ms\n#400 2026-11-20T16:13:30Z DEBUG auth-svc GC pause 24ms (young), heap 38%\n#414 2026-11-20T16:13:44Z DEBUG auth-svc GC pause 19ms (young), heap 39%\n#434 2026-11-20T16:14:04Z DEBUG auth-svc GC pause 11ms (young), heap 33%\n#437 2026-11-20T16:14:06Z INFO auth-svc [t-1912] POST /tokens u-7631 ok 32ms\n#457 2026-11-20T16:14:22Z DEBUG auth-svc GC pause 10ms (young), heap 33%\n#466 2026-11-20T16:14:30Z INFO auth-svc [t-1921] POST /tokens u-7640 ok 47ms\n#471 2026-11-20T16:14:33Z INFO auth-svc [t-1922] POST /tokens u-7641 ok 57ms\n#480 2026-11-20T16:14:43Z DEBUG auth-svc GC pause 23ms (young), heap 45%\n#482 2026-11-20T16:14:43Z INFO auth-svc [t-1930] POST /tokens u-7646 ok 45ms"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-2231"
+        },
+        "output": "1 line(s) for t-2231:\n#1159 2026-11-20T16:23:50Z ERROR account-svc [t-2231] failed to decode auth-svc POST /tokens response for u-7902: missing required field \"status\" (got keys: id, state, updatedAt)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "status",
+          "service": "auth-svc",
+          "since": "16:15:00",
+          "limit": 40
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 30
+        },
+        "output": "1 match(es):\n#1091 2026-11-20T16:22:47Z INFO auth-svc deploy: rolling out auth-svc v2.13.0 (build aa4ae5c), replacing v2.12.6"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1091,
+          "before": 3,
+          "after": 12
+        },
+        "output": "#1088 2026-11-20T16:22:44Z INFO auth-svc [t-2205] POST /tokens u-7875 ok 70ms\n#1089 2026-11-20T16:22:45Z INFO edge-proxy [t-2205] POST /login 200 169ms\n#1090 2026-11-20T16:22:45Z INFO status-poller poll cycle complete: 36 targets checked in 633ms\n#1091 2026-11-20T16:22:47Z INFO auth-svc deploy: rolling out auth-svc v2.13.0 (build aa4ae5c), replacing v2.12.6\n#1092 2026-11-20T16:22:47Z INFO audit-consumer processed batch of 90 messages from audit.events (lag 394ms)\n#1093 2026-11-20T16:22:48Z INFO account-svc [t-2207] user u-7877 accepted, calling auth-svc POST /tokens\n#1094 2026-11-20T16:22:48Z INFO auth-svc [t-2207] POST /tokens u-7877 ok 58ms\n#1095 2026-11-20T16:22:48Z INFO edge-proxy [t-2207] POST /login 200 114ms\n#1096 2026-11-20T16:22:51Z INFO account-svc [t-2208] user u-7880 accepted, calling auth-svc POST /tokens\n#1097 2026-11-20T16:22:51Z INFO edge-proxy [t-2208] POST /login 200 88ms\n#1098 2026-11-20T16:22:52Z INFO audit-consumer processed batch of 40 messages from audit.events (lag 113ms)\n#1099 2026-11-20T16:22:54Z INFO session-cache stats: hits=13507 misses=852 evicted=0 connected_clients=40\n#1100 2026-11-20T16:22:54Z INFO account-svc [t-2210] user u-7883 accepted, calling auth-svc POST /tokens\n#1101 2026-11-20T16:22:54Z INFO auth-svc [t-2210] POST /tokens u-7883 ok 30ms\n#1102 2026-11-20T16:22:54Z INFO status-poller poll cycle complete: 36 targets checked in 714ms\n#1103 2026-11-20T16:22:54Z INFO edge-proxy [t-2210] POST /login 200 86ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "since": "16:22:40",
+          "until": "16:23:55",
+          "limit": 40
+        },
+        "output": "16 match(es):\n#1080 2026-11-20T16:22:42Z INFO auth-svc [t-2201] POST /tokens u-7872 ok 59ms\n#1083 2026-11-20T16:22:44Z DEBUG auth-svc GC pause 17ms (young), heap 36%\n#1088 2026-11-20T16:22:44Z INFO auth-svc [t-2205] POST /tokens u-7875 ok 70ms\n#1091 2026-11-20T16:22:47Z INFO auth-svc deploy: rolling out auth-svc v2.13.0 (build aa4ae5c), replacing v2.12.6\n#1094 2026-11-20T16:22:48Z INFO auth-svc [t-2207] POST /tokens u-7877 ok 58ms\n#1101 2026-11-20T16:22:54Z INFO auth-svc [t-2210] POST /tokens u-7883 ok 30ms\n#1108 2026-11-20T16:22:58Z DEBUG auth-svc GC pause 15ms (young), heap 42%\n#1113 2026-11-20T16:23:02Z INFO auth-svc [t-2218] POST /tokens u-7886 ok 26ms\n#1116 2026-11-20T16:23:05Z INFO auth-svc [t-2219] POST /tokens u-7889 ok 81ms\n#1119 2026-11-20T16:23:06Z INFO auth-svc started auth-svc v2.13.0: response serializer v2 enabled\n#1123 2026-11-20T16:23:10Z INFO auth-svc [t-2220] POST /tokens u-7892 ok 54ms\n#1128 2026-11-20T16:23:13Z DEBUG auth-svc GC pause 6ms (young), heap 36%\n#1140 2026-11-20T16:23:27Z INFO auth-svc [t-2225] POST /tokens u-7898 ok 63ms\n#1145 2026-11-20T16:23:30Z DEBUG auth-svc GC pause 12ms (young), heap 31%\n#1152 2026-11-20T16:23:39Z INFO auth-svc [t-2229] POST /tokens u-7900 ok 64ms\n#1163 2026-11-20T16:23:55Z DEBUG auth-svc GC pause 21ms (young), heap 41%"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"bad_deploy\",\"confidence\":0.88,\"evidenceLines\":[1091,1119,1159,1197,1329],\"reasoning\":\"auth-svc v2.13.0 rolled out at 16:22:47 (#1091) and started at 16:23:06 with 'response serializer v2 enabled' (#1119). Right after that, account-svc fails to decode auth-svc POST /tokens replies because the required 'status' field is missing; the reply only has keys id, state, updatedAt (#1159). account-svc then returns 502 upstream and edge-proxy surfaces POST /login 502s (#1197, #1329). Those 502s are the alert, and the decode failure is the origin. Failures keep recurring through 16:36 (#1225, #1261, #1452, #1657). auth-svc itself logs no errors, which is consistent with the contract break being on the response side. The status-poller healthcheck timeouts against deprecated legacy-inventory (#672, #896, etc.) are a separate, unrelated noise source and do not explain the 502s. The slow audit_log seq-scan (#440) is also not on the login path.\",\"}, {\"rootCause\":\"config_error\",\"confidence\":0.15,\"evidenceLines\":[1119,1159],\"reasoning\":\"The serializer v2 toggle enabled at startup could be read as a config change rather than code. It is the same fault though: the v2 serializer omits 'status'. Ranked lower because the change arrived with the v2.13.0 release.\"}]",
+          "recommendedAction": "Roll back auth-svc to v2.12.6 (or disable the response serializer v2 flag) to restore the 'status' field expected by account-svc. Then confirm POST /login 502s stop in edge-proxy. Afterwards, add a contract test between auth-svc /tokens and account-svc, and separately retire the deprecated legacy-inventory healthcheck that is timing out in status-poller."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.88,
+              "evidenceLines": [
+                1091,
+                1119,
+                1159,
+                1197,
+                1329
+              ],
+              "reasoning": "auth-svc v2.13.0 rolled out at 16:22:47 (#1091) and started at 16:23:06 with 'response serializer v2 enabled' (#1119). Right after that, account-svc fails to decode auth-svc POST /tokens replies because the required 'status' field is missing; the reply only has keys id, state, updatedAt (#1159). account-svc then returns 502 upstream and edge-proxy surfaces POST /login 502s (#1197, #1329). Failures recur through 16:36 (#1225, #1261, #1452, #1657). auth-svc logs no errors, consistent with a response-contract break. The status-poller healthcheck timeouts against deprecated legacy-inventory (#672, #896, etc.) are unrelated noise and do not explain the 502s. The slow audit_log seq-scan (#440) is not on the login path."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.15,
+              "evidenceLines": [
+                1119,
+                1159
+              ],
+              "reasoning": "The serializer v2 toggle enabled at startup could be read as a config change. It is the same fault though: the v2 serializer omits 'status'. Ranked lower because it arrived with the v2.13.0 release."
+            }
+          ],
+          "recommendedAction": "Roll back auth-svc to v2.12.6 (or disable the response serializer v2 setting) so /tokens returns the 'status' field account-svc requires. Confirm POST /login 502s stop in edge-proxy. Afterwards, add a contract test between auth-svc /tokens and account-svc, and separately retire the deprecated legacy-inventory healthcheck timing out in status-poller."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 8,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 2433,
+      "cacheReadTokens": 38431,
+      "cacheWriteTokens": 12055
+    },
+    "durationMs": 11383,
+    "stopReason": "tool_use"
+  }
+}

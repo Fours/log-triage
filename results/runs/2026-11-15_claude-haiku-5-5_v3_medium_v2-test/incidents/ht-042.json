@@ -1,0 +1,291 @@
+{
+  "score": {
+    "incidentId": "ht-042",
+    "difficulty": "easy",
+    "scenario": "dependency_timeout/db-lock-wait",
+    "truth": "dependency_timeout",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.75,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 0.8571428571428571,
+      "f1": 0.923076923076923
+    },
+    "herringsCited": 0,
+    "costUsd": 0.007843585,
+    "durationMs": 24661,
+    "iterations": 11,
+    "toolCalls": 21,
+    "tokens": {
+      "input": 24,
+      "output": 4461,
+      "cacheRead": 189081,
+      "cacheWrite": 29759
+    }
+  },
+  "result": {
+    "incidentId": "ht-042",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.75,
+          "evidenceLines": [
+            1141,
+            1237,
+            1255,
+            1267,
+            1310,
+            1270
+          ],
+          "reasoning": "The origin is a long-running notif-db transaction (TRANSACTION 93036) owned by template-svc-reconciler, active 82 seconds at 12:41:09 (so it began about 12:39:47) and holding a row lock on the notifications table (#1141). Other UPDATE notifications statements then queue behind that lock. They fail with 'Lock wait timeout exceeded' (#1237, #1255). template-svc's UPDATE on notifications hits statement_timeout (#1267, #1310). notification-svc then gets ReadTimeout calling template-svc /render (#1270), and its template-svc connection pool saturates (50/50, 40 queued, #1340; checkout timeouts, #1428). That pool saturation is what drives the api-gateway 504s (#1362, #1503, #1607, #1795). I did not find a log line showing why the reconciler's transaction stayed open, so the exact trigger is unconfirmed. The gateway 504s are downstream symptoms and are not cited. Red herrings: metrics-agent remote-write queue drops are telemetry-only, the billing-reconciler reports 0 discrepancies throughout, redis is healthy with 0 evictions, and the GC pauses are normal."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.1,
+          "evidenceLines": [
+            1141
+          ],
+          "reasoning": "If the template-svc-reconciler's transaction-handling code changed in a recent release, that release would be the origin. No deploy or version logs were found, so this is weakly supported. The lock holder at #1141 is the only evidence that points here."
+        }
+      ],
+      "recommendedAction": "Identify and kill the open transaction 93036 on notif-db (owned by template-svc-reconciler) and confirm the lock is released. Then check the template-svc-reconciler job for a missing commit, a stalled step, or an idle-in-transaction connection, and add a transaction timeout or idle-in-transaction limit. Once the lock clears, recycle the notification-svc to template-svc connection pool and watch the 504 rate recover. Longer term, add timeouts to the reconciler's transactions and alert on long-running transactions in notif-db."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 100
+        },
+        "output": "22 match(es):\n#347 2026-10-20T12:30:32Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 338 samples\n#470 2026-10-20T12:32:08Z WARN api-gateway TLS certificate for *.internal.example expires in 15 days\n#599 2026-10-20T12:33:50Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2054 samples\n#889 2026-10-20T12:37:43Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1188 samples\n#1141 2026-10-20T12:41:09Z WARN notif-db TRANSACTION 93036, ACTIVE 82 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#1200 2026-10-20T12:42:03Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 314 samples\n#1237 2026-10-20T12:42:49Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1255 2026-10-20T12:43:11Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1267 2026-10-20T12:43:21Z ERROR template-svc [t-6557] canceling UPDATE on notifications for m-6031 due to statement_timeout\n#1270 2026-10-20T12:43:26Z ERROR notification-svc [t-6557] upstream request to template-svc failed: ReadTimeout (read timeout=15s) [m-6031]\n#1310 2026-10-20T12:44:16Z ERROR template-svc [t-6567] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-6044)\n#1314 2026-10-20T12:44:21Z ERROR notification-svc [t-6567] TemplateClient.render timed out after 15000ms calling template-svc POST /render (m-6044)\n#1340 2026-10-20T12:44:55Z WARN notification-svc HTTP connection pool to template-svc at capacity (50/50 in use), 40 requests queued\n#1362 2026-10-20T12:45:21Z ERROR api-gateway [t-6582] POST /v1/notify 504 19313ms: upstream notification-svc timed out\n#1379 2026-10-20T12:45:37Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2201 samples\n#1405 2026-10-20T12:46:17Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 212 samples\n#1428 2026-10-20T12:46:45Z ERROR notification-svc pool checkout timeout: no connection to template-svc available after 5000ms\n#1503 2026-10-20T12:48:29Z ERROR api-gateway [t-6615] POST /v1/notify 504 6705ms: upstream notification-svc timed out\n#1598 2026-10-20T12:50:12Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 815 samples\n#1607 2026-10-20T12:50:24Z ERROR api-gateway [t-6657] POST /v1/notify 504 23337ms: upstream notification-svc timed out\n#1743 2026-10-20T12:53:14Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1906 samples\n#1795 2026-10-20T12:54:20Z ERROR api-gateway [t-6704] POST /v1/notify 504 18638ms: upstream notification-svc timed out"
+      },
+      {
+        "tool": "list_services",
+        "input": {},
+        "output": "window 2026-10-20T12:26:00Z .. 2026-10-20T12:55:55Z, 1880 lines total\n- metrics-agent: 147 lines, 8 error+ (2026-10-20T12:26:09Z .. 2026-10-20T12:55:53Z)\n- api-gateway: 340 lines, 4 error+ (2026-10-20T12:26:00Z .. 2026-10-20T12:55:51Z)\n- notification-svc: 390 lines, 3 error+ (2026-10-20T12:26:01Z .. 2026-10-20T12:55:51Z)\n- template-svc: 222 lines, 2 error+ (2026-10-20T12:26:09Z .. 2026-10-20T12:55:44Z)\n- notif-db: 116 lines, 2 error+ (2026-10-20T12:26:08Z .. 2026-10-20T12:55:46Z)\n- notif-worker: 344 lines, 0 error+ (2026-10-20T12:26:04Z .. 2026-10-20T12:55:55Z)\n- redis: 184 lines, 0 error+ (2026-10-20T12:26:08Z .. 2026-10-20T12:55:51Z)\n- billing-reconciler: 137 lines, 0 error+ (2026-10-20T12:26:00Z .. 2026-10-20T12:55:54Z)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-db",
+          "limit": 120
+        },
+        "output": "116 match(es):\n#8 2026-10-20T12:26:08Z INFO notif-db InnoDB: page cleaner flushed 834 pages, buffer pool hit rate 98.5%\n#28 2026-10-20T12:26:20Z INFO notif-db InnoDB: page cleaner flushed 580 pages, buffer pool hit rate 99.6%\n#44 2026-10-20T12:26:32Z INFO notif-db InnoDB: page cleaner flushed 803 pages, buffer pool hit rate 99%\n#67 2026-10-20T12:26:50Z INFO notif-db InnoDB: page cleaner flushed 574 pages, buffer pool hit rate 99.9%\n#87 2026-10-20T12:27:04Z INFO notif-db InnoDB: page cleaner flushed 377 pages, buffer pool hit rate 98.9%\n#112 2026-10-20T12:27:23Z INFO notif-db InnoDB: page cleaner flushed 346 pages, buffer pool hit rate 98.8%\n#126 2026-10-20T12:27:37Z INFO notif-db InnoDB: page cleaner flushed 241 pages, buffer pool hit rate 99.7%\n#145 2026-10-20T12:27:52Z INFO notif-db InnoDB: page cleaner flushed 514 pages, buffer pool hit rate 98.9%\n#165 2026-10-20T12:28:07Z INFO notif-db InnoDB: page cleaner flushed 342 pages, buffer pool hit rate 98.9%\n#190 2026-10-20T12:28:26Z INFO notif-db InnoDB: page cleaner flushed 192 pages, buffer pool hit rate 99.1%\n#212 2026-10-20T12:28:45Z INFO notif-db InnoDB: page cleaner flushed 284 pages, buffer pool hit rate 98.6%\n#228 2026-10-20T12:28:57Z INFO notif-db InnoDB: page cleaner flushed 891 pages, buffer pool hit rate 99%\n#240 2026-10-20T12:29:09Z INFO notif-db InnoDB: page cleaner flushed 714 pages, buffer pool hit rate 99.3%\n#265 2026-10-20T12:29:27Z INFO notif-db InnoDB: page cleaner flushed 473 pages, buffer pool hit rate 98.9%\n#283 2026-10-20T12:29:41Z INFO notif-db InnoDB: page cleaner flushed 877 pages, buffer pool hit rate 98.8%\n#308 2026-10-20T12:30:00Z INFO notif-db InnoDB: page cleaner flushed 103 pages, buffer pool hit rate 99.5%\n#327 2026-10-20T12:30:18Z INFO notif-db InnoDB: page cleaner flushed 824 pages, buffer pool hit rate 99%\n#346 2026-10-20T12:30:31Z INFO notif-db InnoDB: page cleaner flushed 132 pages, buffer pool hit rate 99.8%\n#363 2026-10-20T12:30:44Z INFO notif-db InnoDB: page cleaner flushed 543 pages, buffer pool hit rate 99.7%\n#383 2026-10-20T12:30:58Z INFO notif-db InnoDB: page cleaner flushed 509 pages, buffer pool hit rate 98.9%\n#402 2026-10-20T12:31:12Z INFO notif-db InnoDB: page cleaner flushed 408 pages, buffer pool hit rate 98.9%\n#418 2026-10-20T12:31:25Z INFO notif-db InnoDB: page cleaner flushed 326 pages, buffer pool hit rate 98.7%\n#439 2026-10-20T12:31:45Z INFO notif-db InnoDB: page cleaner flushed 569 pages, buffer pool hit rate 99.7%\n#457 2026-10-20T12:31:58Z INFO notif-db InnoDB: page cleaner flushed 380 pages, buffer pool hit rate 99.4%\n#478 2026-10-20T12:32:12Z INFO notif-db InnoDB: page cleaner flushed 122 pages, buffer pool hit rate 99.4%\n#494 2026-10-20T12:32:25Z INFO notif-db InnoDB: page cleaner flushed 117 pages, buffer pool hit rate 99.6%\n#514 2026-10-20T12:32:42Z INFO notif-db InnoDB: page cleaner flushed 747 pages, buffer pool hit rate 98.7%\n#535 2026-10-20T12:33:01Z INFO notif-db InnoDB: page cleaner flushed 725 pages, buffer pool hit rate 99.5%\n#552 2026-10-20T12:33:13Z INFO notif-db InnoDB: page cleaner flushed 738 pages, buffer pool hit rate 98.6%\n#578 2026-10-20T12:33:33Z INFO notif-db InnoDB: page cleaner flushed 850 pages, buffer pool hit rate 99.6%\n#600 2026-10-20T12:33:51Z INFO notif-db InnoDB: page cleaner flushed 112 pages, buffer pool hit rate 98.9%\n#625 2026-10-20T12:34:11Z INFO notif-db InnoDB: page cleaner flushed 674 pages, buffer pool hit rate 98.5%\n#645 2026-10-20T12:34:28Z INFO notif-db InnoDB: page cleaner flushed 126 pages, buffer pool hit rate 99.3%\n#662 2026-10-20T12:34:41Z INFO notif-db InnoDB: page cleaner flushed 569 pages, buffer pool hit rate 99.7%\n#683 2026-10-20T12:34:59Z INFO notif-db InnoDB: page cleaner flushed 155 pages, buffer pool hit rate 99.4%\n#706 2026-10-20T12:35:19Z INFO notif-db InnoDB: page cleaner flushed 316 pages, buffer pool hit rate 99.7%\n#726 2026-10-20T12:35:36Z INFO notif-db InnoDB: page cleaner flushed 288 pages, buffer pool hit rate 99.7%\n#740 2026-10-20T12:35:48Z INFO notif-db InnoDB: page cleaner flushed 131 pages, buffer pool hit rate 99.7%\n#752 2026-10-20T12:35:59Z INFO notif-db InnoDB: page cleaner flushed 593 pages, buffer pool hit rate 99.2%\n#774 2026-10-20T12:36:14Z INFO notif-db InnoDB: page cleaner flushed 623 pages, buffer pool hit rate 99.8%\n#788 2026-10-20T12:36:27Z INFO notif-db InnoDB: page cleaner flushed 750 pages, buffer pool hit rate 99.4%\n#813 2026-10-20T12:36:46Z INFO notif-db InnoDB: page cleaner flushed 835 pages, buffer pool hit rate 99.8%\n#835 2026-10-20T12:37:04Z INFO notif-db InnoDB: page cleaner flushed 448 pages, buffer pool hit rate 99.6%\n#859 2026-10-20T12:37:23Z INFO notif-db InnoDB: page cleaner flushed 280 pages, buffer pool hit rate 99.4%\n#879 2026-10-20T12:37:35Z INFO notif-db InnoDB: page cleaner flushed 826 pages, buffer pool hit rate 99.4%\n#900 2026-10-20T12:37:51Z INFO notif-db InnoDB: page cleaner flushed 192 pages, buffer pool hit rate 99.8%\n#922 2026-10-20T12:38:11Z INFO notif-db InnoDB: page cleaner flushed 543 pages, buffer pool hit rate 98.8%\n#947 2026-10-20T12:38:31Z INFO notif-db InnoDB: page cleaner flushed 258 pages, buffer pool hit rate 99.9%\n#975 2026-10-20T12:38:50Z INFO notif-db InnoDB: page cleaner flushed 871 pages, buffer pool hit rate 99.4%\n#988 2026-10-20T12:39:02Z INFO notif-db InnoDB: page cleaner flushed 527 pages, buffer pool hit rate 99.1%\n#1002 2026-10-20T12:39:16Z INFO notif-db InnoDB: page cleaner flushed 780 pages, buffer pool hit rate 99%\n#1023 2026-10-20T12:39:32Z INFO notif-db InnoDB: page cleaner flushed 892 pages, buffer pool hit rate 98.5%\n#1039 2026-10-20T12:39:48Z INFO notif-db InnoDB: page cleaner flushed 584 pages, buffer pool hit rate 99.6%\n#1063 2026-10-20T12:40:07Z INFO notif-db InnoDB: page cleaner flushed 233 pages, buffer pool hit rate 99.8%\n#1079 2026-10-20T12:40:19Z INFO notif-db InnoDB: page cleaner flushed 808 pages, buffer pool hit rate 98.5%\n#1098 2026-10-20T12:40:36Z INFO notif-db InnoDB: page cleaner flushed 413 pages, buffer pool hit rate 98.5%\n#1119 2026-10-20T12:40:52Z INFO notif-db InnoDB: page cleaner flushed 748 pages, buffer pool hit rate 99.6%\n#1141 2026-10-20T12:41:09Z WARN notif-db TRANSACTION 93036, ACTIVE 82 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#1147 2026-10-20T12:41:12Z INFO notif-db InnoDB: page cleaner flushed 789 pages, buffer pool hit rate 99%\n#1165 2026-10-20T12:41:28Z INFO notif-db InnoDB: page cleaner flushed 416 pages, buffer pool hit rate 99.9%\n#1181 2026-10-20T12:41:42Z INFO notif-db InnoDB: page cleaner flushed 203 pages, buffer pool hit rate 99.6%\n#1193 2026-10-20T12:41:53Z INFO notif-db InnoDB: page cleaner flushed 623 pages, buffer pool hit rate 98.9%\n#1202 2026-10-20T12:42:05Z INFO notif-db InnoDB: page cleaner flushed 314 pages, buffer pool hit rate 99.1%\n#1217 2026-10-20T12:42:23Z INFO notif-db InnoDB: page cleaner flushed 706 pages, buffer pool hit rate 98.7%\n#1229 2026-10-20T12:42:38Z INFO notif-db InnoDB: page cleaner flushed 539 pages, buffer pool hit rate 98.8%\n#1237 2026-10-20T12:42:49Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1243 2026-10-20T12:42:55Z INFO notif-db InnoDB: page cleaner flushed 327 pages, buffer pool hit rate 98.6%\n#1251 2026-10-20T12:43:08Z INFO notif-db InnoDB: page cleaner flushed 715 pages, buffer pool hit rate 98.6%\n#1255 2026-10-20T12:43:11Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1272 2026-10-20T12:43:27Z INFO notif-db InnoDB: page cleaner flushed 728 pages, buffer pool hit rate 99.5%\n#1282 2026-10-20T12:43:38Z INFO notif-db InnoDB: page cleaner flushed 539 pages, buffer pool hit rate 99.9%\n#1297 2026-10-20T12:43:57Z INFO notif-db InnoDB: page cleaner flushed 455 pages, buffer pool hit rate 99.8%\n#1309 2026-10-20T12:44:15Z INFO notif-db InnoDB: page cleaner flushed 695 pages, buffer pool hit rate 99.4%\n#1319 2026-10-20T12:44:27Z INFO notif-db InnoDB: page cleaner flushed 446 pages, buffer pool hit rate 98.7%\n#1331 2026-10-20T12:44:43Z INFO notif-db InnoDB: page cleaner flushed 277 pages, buffer pool hit rate 99.3%\n#1344 2026-10-20T12:44:57Z INFO notif-db InnoDB: page cleaner flushed 457 pages, buffer pool hit rate 98.8%\n#1354 2026-10-20T12:45:14Z INFO notif-db InnoDB: page cleaner flushed 730 pages, buffer pool hit rate 99.9%\n#1371 2026-10-20T12:45:31Z INFO notif-db InnoDB: page cleaner flushed 313 pages, buffer pool hit rate 98.6%\n#1382 2026-10-20T12:45:44Z INFO notif-db InnoDB: page cleaner flushed 722 pages, buffer pool hit rate 99.2%\n#1394 2026-10-20T12:46:02Z INFO notif-db InnoDB: page cleaner flushed 381 pages, buffer pool hit rate 99.2%\n#1408 2026-10-20T12:46:22Z INFO notif-db InnoDB: page cleaner flushed 267 pages, buffer pool hit rate 99.8%\n#1423 2026-10-20T12:46:42Z INFO notif-db InnoDB: page cleaner flushed 663 pages, buffer pool hit rate 99.3%\n#1437 2026-10-20T12:47:00Z INFO notif-db InnoDB: page cleaner flushed 258 pages, buffer pool hit rate 99.3%\n#1449 2026-10-20T12:47:14Z INFO notif-db InnoDB: page cleaner flushed 459 pages, buffer pool hit rate 98.6%\n#1460 2026-10-20T12:47:28Z INFO notif-db InnoDB: page cleaner flushed 758 pages, buffer pool hit rate 98.9%\n#1471 2026-10-20T12:47:43Z INFO notif-db InnoDB: page cleaner flushed 633 pages, buffer pool hit rate 99.2%\n#1486 2026-10-20T12:48:00Z INFO notif-db InnoDB: page cleaner flushed 410 pages, buffer pool hit rate 99.8%\n#1495 2026-10-20T12:48:16Z INFO notif-db InnoDB: page cleaner flushed 635 pages, buffer pool hit rate 99.1%\n#1510 2026-10-20T12:48:35Z INFO notif-db InnoDB: page cleaner flushed 272 pages, buffer pool hit rate 99.8%\n#1520 2026-10-20T12:48:47Z INFO notif-db InnoDB: page cleaner flushed 641 pages, buffer pool hit rate 98.8%\n#1538 2026-10-20T12:49:04Z INFO notif-db InnoDB: page cleaner flushed 532 pages, buffer pool hit rate 99.6%\n#1554 2026-10-20T12:49:20Z INFO notif-db InnoDB: page cleaner flushed 561 pages, buffer pool hit rate 99.5%\n#1567 2026-10-20T12:49:39Z INFO notif-db InnoDB: page cleaner flushed 329 pages, buffer pool hit rate 99%\n#1581 2026-10-20T12:49:56Z INFO notif-db InnoDB: page cleaner flushed 454 pages, buffer pool hit rate 98.7%\n#1594 2026-10-20T12:50:11Z INFO notif-db InnoDB: page cleaner flushed 641 pages, buffer pool hit rate 99.5%\n#1610 2026-10-20T12:50:26Z INFO notif-db InnoDB: page cleaner flushed 259 pages, buffer pool hit rate 99.5%\n#1623 2026-10-20T12:50:39Z INFO notif-db InnoDB: page cleaner flushed 786 pages, buffer pool hit rate 99.9%\n#1633 2026-10-20T12:50:56Z INFO notif-db InnoDB: page cleaner flushed 325 pages, buffer pool hit rate 99.7%\n#1647 2026-10-20T12:51:11Z INFO notif-db InnoDB: page cleaner flushed 547 pages, buffer pool hit rate 99.3%\n#1659 2026-10-20T12:51:29Z INFO notif-db InnoDB: page cleaner flushed 171 pages, buffer pool hit rate 99.1%\n#1671 2026-10-20T12:51:48Z INFO notif-db InnoDB: page cleaner flushed 405 pages, buffer pool hit rate 99.3%\n#1683 2026-10-20T12:52:05Z INFO notif-db InnoDB: page cleaner flushed 611 pages, buffer pool hit rate 99.7%\n#1695 2026-10-20T12:52:17Z INFO notif-db InnoDB: page cleaner flushed 691 pages, buffer pool hit rate 99.9%\n#1712 2026-10-20T12:52:32Z INFO notif-db InnoDB: page cleaner flushed 126 pages, buffer pool hit rate 99.4%\n#1726 2026-10-20T12:52:51Z INFO notif-db InnoDB: page cleaner flushed 504 pages, buffer pool hit rate 99.1%\n#1734 2026-10-20T12:53:05Z INFO notif-db InnoDB: page cleaner flushed 328 pages, buffer pool hit rate 98.5%\n#1749 2026-10-20T12:53:19Z INFO notif-db InnoDB: page cleaner flushed 389 pages, buffer pool hit rate 99.8%\n#1761 2026-10-20T12:53:36Z INFO notif-db InnoDB: page cleaner flushed 850 pages, buffer pool hit rate 99.6%\n#1771 2026-10-20T12:53:54Z INFO notif-db InnoDB: page cleaner flushed 468 pages, buffer pool hit rate 99.7%\n#1783 2026-10-20T12:54:10Z INFO notif-db InnoDB: page cleaner flushed 153 pages, buffer pool hit rate 99.1%\n#1798 2026-10-20T12:54:22Z INFO notif-db InnoDB: page cleaner flushed 403 pages, bu\n[output truncated at 12000 chars — narrow the query or lower the limit]"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "reconciler",
+          "limit": 60
+        },
+        "output": "1 match(es):\n#1141 2026-10-20T12:41:09Z WARN notif-db TRANSACTION 93036, ACTIVE 82 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "limit": 200,
+          "since": "12:26:00",
+          "until": "12:42:00"
+        },
+        "output": "147 match(es):\n#11 2026-10-20T12:26:09Z INFO template-svc [t-5958] POST /render m-5560 ok 89ms\n#17 2026-10-20T12:26:13Z INFO template-svc [t-5962] POST /render m-5561 ok 47ms\n#22 2026-10-20T12:26:16Z DEBUG template-svc GC pause 25ms (young), heap 31%\n#25 2026-10-20T12:26:18Z INFO template-svc [t-5965] POST /render m-5564 ok 51ms\n#30 2026-10-20T12:26:21Z INFO template-svc [t-5967] POST /render m-5567 ok 55ms\n#33 2026-10-20T12:26:23Z INFO template-svc [t-5969] POST /render m-5569 ok 38ms\n#41 2026-10-20T12:26:29Z INFO template-svc [t-5973] POST /render m-5570 ok 24ms\n#43 2026-10-20T12:26:30Z DEBUG template-svc GC pause 5ms (young), heap 41%\n#53 2026-10-20T12:26:39Z INFO template-svc [t-5978] POST /render m-5574 ok 49ms\n#66 2026-10-20T12:26:50Z DEBUG template-svc GC pause 9ms (young), heap 43%\n#70 2026-10-20T12:26:52Z INFO template-svc [t-5986] POST /render m-5580 ok 45ms\n#74 2026-10-20T12:26:55Z INFO template-svc [t-5989] POST /render m-5582 ok 61ms\n#78 2026-10-20T12:26:58Z INFO template-svc [t-5991] POST /render m-5583 ok 34ms\n#86 2026-10-20T12:27:03Z DEBUG template-svc GC pause 12ms (young), heap 38%\n#106 2026-10-20T12:27:20Z DEBUG template-svc GC pause 20ms (young), heap 31%\n#109 2026-10-20T12:27:22Z INFO template-svc [t-6006] POST /render m-5592 ok 80ms\n#119 2026-10-20T12:27:32Z INFO template-svc [t-6012] POST /render m-5595 ok 25ms\n#130 2026-10-20T12:27:41Z DEBUG template-svc GC pause 14ms (young), heap 34%\n#140 2026-10-20T12:27:48Z INFO template-svc [t-6026] POST /render m-5608 ok 82ms\n#148 2026-10-20T12:27:52Z INFO template-svc [t-6027] POST /render m-5610 ok 82ms\n#161 2026-10-20T12:28:04Z DEBUG template-svc GC pause 4ms (young), heap 38%\n#163 2026-10-20T12:28:05Z INFO template-svc [t-6036] POST /render m-5615 ok 89ms\n#169 2026-10-20T12:28:11Z INFO template-svc [t-6038] POST /render m-5616 ok 77ms\n#178 2026-10-20T12:28:17Z DEBUG template-svc GC pause 14ms (young), heap 37%\n#194 2026-10-20T12:28:31Z INFO template-svc [t-6052] POST /render m-5627 ok 56ms\n#198 2026-10-20T12:28:35Z INFO template-svc [t-6055] POST /render m-5630 ok 62ms\n#204 2026-10-20T12:28:39Z INFO template-svc [t-6059] POST /render m-5632 ok 80ms\n#206 2026-10-20T12:28:39Z DEBUG template-svc GC pause 18ms (young), heap 42%\n#221 2026-10-20T12:28:53Z DEBUG template-svc GC pause 22ms (young), heap 44%\n#225 2026-10-20T12:28:55Z INFO template-svc [t-6068] POST /render m-5642 ok 32ms\n#232 2026-10-20T12:29:01Z INFO template-svc [t-6069] POST /render m-5645 ok 31ms\n#241 2026-10-20T12:29:09Z DEBUG template-svc GC pause 5ms (young), heap 43%\n#251 2026-10-20T12:29:18Z INFO template-svc [t-6081] POST /render m-5653 ok 66ms\n#257 2026-10-20T12:29:21Z INFO template-svc [t-6085] POST /render m-5655 ok 86ms\n#262 2026-10-20T12:29:24Z INFO template-svc [t-6087] POST /render m-5656 ok 70ms\n#268 2026-10-20T12:29:28Z DEBUG template-svc GC pause 19ms (young), heap 42%\n#270 2026-10-20T12:29:30Z INFO template-svc [t-6092] POST /render m-5660 ok 77ms\n#286 2026-10-20T12:29:43Z INFO template-svc [t-6095] POST /render m-5666 ok 74ms\n#292 2026-10-20T12:29:49Z DEBUG template-svc GC pause 20ms (young), heap 42%\n#295 2026-10-20T12:29:50Z INFO template-svc [t-6098] POST /render m-5672 ok 24ms\n#301 2026-10-20T12:29:56Z INFO template-svc [t-6099] POST /render m-5675 ok 71ms\n#305 2026-10-20T12:29:59Z INFO template-svc [t-6101] POST /render m-5678 ok 44ms\n#312 2026-10-20T12:30:02Z INFO template-svc [t-6103] POST /render m-5681 ok 22ms\n#320 2026-10-20T12:30:09Z DEBUG template-svc GC pause 4ms (young), heap 39%\n#336 2026-10-20T12:30:23Z DEBUG template-svc GC pause 11ms (young), heap 42%\n#340 2026-10-20T12:30:27Z INFO template-svc [t-6110] POST /render m-5690 ok 75ms\n#350 2026-10-20T12:30:33Z INFO template-svc [t-6118] POST /render m-5695 ok 21ms\n#356 2026-10-20T12:30:39Z INFO template-svc [t-6119] POST /render m-5698 ok 64ms\n#359 2026-10-20T12:30:39Z DEBUG template-svc GC pause 19ms (young), heap 43%\n#365 2026-10-20T12:30:45Z INFO template-svc [t-6122] POST /render m-5699 ok 28ms\n#369 2026-10-20T12:30:47Z INFO template-svc [t-6124] POST /render m-5702 ok 70ms\n#373 2026-10-20T12:30:51Z INFO template-svc [t-6127] POST /render m-5705 ok 48ms\n#378 2026-10-20T12:30:56Z INFO template-svc [t-6130] POST /render m-5708 ok 34ms\n#384 2026-10-20T12:31:00Z DEBUG template-svc GC pause 9ms (young), heap 34%\n#392 2026-10-20T12:31:05Z INFO template-svc [t-6136] POST /render m-5711 ok 58ms\n#397 2026-10-20T12:31:08Z INFO template-svc [t-6140] POST /render m-5714 ok 48ms\n#406 2026-10-20T12:31:14Z INFO template-svc [t-6148] POST /render m-5718 ok 59ms\n#413 2026-10-20T12:31:24Z DEBUG template-svc GC pause 12ms (young), heap 32%\n#435 2026-10-20T12:31:42Z DEBUG template-svc GC pause 14ms (young), heap 37%\n#442 2026-10-20T12:31:46Z INFO template-svc [t-6166] POST /render m-5733 ok 81ms\n#453 2026-10-20T12:31:55Z DEBUG template-svc GC pause 17ms (young), heap 40%\n#460 2026-10-20T12:32:01Z INFO template-svc [t-6176] POST /render m-5743 ok 53ms\n#467 2026-10-20T12:32:05Z INFO template-svc [t-6178] POST /render m-5746 ok 69ms\n#472 2026-10-20T12:32:09Z DEBUG template-svc GC pause 13ms (young), heap 40%\n#491 2026-10-20T12:32:23Z DEBUG template-svc GC pause 5ms (young), heap 36%\n#512 2026-10-20T12:32:41Z DEBUG template-svc GC pause 4ms (young), heap 37%\n#515 2026-10-20T12:32:42Z INFO template-svc [t-6211] POST /render m-5765 ok 58ms\n#524 2026-10-20T12:32:53Z INFO template-svc [t-6216] POST /render m-5769 ok 55ms\n#530 2026-10-20T12:32:56Z INFO template-svc [t-6217] POST /render m-5771 ok 39ms\n#532 2026-10-20T12:32:58Z DEBUG template-svc GC pause 24ms (young), heap 42%\n#545 2026-10-20T12:33:08Z INFO template-svc [t-6226] POST /render m-5776 ok 44ms\n#553 2026-10-20T12:33:14Z DEBUG template-svc GC pause 15ms (young), heap 31%\n#557 2026-10-20T12:33:17Z INFO template-svc [t-6228] POST /render m-5779 ok 78ms\n#580 2026-10-20T12:33:34Z INFO template-svc [t-6243] POST /render m-5787 ok 90ms\n#583 2026-10-20T12:33:38Z INFO template-svc [t-6246] POST /render m-5790 ok 29ms\n#586 2026-10-20T12:33:38Z DEBUG template-svc GC pause 8ms (young), heap 36%\n#591 2026-10-20T12:33:43Z INFO template-svc [t-6247] POST /render m-5792 ok 51ms\n#603 2026-10-20T12:33:52Z INFO template-svc [t-6253] POST /render m-5797 ok 37ms\n#608 2026-10-20T12:33:57Z DEBUG template-svc GC pause 16ms (young), heap 34%\n#634 2026-10-20T12:34:21Z DEBUG template-svc GC pause 23ms (young), heap 44%\n#636 2026-10-20T12:34:21Z INFO template-svc [t-6263] POST /render m-5809 ok 72ms\n#650 2026-10-20T12:34:32Z INFO template-svc [t-6271] POST /render m-5818 ok 43ms\n#658 2026-10-20T12:34:40Z DEBUG template-svc GC pause 8ms (young), heap 41%\n#666 2026-10-20T12:34:44Z INFO template-svc [t-6280] POST /render m-5824 ok 64ms\n#671 2026-10-20T12:34:48Z INFO template-svc [t-6283] POST /render m-5827 ok 41ms\n#677 2026-10-20T12:34:54Z INFO template-svc [t-6287] POST /render m-5829 ok 68ms\n#685 2026-10-20T12:35:01Z DEBUG template-svc GC pause 12ms (young), heap 38%\n#693 2026-10-20T12:35:08Z INFO template-svc [t-6292] POST /render m-5836 ok 85ms\n#698 2026-10-20T12:35:13Z INFO template-svc [t-6293] POST /render m-5839 ok 49ms\n#703 2026-10-20T12:35:17Z INFO template-svc [t-6297] POST /render m-5841 ok 73ms\n#712 2026-10-20T12:35:25Z DEBUG template-svc GC pause 14ms (young), heap 29%\n#728 2026-10-20T12:35:38Z INFO template-svc [t-6306] POST /render m-5849 ok 49ms\n#736 2026-10-20T12:35:45Z INFO template-svc [t-6310] POST /render m-5852 ok 51ms\n#741 2026-10-20T12:35:48Z DEBUG template-svc GC pause 20ms (young), heap 38%\n#755 2026-10-20T12:36:01Z INFO template-svc [t-6318] POST /render m-5858 ok 46ms\n#758 2026-10-20T12:36:02Z DEBUG template-svc GC pause 4ms (young), heap 37%\n#760 2026-10-20T12:36:03Z INFO template-svc [t-6322] POST /render m-5860 ok 62ms\n#771 2026-10-20T12:36:13Z INFO template-svc [t-6329] POST /render m-5863 ok 27ms\n#777 2026-10-20T12:36:18Z DEBUG template-svc GC pause 15ms (young), heap 29%\n#779 2026-10-20T12:36:19Z INFO template-svc [t-6333] POST /render m-5864 ok 39ms\n#792 2026-10-20T12:36:29Z INFO template-svc [t-6340] POST /render m-5869 ok 81ms\n#797 2026-10-20T12:36:33Z DEBUG template-svc GC pause 18ms (young), heap 34%\n#824 2026-10-20T12:36:55Z INFO template-svc [t-6362] POST /render m-5885 ok 42ms\n#828 2026-10-20T12:36:57Z DEBUG template-svc GC pause 10ms (young), heap 40%\n#831 2026-10-20T12:37:00Z INFO template-svc [t-6365] POST /render m-5888 ok 79ms\n#846 2026-10-20T12:37:12Z DEBUG template-svc GC pause 19ms (young), heap 36%\n#852 2026-10-20T12:37:17Z INFO template-svc [t-6376] POST /render m-5897 ok 30ms\n#857 2026-10-20T12:37:19Z INFO template-svc [t-6378] POST /render m-5899 ok 59ms\n#862 2026-10-20T12:37:23Z INFO template-svc [t-6380] POST /render m-5902 ok 82ms\n#867 2026-10-20T12:37:26Z INFO template-svc [t-6383] POST /render m-5905 ok 47ms\n#878 2026-10-20T12:37:34Z DEBUG template-svc GC pause 10ms (young), heap 28%\n#882 2026-10-20T12:37:40Z INFO template-svc [t-6390] POST /render m-5909 ok 28ms\n#887 2026-10-20T12:37:42Z INFO template-svc [t-6393] POST /render m-5912 ok 49ms\n#898 2026-10-20T12:37:51Z INFO template-svc [t-6400] POST /render m-5916 ok 30ms\n#906 2026-10-20T12:37:57Z DEBUG template-svc GC pause 24ms (young), heap 40%\n#910 2026-10-20T12:38:00Z INFO template-svc [t-6404] POST /render m-5920 ok 27ms\n#920 2026-10-20T12:38:08Z INFO template-svc [t-6409] POST /render m-5925 ok 46ms\n#928 2026-10-20T12:38:17Z DEBUG template-svc GC pause 8ms (young), heap 33%\n#937 2026-10-20T12:38:24Z INFO template-svc [t-6417] POST /render m-5932 ok 35ms\n#941 2026-10-20T12:38:26Z INFO template-svc [t-6420] POST /render m-5935 ok 52ms\n#953 2026-10-20T12:38:37Z DEBUG template-svc GC pause 21ms (young), heap 38%\n#956 2026-10-20T12:38:37Z INFO template-svc [t-6425] POST /render m-5939 ok 29ms\n#962 2026-10-20T12:38:40Z INFO template-svc [t-6429] POST /render m-5941 ok 33ms\n#972 2026-10-20T12:38:49Z INFO template-svc [t-6435] POST /render m-5945 ok 85ms\n#982 2026-10-20T12:38:57Z DEBUG template-svc GC pause 12ms (young), heap 34%\n#985 2026-10-20T12:39:00Z INFO template-svc [t-6443] POST /render m-5949 ok 51ms\n#996 2026-10-20T12:39:11Z DEBUG template-svc GC pause 19ms (young), heap 45%\n#999 2026-10-20T12:39:12Z INFO template-svc [t-6447] POST /render m-5953 ok 40ms\n#1020 2026-10-20T12:39:31Z DEBUG template-svc GC pause 25ms (young), heap 32%\n#1037 2026-10-20T12:39:46Z DEBUG template-svc GC pause 23ms (young), heap 34%\n#1042 2026-10-20T12:39:50Z INFO template-svc [t-6474] POST /render m-5964 ok 51ms\n#1048 2026-10-20T12:39:56Z INFO template-svc [t-6478] POST /render m-5965 ok 81ms\n#1053 2026-10-20T12:40:02Z INFO template-svc [t-6481] POST /render m-5966 ok 34ms\n#1060 2026-10-20T12:40:05Z INFO template-svc [t-6483] POST /render m-5969 ok 83ms\n#1065 2026-10-20T12:40:07Z DEBUG template-svc GC pause 13ms (young), heap 34%\n#1070 2026-10-20T12:40:13Z INFO template-svc [t-6487] POST /render m-5972 ok 35ms\n#1091 2026-10-20T12:40:30Z DEBUG template-svc GC pause 12ms (young), heap 30%\n#1104 2026-10-20T12:40:39Z INFO template-svc [t-6504] POST /render m-5988 ok 41ms\n#1114 2026-10-20T12:40:48Z DEBUG template-svc GC pause 19ms (young), heap 40%\n#1123 2026-10-20T12:40:55Z INFO template-svc [t-6513] POST /render m-5992 ok 84ms\n#1130 2026-10-20T12:41:01Z INFO template-svc [t-6517] POST /render m-5993 ok 70ms\n#1133 2026-10-20T12:41:04Z DEBUG template-svc GC pause 13ms (young), heap 44%\n#1136 2026-10-20T12:41:06Z INFO template-svc [t-6520] POST /render m-5994 ok 74ms\n#1145 2026-10-20T12:41:11Z INFO template-svc [t-6521] POST /render m-5997 ok 42ms\n#1155 2026-10-20T12:41:20Z INFO template-svc [t-6527] POST /render m-6002 ok 48ms\n#1162 2026-10-20T12:41:27Z DEBUG template-svc GC pause 8ms (young), heap 45%\n#1186 2026-10-20T12:41:46Z DEBUG template-svc GC pause 20ms (young), heap 35%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "UPDATE notifications",
+          "limit": 40
+        },
+        "output": "3 match(es):\n#1237 2026-10-20T12:42:49Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1255 2026-10-20T12:43:11Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1310 2026-10-20T12:44:16Z ERROR template-svc [t-6567] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-6044)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "template-svc-reconciler",
+          "limit": 40
+        },
+        "output": "1 match(es):\n#1141 2026-10-20T12:41:09Z WARN notif-db TRANSACTION 93036, ACTIVE 82 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "INFO",
+          "query": "deploy",
+          "limit": 40
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1141,
+          "before": 15,
+          "after": 10
+        },
+        "output": "#1126 2026-10-20T12:40:57Z INFO billing-reconciler reconciled 869 current-period invoices, 0 discrepancies\n#1127 2026-10-20T12:40:58Z DEBUG api-gateway upstream health: notification-svc ok, template-svc ok\n#1128 2026-10-20T12:40:59Z INFO notif-worker processed batch of 49 messages from notifications.outbound (lag 385ms)\n#1129 2026-10-20T12:41:01Z INFO notification-svc [t-6517] message m-5993 accepted, calling template-svc POST /render\n#1130 2026-10-20T12:41:01Z INFO template-svc [t-6517] POST /render m-5993 ok 70ms\n#1131 2026-10-20T12:41:01Z INFO api-gateway [t-6517] POST /v1/notify 200 90ms\n#1132 2026-10-20T12:41:02Z INFO redis stats: hits=13993 misses=684 evicted=0 connected_clients=56\n#1133 2026-10-20T12:41:04Z DEBUG template-svc GC pause 13ms (young), heap 44%\n#1134 2026-10-20T12:41:05Z INFO notif-worker processed batch of 55 messages from notifications.outbound (lag 378ms)\n#1135 2026-10-20T12:41:06Z INFO notification-svc [t-6520] message m-5994 accepted, calling template-svc POST /render\n#1136 2026-10-20T12:41:06Z INFO template-svc [t-6520] POST /render m-5994 ok 74ms\n#1137 2026-10-20T12:41:06Z INFO api-gateway [t-6520] POST /v1/notify 200 156ms\n#1138 2026-10-20T12:41:06Z DEBUG notification-svc GC pause 20ms (young), heap 32%\n#1139 2026-10-20T12:41:08Z INFO billing-reconciler reconciled 391 current-period invoices, 0 discrepancies\n#1140 2026-10-20T12:41:08Z INFO metrics-agent flushed 5102 series to remote-write in 113ms\n#1141 2026-10-20T12:41:09Z WARN notif-db TRANSACTION 93036, ACTIVE 82 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#1142 2026-10-20T12:41:10Z INFO redis stats: hits=10774 misses=561 evicted=0 connected_clients=41\n#1143 2026-10-20T12:41:10Z INFO notif-worker processed batch of 51 messages from notifications.outbound (lag 160ms)\n#1144 2026-10-20T12:41:11Z INFO notification-svc [t-6521] message m-5997 accepted, calling template-svc POST /render\n#1145 2026-10-20T12:41:11Z INFO template-svc [t-6521] POST /render m-5997 ok 42ms\n#1146 2026-10-20T12:41:11Z INFO api-gateway [t-6521] POST /v1/notify 200 180ms\n#1147 2026-10-20T12:41:12Z INFO notif-db InnoDB: page cleaner flushed 789 pages, buffer pool hit rate 99%\n#1148 2026-10-20T12:41:16Z INFO notif-worker processed batch of 42 messages from notifications.outbound (lag 192ms)\n#1149 2026-10-20T12:41:16Z INFO notification-svc [t-6525] message m-6000 accepted, calling template-svc POST /render\n#1150 2026-10-20T12:41:16Z INFO api-gateway [t-6525] POST /v1/notify 200 171ms\n#1151 2026-10-20T12:41:17Z DEBUG api-gateway upstream health: notification-svc ok, template-svc ok"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "billing-reconciler",
+          "since": "12:36:00",
+          "until": "12:44:00",
+          "limit": 80
+        },
+        "output": "38 match(es):\n#763 2026-10-20T12:36:06Z INFO billing-reconciler reconciled 749 current-period invoices, 0 discrepancies\n#781 2026-10-20T12:36:20Z INFO billing-reconciler reconciled 913 current-period invoices, 0 discrepancies\n#790 2026-10-20T12:36:28Z INFO billing-reconciler reconciled 822 current-period invoices, 0 discrepancies\n#801 2026-10-20T12:36:36Z INFO billing-reconciler reconciled 499 current-period invoices, 0 discrepancies\n#816 2026-10-20T12:36:48Z INFO billing-reconciler reconciled 540 current-period invoices, 0 discrepancies\n#827 2026-10-20T12:36:56Z INFO billing-reconciler reconciled 371 current-period invoices, 0 discrepancies\n#842 2026-10-20T12:37:10Z INFO billing-reconciler reconciled 1133 current-period invoices, 0 discrepancies\n#870 2026-10-20T12:37:28Z INFO billing-reconciler reconciled 881 current-period invoices, 0 discrepancies\n#892 2026-10-20T12:37:46Z INFO billing-reconciler reconciled 401 current-period invoices, 0 discrepancies\n#912 2026-10-20T12:38:00Z INFO billing-reconciler reconciled 698 current-period invoices, 0 discrepancies\n#930 2026-10-20T12:38:19Z INFO billing-reconciler reconciled 730 current-period invoices, 0 discrepancies\n#943 2026-10-20T12:38:28Z INFO billing-reconciler reconciled 753 current-period invoices, 0 discrepancies\n#960 2026-10-20T12:38:40Z INFO billing-reconciler reconciled 1138 current-period invoices, 0 discrepancies\n#976 2026-10-20T12:38:53Z INFO billing-reconciler reconciled 1035 current-period invoices, 0 discrepancies\n#997 2026-10-20T12:39:11Z INFO billing-reconciler reconciled 1118 current-period invoices, 0 discrepancies\n#1011 2026-10-20T12:39:24Z INFO billing-reconciler reconciled 1104 current-period invoices, 0 discrepancies\n#1021 2026-10-20T12:39:32Z INFO billing-reconciler reconciled 311 current-period invoices, 0 discrepancies\n#1032 2026-10-20T12:39:42Z INFO billing-reconciler reconciled 871 current-period invoices, 0 discrepancies\n#1050 2026-10-20T12:39:56Z INFO billing-reconciler reconciled 559 current-period invoices, 0 discrepancies\n#1064 2026-10-20T12:40:07Z INFO billing-reconciler reconciled 1144 current-period invoices, 0 discrepancies\n#1083 2026-10-20T12:40:23Z INFO billing-reconciler reconciled 942 current-period invoices, 0 discrepancies\n#1106 2026-10-20T12:40:41Z INFO billing-reconciler reconciled 780 current-period invoices, 0 discrepancies\n#1115 2026-10-20T12:40:50Z INFO billing-reconciler reconciled 1131 current-period invoices, 0 discrepancies\n#1126 2026-10-20T12:40:57Z INFO billing-reconciler reconciled 869 current-period invoices, 0 discrepancies\n#1139 2026-10-20T12:41:08Z INFO billing-reconciler reconciled 391 current-period invoices, 0 discrepancies\n#1161 2026-10-20T12:41:23Z INFO billing-reconciler reconciled 1058 current-period invoices, 0 discrepancies\n#1179 2026-10-20T12:41:41Z INFO billing-reconciler reconciled 1145 current-period invoices, 0 discrepancies\n#1187 2026-10-20T12:41:49Z INFO billing-reconciler reconciled 543 current-period invoices, 0 discrepancies\n#1204 2026-10-20T12:42:06Z INFO billing-reconciler reconciled 862 current-period invoices, 0 discrepancies\n#1209 2026-10-20T12:42:14Z INFO billing-reconciler reconciled 1195 current-period invoices, 0 discrepancies\n#1224 2026-10-20T12:42:30Z INFO billing-reconciler reconciled 441 current-period invoices, 0 discrepancies\n#1236 2026-10-20T12:42:49Z INFO billing-reconciler reconciled 871 current-period invoices, 0 discrepancies\n#1246 2026-10-20T12:42:58Z INFO billing-reconciler reconciled 796 current-period invoices, 0 discrepancies\n#1250 2026-10-20T12:43:08Z INFO billing-reconciler reconciled 1165 current-period invoices, 0 discrepancies\n#1261 2026-10-20T12:43:19Z INFO billing-reconciler reconciled 1190 current-period invoices, 0 discrepancies\n#1276 2026-10-20T12:43:29Z INFO billing-reconciler reconciled 667 current-period invoices, 0 discrepancies\n#1288 2026-10-20T12:43:47Z INFO billing-reconciler reconciled 527 current-period invoices, 0 discrepancies\n#1294 2026-10-20T12:43:55Z INFO billing-reconciler reconciled 799 current-period invoices, 0 discrepancies"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "lock",
+          "limit": 60
+        },
+        "output": "3 match(es):\n#1141 2026-10-20T12:41:09Z WARN notif-db TRANSACTION 93036, ACTIVE 82 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#1237 2026-10-20T12:42:49Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1255 2026-10-20T12:43:11Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "transaction",
+          "limit": 60
+        },
+        "output": "3 match(es):\n#1141 2026-10-20T12:41:09Z WARN notif-db TRANSACTION 93036, ACTIVE 82 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#1237 2026-10-20T12:42:49Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1255 2026-10-20T12:43:11Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "since": "12:41:30",
+          "until": "12:44:30",
+          "limit": 80
+        },
+        "output": "14 match(es):\n#1186 2026-10-20T12:41:46Z DEBUG template-svc GC pause 20ms (young), heap 35%\n#1205 2026-10-20T12:42:08Z DEBUG template-svc GC pause 13ms (young), heap 30%\n#1212 2026-10-20T12:42:18Z INFO template-svc [t-6546] POST /render m-6019 ok 85ms\n#1220 2026-10-20T12:42:26Z DEBUG template-svc GC pause 18ms (young), heap 31%\n#1235 2026-10-20T12:42:47Z DEBUG template-svc GC pause 20ms (young), heap 38%\n#1249 2026-10-20T12:43:07Z DEBUG template-svc GC pause 23ms (young), heap 38%\n#1263 2026-10-20T12:43:19Z DEBUG template-svc GC pause 17ms (young), heap 29%\n#1265 2026-10-20T12:43:20Z INFO template-svc [t-6555] POST /render m-6029 ok 75ms\n#1267 2026-10-20T12:43:21Z ERROR template-svc [t-6557] canceling UPDATE on notifications for m-6031 due to statement_timeout\n#1284 2026-10-20T12:43:39Z DEBUG template-svc GC pause 13ms (young), heap 32%\n#1298 2026-10-20T12:43:59Z DEBUG template-svc GC pause 13ms (young), heap 40%\n#1303 2026-10-20T12:44:07Z INFO template-svc [t-6565] POST /render m-6041 ok 78ms\n#1310 2026-10-20T12:44:16Z ERROR template-svc [t-6567] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-6044)\n#1313 2026-10-20T12:44:19Z DEBUG template-svc GC pause 11ms (young), heap 38%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-db",
+          "level": "WARN",
+          "limit": 50
+        },
+        "output": "3 match(es):\n#1141 2026-10-20T12:41:09Z WARN notif-db TRANSACTION 93036, ACTIVE 82 sec, template-svc-reconciler holding 1 row lock(s) on notifications, undo log entries 1\n#1237 2026-10-20T12:42:49Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1255 2026-10-20T12:43:11Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-6557"
+        },
+        "output": "2 line(s) for t-6557:\n#1267 2026-10-20T12:43:21Z ERROR template-svc [t-6557] canceling UPDATE on notifications for m-6031 due to statement_timeout\n#1270 2026-10-20T12:43:26Z ERROR notification-svc [t-6557] upstream request to template-svc failed: ReadTimeout (read timeout=15s) [m-6031]"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1267,
+          "before": 8,
+          "after": 4
+        },
+        "output": "#1259 2026-10-20T12:43:17Z INFO api-gateway [t-6551] POST /v1/notify 200 167ms\n#1260 2026-10-20T12:43:18Z INFO redis stats: hits=15077 misses=234 evicted=0 connected_clients=60\n#1261 2026-10-20T12:43:19Z INFO billing-reconciler reconciled 1190 current-period invoices, 0 discrepancies\n#1262 2026-10-20T12:43:19Z INFO notif-worker processed batch of 115 messages from notifications.outbound (lag 234ms)\n#1263 2026-10-20T12:43:19Z DEBUG template-svc GC pause 17ms (young), heap 29%\n#1264 2026-10-20T12:43:20Z INFO notification-svc [t-6555] message m-6029 accepted, calling template-svc POST /render\n#1265 2026-10-20T12:43:20Z INFO template-svc [t-6555] POST /render m-6029 ok 75ms\n#1266 2026-10-20T12:43:20Z INFO api-gateway [t-6555] POST /v1/notify 200 112ms\n#1267 2026-10-20T12:43:21Z ERROR template-svc [t-6557] canceling UPDATE on notifications for m-6031 due to statement_timeout\n#1268 2026-10-20T12:43:25Z INFO metrics-agent flushed 4972 series to remote-write in 173ms\n#1269 2026-10-20T12:43:26Z INFO redis stats: hits=17717 misses=413 evicted=0 connected_clients=40\n#1270 2026-10-20T12:43:26Z ERROR notification-svc [t-6557] upstream request to template-svc failed: ReadTimeout (read timeout=15s) [m-6031]\n#1271 2026-10-20T12:43:26Z INFO notif-worker processed batch of 76 messages from notifications.outbound (lag 317ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "reconcil",
+          "service": "template-svc",
+          "limit": 50
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "idle",
+          "limit": 30
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "level": "INFO",
+          "since": "12:39:00",
+          "until": "12:41:30",
+          "query": "job",
+          "limit": 30
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "timeout",
+          "limit": 30
+        },
+        "output": "6 match(es):\n#1237 2026-10-20T12:42:49Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1255 2026-10-20T12:43:11Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1267 2026-10-20T12:43:21Z ERROR template-svc [t-6557] canceling UPDATE on notifications for m-6031 due to statement_timeout\n#1270 2026-10-20T12:43:26Z ERROR notification-svc [t-6557] upstream request to template-svc failed: ReadTimeout (read timeout=15s) [m-6031]\n#1310 2026-10-20T12:44:16Z ERROR template-svc [t-6567] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-6044)\n#1428 2026-10-20T12:46:45Z ERROR notification-svc pool checkout timeout: no connection to template-svc available after 5000ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "redis",
+          "level": "INFO",
+          "since": "12:38:00",
+          "until": "12:42:00",
+          "limit": 30
+        },
+        "output": "24 match(es):\n#917 2026-10-20T12:38:05Z INFO redis stats: hits=15995 misses=890 evicted=0 connected_clients=49\n#925 2026-10-20T12:38:14Z INFO redis stats: hits=9455 misses=709 evicted=0 connected_clients=52\n#938 2026-10-20T12:38:24Z INFO redis stats: hits=9772 misses=710 evicted=0 connected_clients=33\n#949 2026-10-20T12:38:33Z INFO redis stats: hits=19847 misses=321 evicted=0 connected_clients=56\n#968 2026-10-20T12:38:45Z INFO redis stats: hits=15231 misses=878 evicted=0 connected_clients=53\n#977 2026-10-20T12:38:53Z INFO redis stats: hits=10823 misses=483 evicted=0 connected_clients=54\n#989 2026-10-20T12:39:03Z INFO redis stats: hits=8493 misses=699 evicted=0 connected_clients=54\n#995 2026-10-20T12:39:11Z INFO redis stats: hits=10064 misses=788 evicted=0 connected_clients=45\n#1008 2026-10-20T12:39:21Z INFO redis stats: hits=16244 misses=855 evicted=0 connected_clients=41\n#1022 2026-10-20T12:39:32Z INFO redis stats: hits=16325 misses=787 evicted=0 connected_clients=56\n#1030 2026-10-20T12:39:41Z INFO redis stats: hits=10095 misses=382 evicted=0 connected_clients=50\n#1044 2026-10-20T12:39:51Z INFO redis stats: hits=14094 misses=202 evicted=0 connected_clients=52\n#1056 2026-10-20T12:40:03Z INFO redis stats: hits=14224 misses=517 evicted=0 connected_clients=36\n#1072 2026-10-20T12:40:14Z INFO redis stats: hits=14743 misses=358 evicted=0 connected_clients=54\n#1084 2026-10-20T12:40:26Z INFO redis stats: hits=8862 misses=701 evicted=0 connected_clients=47\n#1096 2026-10-20T12:40:34Z INFO redis stats: hits=14051 misses=474 evicted=0 connected_clients=60\n#1110 2026-10-20T12:40:42Z INFO redis stats: hits=15215 misses=773 evicted=0 connected_clients=52\n#1120 2026-10-20T12:40:52Z INFO redis stats: hits=19772 misses=294 evicted=0 connected_clients=33\n#1132 2026-10-20T12:41:02Z INFO redis stats: hits=13993 misses=684 evicted=0 connected_clients=56\n#1142 2026-10-20T12:41:10Z INFO redis stats: hits=10774 misses=561 evicted=0 connected_clients=41\n#1153 2026-10-20T12:41:19Z INFO redis stats: hits=13409 misses=887 evicted=0 connected_clients=46\n#1167 2026-10-20T12:41:31Z INFO redis stats: hits=10462 misses=434 evicted=0 connected_clients=35\n#1180 2026-10-20T12:41:42Z INFO redis stats: hits=17053 misses=241 evicted=0 connected_clients=32\n#1192 2026-10-20T12:41:53Z INFO redis stats: hits=13389 misses=277 evicted=0 connected_clients=37"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.75,
+              "evidenceLines": [
+                1141,
+                1237,
+                1255,
+                1267,
+                1310,
+                1270
+              ],
+              "reasoning": "The origin is a long-running notif-db transaction (TRANSACTION 93036) owned by template-svc-reconciler, active 82 seconds at 12:41:09 (so it began about 12:39:47) and holding a row lock on the notifications table (#1141). Other UPDATE notifications statements then queue behind that lock. They fail with 'Lock wait timeout exceeded' (#1237, #1255). template-svc's UPDATE on notifications hits statement_timeout (#1267, #1310). notification-svc then gets ReadTimeout calling template-svc /render (#1270), and its template-svc connection pool saturates (50/50, 40 queued, #1340; checkout timeouts, #1428). That pool saturation is what drives the api-gateway 504s (#1362, #1503, #1607, #1795). I did not find a log line showing why the reconciler's transaction stayed open, so the exact trigger is unconfirmed. The gateway 504s are downstream symptoms and are not cited. Red herrings: metrics-agent remote-write queue drops are telemetry-only, the billing-reconciler reports 0 discrepancies throughout, redis is healthy with 0 evictions, and the GC pauses are normal.",
+              "rootCause_note": "alternative: a template-svc-reconciler job that never committed could be framed as data_integrity or as a bad_deploy if a release changed its transaction handling; no deploy or version lines were found to support that."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.1,
+              "evidenceLines": [
+                1141
+              ],
+              "reasoning": "If the template-svc-reconciler's transaction-handling code changed in a recent release, that release would be the origin. No deploy or version logs were found, so this is weakly supported. The lock holder at #1141 is the only evidence that points here."
+            }
+          ],
+          "recommendedAction": "Identify and kill the open transaction 93036 on notif-db (owned by template-svc-reconciler) and confirm the lock is released. Then check the template-svc-reconciler job for a missing commit, a stalled step, or an idle-in-transaction connection, and add a transaction timeout or idle-in-transaction limit. Once the lock clears, recycle the notification-svc to template-svc connection pool and watch the 504 rate recover. Longer term, add timeouts to the reconciler's transactions and alert on long-running transactions in notif-db."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 11,
+    "toolCalls": 21,
+    "usage": {
+      "inputTokens": 24,
+      "outputTokens": 4461,
+      "cacheReadTokens": 189081,
+      "cacheWriteTokens": 29759
+    },
+    "durationMs": 24661,
+    "stopReason": "tool_use"
+  }
+}

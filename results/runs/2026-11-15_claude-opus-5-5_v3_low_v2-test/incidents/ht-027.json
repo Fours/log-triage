@@ -1,0 +1,177 @@
+{
+  "score": {
+    "incidentId": "ht-027",
+    "difficulty": "hard",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 6,
+      "precision": 0.8571428571428571,
+      "recall": 0.6,
+      "f1": 0.7058823529411764
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.0788194,
+    "durationMs": 14462,
+    "iterations": 6,
+    "toolCalls": 7,
+    "tokens": {
+      "input": 14,
+      "output": 1332,
+      "cacheRead": 31292,
+      "cacheWrite": 9173
+    }
+  },
+  "result": {
+    "incidentId": "ht-027",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.85,
+          "evidenceLines": [
+            2698,
+            2720,
+            2752,
+            2834,
+            2942,
+            2811,
+            2867
+          ],
+          "reasoning": "At 00:25:22 a routine rolling deploy of payment-svc v4.4.0 drained one of 4 instances (capacity 3/4). That brief capacity dip is a survivable trigger. order-service's RetryPolicy for payment-svc retries immediately with jitter and backoff turned off (up to 4 attempts), so it multiplied load on payment-svc to 3-5x baseline. payment-svc then started load shedding with 503s, which caused more retries, and the loop did not recover. That is why the gateway's POST /checkout 503s ('retries exhausted') are sustained. The translation API 502s in catalog-svc, the report-cron pandas failure and the postgres slow query are unrelated noise."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.1,
+          "evidenceLines": [
+            2698,
+            2720
+          ],
+          "reasoning": "The payment-svc v4.4.0 rollout lines up with the onset. However, payment-svc kept returning successful charges in ~50ms after the rollout began, and its failures are load shedding, not code errors."
+        }
+      ],
+      "recommendedAction": "Turn on exponential backoff with jitter and a retry budget for order-service → payment-svc calls, or temporarily stop retrying, so the retry loop can settle. Pause or finish the payment-svc rollout so all 4 instances are serving, and scale it up for a short while if needed."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 40,
+          "query": "checkout"
+        },
+        "output": "12 match(es):\n#2833 2026-10-08T00:26:25Z ERROR api-gateway [t-6396] POST /checkout 503 21791ms: upstream order-service returned 503 (retries exhausted)\n#2982 2026-10-08T00:27:37Z ERROR api-gateway [t-6462] POST /checkout 503 11679ms: upstream order-service returned 503 (retries exhausted)\n#3040 2026-10-08T00:28:06Z ERROR api-gateway [t-6481] POST /checkout 503 7331ms: upstream order-service returned 503 (retries exhausted)\n#3167 2026-10-08T00:29:11Z ERROR api-gateway [t-6533] POST /checkout 503 18623ms: upstream order-service returned 503 (retries exhausted)\n#3299 2026-10-08T00:30:17Z ERROR api-gateway [t-6575] POST /checkout 503 10552ms: upstream order-service returned 503 (retries exhausted)\n#3404 2026-10-08T00:31:10Z ERROR api-gateway [t-6623] POST /checkout 503 16650ms: upstream order-service returned 503 (retries exhausted)\n#3448 2026-10-08T00:31:38Z ERROR api-gateway [t-6631] POST /checkout 503 29513ms: upstream order-service returned 503 (retries exhausted)\n#3608 2026-10-08T00:32:59Z ERROR api-gateway [t-6694] POST /checkout 503 29426ms: upstream order-service returned 503 (retries exhausted)\n#3698 2026-10-08T00:33:50Z ERROR api-gateway [t-6733] POST /checkout 503 15083ms: upstream order-service returned 503 (retries exhausted)\n#3798 2026-10-08T00:34:40Z ERROR api-gateway [t-6780] POST /checkout 503 23573ms: upstream order-service returned 503 (retries exhausted)\n#3923 2026-10-08T00:35:47Z ERROR api-gateway [t-6823] POST /checkout 503 10478ms: upstream order-service returned 503 (retries exhausted)\n#3984 2026-10-08T00:36:18Z ERROR api-gateway [t-6845] POST /checkout 503 22780ms: upstream order-service returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "service": "payment-svc"
+        },
+        "output": "8 match(es):\n#2867 2026-10-08T00:26:43Z ERROR payment-svc [t-6417] load shed: rejected POST /charge with 503 (queue full)\n#3088 2026-10-08T00:28:28Z ERROR payment-svc [t-6508] load shed: rejected POST /charge with 503 (queue full)\n#3286 2026-10-08T00:30:10Z ERROR payment-svc [t-6568] load shed: rejected POST /charge with 503 (queue full)\n#3416 2026-10-08T00:31:17Z ERROR payment-svc [t-6624] load shed: rejected POST /charge with 503 (queue full)\n#3536 2026-10-08T00:32:24Z ERROR payment-svc [t-6665] load shed: rejected POST /charge with 503 (queue full)\n#3645 2026-10-08T00:33:22Z ERROR payment-svc [t-6708] load shed: rejected POST /charge with 503 (queue full)\n#3774 2026-10-08T00:34:30Z ERROR payment-svc [t-6765] load shed: rejected POST /charge with 503 (queue full)\n#3966 2026-10-08T00:36:08Z ERROR payment-svc [t-6838] load shed: rejected POST /charge with 503 (queue full)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "since": "00:22:00",
+          "until": "00:26:30",
+          "limit": 40
+        },
+        "output": "18 match(es):\n#2084 2026-10-08T00:22:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2249 2026-10-08T00:23:24Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2549 2026-10-08T00:24:38Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2567 2026-10-08T00:24:42Z ERROR catalog-svc [t-6251] translation API -> HTTP 502 (request fb65e2f)\n#2596 2026-10-08T00:24:50Z ERROR web-bff [t-6271] GET /search 503 11747ms: upstream search-api returned 503 Service Unavailable\n#2660 2026-10-08T00:25:09Z WARN order-consumer GC pause 865ms (G1 Old Gen), heap 62% after collection\n#2674 2026-10-08T00:25:14Z ERROR catalog-svc [t-6327] translation API error response: status=503 body=\"Bad Gateway\" id=86ba397\n#2706 2026-10-08T00:25:23Z ERROR catalog-svc [t-6344] translation API returned 502 Bad Gateway POST https://api.translate.example/v2/translate (x-request-id 750f0be)\n#2752 2026-10-08T00:25:41Z WARN order-service [t-6372] RetryPolicy(payment-svc): immediate retry #2, max 4, jitter and backoff off\n#2763 2026-10-08T00:25:45Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2764 2026-10-08T00:25:45Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2173 samples\n#2769 2026-10-08T00:25:48Z ERROR catalog-svc [t-6376] translation API -> HTTP 503 (request 01ebcc2)\n#2811 2026-10-08T00:26:15Z WARN payment-svc load shedder active, inflight=843, rate=3.2x of expected\n#2821 2026-10-08T00:26:20Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 282 samples\n#2824 2026-10-08T00:26:22Z WARN catalog-svc circuit breaker OPEN for api.translate.example (failure rate 87% over 20 calls), failing fast for 30s\n#2831 2026-10-08T00:26:25Z WARN postgres slow query 1253ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#2833 2026-10-08T00:26:25Z ERROR api-gateway [t-6396] POST /checkout 503 21791ms: upstream order-service returned 503 (retries exhausted)\n#2834 2026-10-08T00:26:26Z WARN order-service [t-6399] PaymentClient.charge got 503, retrying immediately (attempt 3/4, backoff disabled)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "level": "WARN",
+          "limit": 5
+        },
+        "output": "11 match(es), showing first 5:\n#2811 2026-10-08T00:26:15Z WARN payment-svc load shedder active, inflight=843, rate=3.2x of expected\n#2867 2026-10-08T00:26:43Z ERROR payment-svc [t-6417] load shed: rejected POST /charge with 503 (queue full)\n#3025 2026-10-08T00:28:01Z WARN payment-svc inbound request rate 4.1x baseline (inflight 725), shedding load with 503\n#3088 2026-10-08T00:28:28Z ERROR payment-svc [t-6508] load shed: rejected POST /charge with 503 (queue full)\n#3221 2026-10-08T00:29:34Z WARN payment-svc admission control: 428 requests in flight (5.0x normal), rejecting new work"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "retry",
+          "service": "order-service",
+          "limit": 4
+        },
+        "output": "3 match(es):\n#2752 2026-10-08T00:25:41Z WARN order-service [t-6372] RetryPolicy(payment-svc): immediate retry #2, max 4, jitter and backoff off\n#2834 2026-10-08T00:26:26Z WARN order-service [t-6399] PaymentClient.charge got 503, retrying immediately (attempt 3/4, backoff disabled)\n#2942 2026-10-08T00:27:17Z WARN order-service [t-6446] retry 4/4 for POST /charge after 503 from payment-svc (delay 0ms)"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-6372"
+        },
+        "output": "1 line(s) for t-6372:\n#2752 2026-10-08T00:25:41Z WARN order-service [t-6372] RetryPolicy(payment-svc): immediate retry #2, max 4, jitter and backoff off"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "since": "00:24:30",
+          "until": "00:25:45",
+          "limit": 30
+        },
+        "output": "28 match(es):\n#2531 2026-10-08T00:24:32Z INFO payment-svc [t-6230] POST /charge o-2444 ok 69ms\n#2540 2026-10-08T00:24:35Z INFO payment-svc [t-6234] POST /charge o-2447 ok 60ms\n#2542 2026-10-08T00:24:36Z DEBUG payment-svc GC pause 8ms (young), heap 40%\n#2545 2026-10-08T00:24:37Z INFO payment-svc [t-6237] POST /charge o-2450 ok 72ms\n#2553 2026-10-08T00:24:38Z INFO payment-svc [t-6241] POST /charge o-2455 ok 51ms\n#2565 2026-10-08T00:24:42Z INFO payment-svc [t-6249] POST /charge o-2462 ok 53ms\n#2569 2026-10-08T00:24:43Z INFO payment-svc [t-6253] POST /charge o-2465 ok 63ms\n#2582 2026-10-08T00:24:47Z INFO payment-svc [t-6260] POST /charge o-2471 ok 62ms\n#2585 2026-10-08T00:24:47Z INFO payment-svc [t-6263] POST /charge o-2472 ok 81ms\n#2589 2026-10-08T00:24:48Z DEBUG payment-svc GC pause 16ms (young), heap 30%\n#2590 2026-10-08T00:24:48Z INFO payment-svc [t-6267] POST /charge o-2475 ok 38ms\n#2604 2026-10-08T00:24:52Z INFO payment-svc [t-6280] POST /charge o-2484 ok 30ms\n#2610 2026-10-08T00:24:54Z INFO payment-svc [t-6284] POST /charge o-2487 ok 42ms\n#2613 2026-10-08T00:24:55Z INFO payment-svc [t-6288] POST /charge o-2489 ok 69ms\n#2618 2026-10-08T00:24:56Z INFO payment-svc [t-6290] POST /charge o-2490 ok 38ms\n#2623 2026-10-08T00:24:58Z INFO payment-svc [t-6294] POST /charge o-2493 ok 25ms\n#2633 2026-10-08T00:25:01Z DEBUG payment-svc GC pause 6ms (young), heap 40%\n#2647 2026-10-08T00:25:05Z INFO payment-svc [t-6310] POST /charge o-2506 ok 87ms\n#2652 2026-10-08T00:25:07Z INFO payment-svc [t-6313] POST /charge o-2508 ok 31ms\n#2670 2026-10-08T00:25:13Z INFO payment-svc [t-6323] POST /charge o-2518 ok 32ms\n#2681 2026-10-08T00:25:16Z DEBUG payment-svc GC pause 11ms (young), heap 38%\n#2690 2026-10-08T00:25:19Z INFO payment-svc [t-6337] POST /charge o-2526 ok 67ms\n#2694 2026-10-08T00:25:20Z INFO payment-svc [t-6338] POST /charge o-2529 ok 34ms\n#2698 2026-10-08T00:25:22Z INFO payment-svc deploy: rolling out payment-svc v4.4.0 (build 2f2c0a1), 1 of 4 instances at a time\n#2720 2026-10-08T00:25:27Z INFO payment-svc instance payment-svc-2 draining for rollout, capacity 3/4\n#2728 2026-10-08T00:25:32Z DEBUG payment-svc GC pause 20ms (young), heap 31%\n#2738 2026-10-08T00:25:36Z INFO payment-svc [t-6368] POST /charge o-2549 ok 59ms\n#2754 2026-10-08T00:25:42Z INFO payment-svc [t-6374] POST /charge o-2555 ok 23ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.85,
+              "evidenceLines": [
+                2698,
+                2720,
+                2752,
+                2834,
+                2942,
+                2811,
+                2867
+              ],
+              "reasoning": "At 00:25:22 a routine rolling deploy of payment-svc v4.4.0 drained one of 4 instances (capacity 3/4). That brief capacity dip is a survivable trigger. order-service's RetryPolicy for payment-svc retries immediately with jitter and backoff turned off (up to 4 attempts), so it multiplied load on payment-svc to 3-5x baseline. payment-svc then started load shedding with 503s, which caused more retries, and the loop did not recover. That is why the gateway's POST /checkout 503s ('retries exhausted') are sustained. The translation API 502s in catalog-svc, the report-cron pandas failure and the postgres slow query are unrelated noise."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.1,
+              "evidenceLines": [
+                2698,
+                2720
+              ],
+              "reasoning": "The payment-svc v4.4.0 rollout lines up with the onset. However, payment-svc kept returning successful charges in ~50ms after the rollout began, and its failures are load shedding, not code errors."
+            }
+          ],
+          "recommendedAction": "Turn on exponential backoff with jitter and a retry budget for order-service → payment-svc calls, or temporarily stop retrying, so the retry loop can settle. Pause or finish the payment-svc rollout so all 4 instances are serving, and scale it up for a short while if needed."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 7,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 1332,
+      "cacheReadTokens": 31292,
+      "cacheWriteTokens": 9173
+    },
+    "durationMs": 14462,
+    "stopReason": "tool_use"
+  }
+}

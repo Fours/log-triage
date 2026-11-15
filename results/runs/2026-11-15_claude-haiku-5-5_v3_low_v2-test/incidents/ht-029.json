@@ -1,0 +1,197 @@
+{
+  "score": {
+    "incidentId": "ht-029",
+    "difficulty": "medium",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 8,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 1,
+    "secondaryCited": 0,
+    "costUsd": 0.004075194999999999,
+    "durationMs": 13391,
+    "iterations": 7,
+    "toolCalls": 8,
+    "tokens": {
+      "input": 16,
+      "output": 2724,
+      "cacheRead": 64297,
+      "cacheWrite": 16549
+    }
+  },
+  "result": {
+    "incidentId": "ht-029",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.85,
+          "evidenceLines": [
+            1719,
+            2171,
+            2250,
+            2253,
+            2479,
+            2482,
+            2645,
+            2647
+          ],
+          "reasoning": "notification-svc heap climbs steadily from about 20:44 onward while GC pauses look normal. At #1719 (20:49:18) a full GC leaves old gen unreclaimed at 78%, and #2171 shows 87% with 35% GC overhead. This looks like an unbounded messageCache leak. The heap then exhausts: OutOfMemoryError at messageCache.put (#2250), and pods are OOMKilled at the 2Gi limit (#2253, #2482, #2647). Each kill drops the service, and api-gateway returns 502 'connection reset (no healthy upstream)' on POST /v1/notify (#2362, #2411, #2656, #3098). Those gateway 502s are downstream symptoms and are not cited as origin. Alternatives ruled out: the 401s from catalog-svc translation API and the search 502s sit on a separate path (search-api/web-bff), not notify; legacy-inventory healthcheck timeouts are status-poller noise; template-svc is healthy with 0 errors."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.1,
+          "evidenceLines": [
+            1118
+          ],
+          "reasoning": "The slow template-svc render (#1118, 2975ms) could have increased in-flight work and memory in notification-svc and amplified the leak. Weak evidence: template-svc logged no errors and its renders are mostly fast (about 30-90ms), so this is not the primary cause."
+        }
+      ],
+      "recommendedAction": "Restarting is only temporary mitigation. Capture a heap dump from notification-svc, find what retains entries in messageCache (missing eviction or TTL, or unbounded growth), and ship a fix that bounds the cache. Add a heap-usage alert on notification-svc. Short term, consider raising the memory limit or adding replicas to reduce the impact of restarts on the notify path."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "41 match(es):\n#399 2026-10-16T20:39:08Z WARN api-gateway [t-3207] POST /v1/notify 400 3ms: request validation failed: field \"email\" is not a valid address\n#1064 2026-10-16T20:44:12Z WARN api-gateway rate limiter: client key k-2882 throttled (429), 187 req/s over quota\n#1118 2026-10-16T20:44:37Z WARN notification-svc [t-3650] TemplateClient.render slow: 2975ms calling template-svc POST /render (soft threshold 2000ms)\n#2215 2026-10-16T20:53:04Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2250 2026-10-16T20:53:24Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#2253 2026-10-16T20:53:25Z ERROR notification-svc pod notification-svc-0 exceeded its 2Gi memory limit and was killed (restart #1)\n#2290 2026-10-16T20:53:50Z ERROR web-bff [t-4413] GET /search 502 9975ms: upstream search-api returned 502 Bad Gateway\n#2300 2026-10-16T20:53:54Z ERROR catalog-svc [t-4417] translation API rejected request: 401 Unauthorized (invalid API key) POST https://api.translate.example/v2/translate\n#2361 2026-10-16T20:55:00Z ERROR search-api [t-4424] CatalogClient.getBatch failed: catalog-svc returned 502 (upstream translation API error)\n#2362 2026-10-16T20:55:02Z ERROR api-gateway [t-4425] POST /v1/notify 502 8755ms: upstream notification-svc connection reset (no healthy upstream)\n#2372 2026-10-16T20:55:07Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2383 2026-10-16T20:55:19Z ERROR catalog-svc [t-4432] POST /v2/translate -> 401 {\"error\":\"invalid_api_key\"}\n#2411 2026-10-16T20:55:40Z ERROR api-gateway [t-4441] POST /v1/notify 502 12192ms: upstream notification-svc connection reset (no healthy upstream)\n#2414 2026-10-16T20:55:44Z ERROR catalog-svc [t-4444] translation API auth failed: HTTP 401, credentials not accepted by api.translate.example\n#2460 2026-10-16T20:56:30Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2479 2026-10-16T20:56:45Z FATAL notification-svc Exception in thread \"worker-12\" java.lang.OutOfMemoryError: Java heap space\n#2482 2026-10-16T20:56:46Z ERROR notification-svc container notification-svc-2 killed: OOMKilled (memory limit 2Gi), restart count 2\n#2484 2026-10-16T20:56:48Z ERROR web-bff [t-4468] GET /search 502 14270ms: upstream search-api returned 502 Bad Gateway\n#2489 2026-10-16T20:56:51Z ERROR search-api [t-4473] CatalogClient.getBatch failed: catalog-svc returned 502 (upstream translation API error)\n#2493 2026-10-16T20:56:57Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2513 2026-10-16T20:57:14Z ERROR catalog-svc [t-4480] translation API rejected request: 401 Unauthorized (invalid API key) POST https://api.translate.example/v2/translate\n#2536 2026-10-16T20:57:36Z ERROR web-bff [t-4490] GET /search 502 30024ms: upstream search-api returned 502 Bad Gateway\n#2556 2026-10-16T20:57:56Z ERROR api-gateway [t-4497] POST /v1/notify 502 6031ms: upstream notification-svc connection reset (no healthy upstream)\n#2584 2026-10-16T20:58:20Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2645 2026-10-16T20:59:10Z FATAL notification-svc fatal: heap exhausted while growing messageCache (requested 64MB, max 1536MB)\n#2647 2026-10-16T20:59:11Z ERROR notification-svc kubelet: notification-svc-0 terminated (reason OOMKilled, exit code 137), restarts=3\n#2656 2026-10-16T20:59:15Z ERROR api-gateway [t-4533] POST /v1/notify 502 15192ms: upstream notification-svc connection reset (no healthy upstream)\n#2674 2026-10-16T20:59:27Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2739 2026-10-16T21:00:25Z ERROR web-bff [t-4568] GET /search 502 11282ms: upstream search-api returned 502 Bad Gateway\n#2744 2026-10-16T21:00:29Z ERROR search-api [t-4570] CatalogClient.getBatch failed: catalog-svc returned 502 (upstream translation API error)\n#2761 2026-10-16T21:00:47Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2791 2026-10-16T21:01:16Z ERROR api-gateway [t-4580] POST /v1/notify 502 14265ms: upstream notification-svc connection reset (no healthy upstream)\n#2836 2026-10-16T21:01:59Z ERROR web-bff [t-4596] GET /search 502 14691ms: upstream search-api returned 502 Bad Gateway\n#2864 2026-10-16T21:02:29Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2882 2026-10-16T21:02:44Z ERROR api-gateway [t-4607] POST /v1/notify 502 13306ms: upstream notification-svc connection reset (no healthy upstream)\n#2929 2026-10-16T21:03:31Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2949 2026-10-16T21:03:44Z ERROR web-bff [t-4633] GET /search 502 12448ms: upstream search-api returned 502 Bad Gateway\n#2960 2026-10-16T21:03:51Z ERROR search-api [t-4638] CatalogClient.getBatch failed: catalog-svc returned 502 (upstream translation API error)\n#2995 2026-10-16T21:04:21Z ERROR web-bff [t-4646] GET /search 502 28189ms: upstream search-api returned 502 Bad Gateway\n#3089 2026-10-16T21:05:37Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3098 2026-10-16T21:05:42Z ERROR api-gateway [t-4682] POST /v1/notify 502 26830ms: upstream notification-svc connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "api-gateway",
+          "level": "ERROR",
+          "limit": 20
+        },
+        "output": "7 match(es):\n#2362 2026-10-16T20:55:02Z ERROR api-gateway [t-4425] POST /v1/notify 502 8755ms: upstream notification-svc connection reset (no healthy upstream)\n#2411 2026-10-16T20:55:40Z ERROR api-gateway [t-4441] POST /v1/notify 502 12192ms: upstream notification-svc connection reset (no healthy upstream)\n#2556 2026-10-16T20:57:56Z ERROR api-gateway [t-4497] POST /v1/notify 502 6031ms: upstream notification-svc connection reset (no healthy upstream)\n#2656 2026-10-16T20:59:15Z ERROR api-gateway [t-4533] POST /v1/notify 502 15192ms: upstream notification-svc connection reset (no healthy upstream)\n#2791 2026-10-16T21:01:16Z ERROR api-gateway [t-4580] POST /v1/notify 502 14265ms: upstream notification-svc connection reset (no healthy upstream)\n#2882 2026-10-16T21:02:44Z ERROR api-gateway [t-4607] POST /v1/notify 502 13306ms: upstream notification-svc connection reset (no healthy upstream)\n#3098 2026-10-16T21:05:42Z ERROR api-gateway [t-4682] POST /v1/notify 502 26830ms: upstream notification-svc connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "since": "20:40:00",
+          "until": "20:53:30",
+          "limit": 60
+        },
+        "output": "257 match(es), showing first 60:\n#510 2026-10-16T20:40:02Z INFO notification-svc [t-3272] message m-6585 accepted, calling template-svc POST /render\n#516 2026-10-16T20:40:06Z DEBUG notification-svc GC pause 13ms (young), heap 47%\n#518 2026-10-16T20:40:07Z INFO notification-svc [t-3276] message m-6589 accepted, calling template-svc POST /render\n#525 2026-10-16T20:40:10Z INFO notification-svc [t-3281] message m-6594 accepted, calling template-svc POST /render\n#534 2026-10-16T20:40:14Z INFO notification-svc [t-3288] message m-6598 accepted, calling template-svc POST /render\n#541 2026-10-16T20:40:17Z INFO notification-svc [t-3294] message m-6601 accepted, calling template-svc POST /render\n#550 2026-10-16T20:40:21Z INFO notification-svc [t-3303] message m-6607 accepted, calling template-svc POST /render\n#556 2026-10-16T20:40:25Z INFO notification-svc [t-3308] message m-6609 accepted, calling template-svc POST /render\n#570 2026-10-16T20:40:30Z INFO notification-svc [t-3315] message m-6617 accepted, calling template-svc POST /render\n#576 2026-10-16T20:40:34Z INFO notification-svc [t-3318] message m-6621 accepted, calling template-svc POST /render\n#585 2026-10-16T20:40:36Z INFO notification-svc [t-3320] message m-6625 accepted, calling template-svc POST /render\n#588 2026-10-16T20:40:39Z DEBUG notification-svc GC pause 5ms (young), heap 33%\n#589 2026-10-16T20:40:39Z INFO notification-svc [t-3324] message m-6626 accepted, calling template-svc POST /render\n#598 2026-10-16T20:40:43Z INFO notification-svc [t-3332] message m-6630 accepted, calling template-svc POST /render\n#607 2026-10-16T20:40:46Z INFO notification-svc [t-3338] message m-6634 accepted, calling template-svc POST /render\n#616 2026-10-16T20:40:49Z INFO notification-svc [t-3342] message m-6637 accepted, calling template-svc POST /render\n#621 2026-10-16T20:40:51Z INFO notification-svc [t-3343] message m-6638 accepted, calling template-svc POST /render\n#626 2026-10-16T20:40:55Z INFO notification-svc [t-3348] message m-6643 accepted, calling template-svc POST /render\n#636 2026-10-16T20:41:00Z INFO notification-svc [t-3351] message m-6645 accepted, calling template-svc POST /render\n#641 2026-10-16T20:41:03Z INFO notification-svc [t-3354] message m-6649 accepted, calling template-svc POST /render\n#655 2026-10-16T20:41:08Z INFO notification-svc [t-3362] message m-6658 accepted, calling template-svc POST /render\n#663 2026-10-16T20:41:11Z DEBUG notification-svc GC pause 8ms (young), heap 41%\n#669 2026-10-16T20:41:13Z INFO notification-svc [t-3369] message m-6664 accepted, calling template-svc POST /render\n#675 2026-10-16T20:41:16Z INFO notification-svc [t-3374] message m-6668 accepted, calling template-svc POST /render\n#681 2026-10-16T20:41:19Z INFO notification-svc [t-3379] message m-6671 accepted, calling template-svc POST /render\n#689 2026-10-16T20:41:22Z INFO notification-svc [t-3383] message m-6674 accepted, calling template-svc POST /render\n#696 2026-10-16T20:41:24Z INFO notification-svc [t-3388] message m-6678 accepted, calling template-svc POST /render\n#703 2026-10-16T20:41:27Z INFO notification-svc [t-3389] message m-6680 accepted, calling template-svc POST /render\n#710 2026-10-16T20:41:31Z INFO notification-svc [t-3392] message m-6686 accepted, calling template-svc POST /render\n#714 2026-10-16T20:41:33Z INFO notification-svc [t-3397] message m-6690 accepted, calling template-svc POST /render\n#721 2026-10-16T20:41:36Z INFO notification-svc [t-3398] message m-6691 accepted, calling template-svc POST /render\n#727 2026-10-16T20:41:39Z INFO notification-svc [t-3404] message m-6696 accepted, calling template-svc POST /render\n#735 2026-10-16T20:41:43Z DEBUG notification-svc GC pause 12ms (young), heap 30%\n#738 2026-10-16T20:41:44Z INFO notification-svc [t-3411] message m-6699 accepted, calling template-svc POST /render\n#751 2026-10-16T20:41:48Z INFO notification-svc [t-3418] message m-6705 accepted, calling template-svc POST /render\n#756 2026-10-16T20:41:52Z INFO notification-svc [t-3424] message m-6709 accepted, calling template-svc POST /render\n#760 2026-10-16T20:41:54Z INFO notification-svc [t-3431] message m-6715 accepted, calling template-svc POST /render\n#767 2026-10-16T20:41:56Z INFO notification-svc [t-3436] message m-6721 accepted, calling template-svc POST /render\n#776 2026-10-16T20:42:01Z INFO notification-svc [t-3441] message m-6725 accepted, calling template-svc POST /render\n#785 2026-10-16T20:42:04Z DEBUG notification-svc GC pause 14ms (young), heap 34%\n#787 2026-10-16T20:42:06Z INFO notification-svc [t-3446] message m-6728 accepted, calling template-svc POST /render\n#800 2026-10-16T20:42:11Z INFO notification-svc [t-3452] message m-6734 accepted, calling template-svc POST /render\n#808 2026-10-16T20:42:15Z INFO notification-svc [t-3454] message m-6739 accepted, calling template-svc POST /render\n#814 2026-10-16T20:42:18Z INFO notification-svc [t-3460] message m-6742 accepted, calling template-svc POST /render\n#824 2026-10-16T20:42:23Z INFO notification-svc [t-3464] message m-6746 accepted, calling template-svc POST /render\n#830 2026-10-16T20:42:26Z INFO notification-svc [t-3466] message m-6747 accepted, calling template-svc POST /render\n#841 2026-10-16T20:42:31Z INFO notification-svc [t-3472] message m-6753 accepted, calling template-svc POST /render\n#847 2026-10-16T20:42:33Z INFO notification-svc [t-3476] message m-6758 accepted, calling template-svc POST /render\n#850 2026-10-16T20:42:35Z DEBUG notification-svc GC pause 15ms (young), heap 36%\n#851 2026-10-16T20:42:35Z INFO notification-svc [t-3478] message m-6760 accepted, calling template-svc POST /render\n#858 2026-10-16T20:42:37Z INFO notification-svc [t-3484] message m-6762 accepted, calling template-svc POST /render\n#869 2026-10-16T20:42:42Z INFO notification-svc [t-3486] message m-6766 accepted, calling template-svc POST /render\n#877 2026-10-16T20:42:46Z INFO notification-svc [t-3490] message m-6770 accepted, calling template-svc POST /render\n#882 2026-10-16T20:42:51Z INFO notification-svc [t-3497] message m-6774 accepted, calling template-svc POST /render\n#887 2026-10-16T20:42:53Z DEBUG notification-svc GC pause 24ms (young), heap 47%\n#889 2026-10-16T20:42:54Z INFO notification-svc [t-3500] message m-6776 accepted, calling template-svc POST /render\n#897 2026-10-16T20:42:58Z INFO notification-svc [t-3506] message m-6780 accepted, calling template-svc POST /render\n#905 2026-10-16T20:43:01Z INFO notification-svc [t-3510] message m-6783 accepted, calling template-svc POST /render\n#919 2026-10-16T20:43:05Z INFO notification-svc [t-3520] message m-6790 accepted, calling template-svc POST /render\n#924 2026-10-16T20:43:09Z INFO notification-svc [t-3525] message m-6792 accepted, calling template-svc POST /render"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "query": "messageCache",
+          "limit": 30
+        },
+        "output": "2 match(es):\n#2250 2026-10-16T20:53:24Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#2645 2026-10-16T20:59:10Z FATAL notification-svc fatal: heap exhausted while growing messageCache (requested 64MB, max 1536MB)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "level": "WARN",
+          "limit": 30
+        },
+        "output": "7 match(es):\n#1118 2026-10-16T20:44:37Z WARN notification-svc [t-3650] TemplateClient.render slow: 2975ms calling template-svc POST /render (soft threshold 2000ms)\n#2250 2026-10-16T20:53:24Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#2253 2026-10-16T20:53:25Z ERROR notification-svc pod notification-svc-0 exceeded its 2Gi memory limit and was killed (restart #1)\n#2479 2026-10-16T20:56:45Z FATAL notification-svc Exception in thread \"worker-12\" java.lang.OutOfMemoryError: Java heap space\n#2482 2026-10-16T20:56:46Z ERROR notification-svc container notification-svc-2 killed: OOMKilled (memory limit 2Gi), restart count 2\n#2645 2026-10-16T20:59:10Z FATAL notification-svc fatal: heap exhausted while growing messageCache (requested 64MB, max 1536MB)\n#2647 2026-10-16T20:59:11Z ERROR notification-svc kubelet: notification-svc-0 terminated (reason OOMKilled, exit code 137), restarts=3"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "query": "heap",
+          "since": "20:44:00",
+          "until": "20:53:30",
+          "limit": 60
+        },
+        "output": "25 match(es):\n#1042 2026-10-16T20:44:01Z DEBUG notification-svc GC pause 16ms (young), heap 38%\n#1092 2026-10-16T20:44:26Z DEBUG notification-svc GC pause 21ms (young), heap 44%\n#1152 2026-10-16T20:44:52Z DEBUG notification-svc GC pause 7ms (young), heap 40%\n#1208 2026-10-16T20:45:22Z DEBUG notification-svc GC pause 21ms (young), heap 43%\n#1258 2026-10-16T20:45:45Z DEBUG notification-svc GC pause 20ms (young), heap 41%\n#1315 2026-10-16T20:46:14Z DEBUG notification-svc GC pause 13ms (young), heap 41%\n#1370 2026-10-16T20:46:39Z DEBUG notification-svc GC pause 16ms (young), heap 37%\n#1429 2026-10-16T20:47:04Z DEBUG notification-svc GC pause 6ms (young), heap 35%\n#1483 2026-10-16T20:47:31Z DEBUG notification-svc GC pause 25ms (young), heap 35%\n#1543 2026-10-16T20:47:57Z DEBUG notification-svc GC pause 20ms (young), heap 38%\n#1605 2026-10-16T20:48:26Z DEBUG notification-svc GC pause 14ms (young), heap 43%\n#1670 2026-10-16T20:48:55Z DEBUG notification-svc GC pause 16ms (young), heap 31%\n#1719 2026-10-16T20:49:18Z INFO notification-svc heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#1736 2026-10-16T20:49:24Z DEBUG notification-svc GC pause 7ms (young), heap 41%\n#1798 2026-10-16T20:49:53Z DEBUG notification-svc GC pause 8ms (young), heap 37%\n#1832 2026-10-16T20:50:11Z DEBUG notification-svc GC pause 8ms (young), heap 48%\n#1895 2026-10-16T20:50:43Z DEBUG notification-svc GC pause 21ms (young), heap 45%\n#1943 2026-10-16T20:51:06Z DEBUG notification-svc GC pause 15ms (young), heap 36%\n#1994 2026-10-16T20:51:28Z DEBUG notification-svc GC pause 16ms (young), heap 34%\n#2070 2026-10-16T20:52:02Z DEBUG notification-svc GC pause 7ms (young), heap 35%\n#2120 2026-10-16T20:52:26Z DEBUG notification-svc GC pause 16ms (young), heap 44%\n#2171 2026-10-16T20:52:45Z INFO notification-svc heap usage 87% after full GC (old gen not reclaimed), GC overhead 35%\n#2184 2026-10-16T20:52:50Z DEBUG notification-svc GC pause 11ms (young), heap 32%\n#2250 2026-10-16T20:53:24Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#2254 2026-10-16T20:53:25Z DEBUG notification-svc GC pause 9ms (young), heap 30%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "since": "20:43:00",
+          "until": "20:54:00",
+          "limit": 40
+        },
+        "output": "99 match(es), showing first 40:\n#906 2026-10-16T20:43:01Z INFO template-svc [t-3510] POST /render m-6783 ok 46ms\n#923 2026-10-16T20:43:08Z DEBUG template-svc GC pause 17ms (young), heap 40%\n#926 2026-10-16T20:43:09Z INFO template-svc [t-3525] POST /render m-6792 ok 51ms\n#955 2026-10-16T20:43:21Z INFO template-svc [t-3543] POST /render m-6807 ok 55ms\n#974 2026-10-16T20:43:30Z DEBUG template-svc GC pause 12ms (young), heap 40%\n#1014 2026-10-16T20:43:49Z INFO template-svc [t-3588] POST /render m-6842 ok 47ms\n#1024 2026-10-16T20:43:54Z INFO template-svc [t-3593] POST /render m-6846 ok 84ms\n#1031 2026-10-16T20:43:58Z INFO template-svc [t-3595] POST /render m-6850 ok 82ms\n#1039 2026-10-16T20:44:01Z INFO template-svc [t-3599] POST /render m-6855 ok 42ms\n#1049 2026-10-16T20:44:05Z INFO template-svc [t-3604] POST /render m-6861 ok 27ms\n#1051 2026-10-16T20:44:06Z DEBUG template-svc GC pause 11ms (young), heap 36%\n#1055 2026-10-16T20:44:09Z INFO template-svc [t-3608] POST /render m-6865 ok 59ms\n#1067 2026-10-16T20:44:14Z INFO template-svc [t-3614] POST /render m-6868 ok 59ms\n#1079 2026-10-16T20:44:18Z INFO template-svc [t-3620] POST /render m-6873 ok 82ms\n#1106 2026-10-16T20:44:33Z DEBUG template-svc GC pause 20ms (young), heap 28%\n#1113 2026-10-16T20:44:35Z INFO template-svc [t-3643] POST /render m-6893 ok 73ms\n#1139 2026-10-16T20:44:46Z INFO template-svc [t-3661] POST /render m-6905 ok 40ms\n#1158 2026-10-16T20:44:55Z INFO template-svc [t-3672] POST /render m-6911 ok 76ms\n#1177 2026-10-16T20:45:04Z INFO template-svc [t-3689] POST /render m-6922 ok 85ms\n#1186 2026-10-16T20:45:09Z DEBUG template-svc GC pause 7ms (young), heap 45%\n#1202 2026-10-16T20:45:18Z INFO template-svc [t-3702] POST /render m-6935 ok 38ms\n#1238 2026-10-16T20:45:36Z INFO template-svc [t-3735] POST /render m-6956 ok 30ms\n#1240 2026-10-16T20:45:36Z DEBUG template-svc GC pause 9ms (young), heap 45%\n#1267 2026-10-16T20:45:50Z INFO template-svc [t-3756] POST /render m-6971 ok 31ms\n#1297 2026-10-16T20:46:06Z DEBUG template-svc GC pause 6ms (young), heap 30%\n#1312 2026-10-16T20:46:11Z INFO template-svc [t-3783] POST /render m-6995 ok 43ms\n#1351 2026-10-16T20:46:30Z INFO template-svc [t-3807] POST /render m-7013 ok 88ms\n#1356 2026-10-16T20:46:32Z DEBUG template-svc GC pause 9ms (young), heap 28%\n#1382 2026-10-16T20:46:44Z INFO template-svc [t-3829] POST /render m-7027 ok 66ms\n#1388 2026-10-16T20:46:46Z INFO template-svc [t-3831] POST /render m-7029 ok 85ms\n#1398 2026-10-16T20:46:51Z INFO template-svc [t-3842] POST /render m-7034 ok 26ms\n#1403 2026-10-16T20:46:54Z INFO template-svc [t-3843] POST /render m-7035 ok 77ms\n#1426 2026-10-16T20:47:04Z INFO template-svc [t-3858] POST /render m-7044 ok 22ms\n#1428 2026-10-16T20:47:04Z DEBUG template-svc GC pause 15ms (young), heap 39%\n#1440 2026-10-16T20:47:09Z INFO template-svc [t-3864] POST /render m-7048 ok 26ms\n#1449 2026-10-16T20:47:14Z INFO template-svc [t-3868] POST /render m-7050 ok 29ms\n#1481 2026-10-16T20:47:28Z INFO template-svc [t-3892] POST /render m-7063 ok 35ms\n#1485 2026-10-16T20:47:31Z INFO template-svc [t-3893] POST /render m-7065 ok 86ms\n#1492 2026-10-16T20:47:34Z INFO template-svc [t-3899] POST /render m-7069 ok 37ms\n#1497 2026-10-16T20:47:36Z DEBUG template-svc GC pause 21ms (young), heap 41%"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1719,
+          "before": 6,
+          "after": 4
+        },
+        "output": "#1713 2026-10-16T20:49:13Z INFO search-api [t-4053] product p-7178 accepted, calling catalog-svc GET /products/batch\n#1714 2026-10-16T20:49:13Z INFO web-bff [t-4053] GET /search 200 65ms\n#1715 2026-10-16T20:49:16Z INFO analytics-forwarder forwarded 2141 events to analytics-ingest\n#1716 2026-10-16T20:49:16Z INFO notification-svc [t-4055] message m-7179 accepted, calling template-svc POST /render\n#1717 2026-10-16T20:49:16Z INFO api-gateway [t-4055] POST /v1/notify 200 101ms\n#1718 2026-10-16T20:49:17Z DEBUG web-bff upstream health: search-api ok, catalog-svc ok\n#1719 2026-10-16T20:49:18Z INFO notification-svc heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#1720 2026-10-16T20:49:18Z INFO search-api [t-4058] product p-7181 accepted, calling catalog-svc GET /products/batch\n#1721 2026-10-16T20:49:18Z INFO catalog-svc [t-4058] GET /products/batch p-7181 ok 44ms\n#1722 2026-10-16T20:49:18Z INFO web-bff [t-4058] GET /search 200 70ms\n#1723 2026-10-16T20:49:18Z DEBUG api-gateway upstream health: notification-svc ok, template-svc ok"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"resource_exhaustion\",\"confidence\":0.85,\"evidenceLines\":[1719,2171,2250,2253,2479,2482,2645,2647],\"reasoning\":\"notification-svc heap climbs steadily from ~20:44 onward while GC pauses look normal; at #1719 (20:49:18) a full GC leaves old gen unreclaimed at 78%, GC overhead rising, #2171 shows 87% with 35% GC overhead. This looks like an unbounded messageCache leak. The heap then exhausts: OutOfMemoryError at messageCache.put (#2250), pod OOMKilled at its 2Gi limit (#2253, #2482, #2647). Each kill/restart drops the service, and api-gateway returns 502 'connection reset (no healthy upstream)' on POST /v1/notify (#2362, #2411, #2656, #3098). The gateway 502s are downstream symptoms and not cited as origin. Alternatives ruled out: the 401s from catalog-svc translation API and the search 502s are a separate path (search-api/web-bff), not notify; legacy-inventory healthcheck timeouts are noise from status-poller; template-svc is healthy with 0 errors.\",\"},{\"rootCause\":\"cascading_failure\",\"confidence\":0.1,\"evidenceLines\":[1118],\"reasoning\":\"Slow template-svc render (#1118, 2975ms) could have increased in-flight work and memory in notification-svc, amplifying the leak. Weak evidence; template-svc itself logged no errors and its renders are mostly fast (~30-90ms), so this is not the primary cause.\"}]",
+          "recommendedAction": "Restart is only a temporary mitigation. Capture a heap dump from notification-svc, find what is retaining entries in messageCache (missing eviction or TTL, or unbounded growth), and ship a fix that bounds the cache. Add a heap-usage alert on notification-svc. Short term, consider raising the memory limit or scaling replicas to reduce the impact of restarts on the notify path."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.85,
+              "evidenceLines": [
+                1719,
+                2171,
+                2250,
+                2253,
+                2479,
+                2482,
+                2645,
+                2647
+              ],
+              "reasoning": "notification-svc heap climbs steadily from about 20:44 onward while GC pauses look normal. At #1719 (20:49:18) a full GC leaves old gen unreclaimed at 78%, and #2171 shows 87% with 35% GC overhead. This looks like an unbounded messageCache leak. The heap then exhausts: OutOfMemoryError at messageCache.put (#2250), and pods are OOMKilled at the 2Gi limit (#2253, #2482, #2647). Each kill drops the service, and api-gateway returns 502 'connection reset (no healthy upstream)' on POST /v1/notify (#2362, #2411, #2656, #3098). Those gateway 502s are downstream symptoms and are not cited as origin. Alternatives ruled out: the 401s from catalog-svc translation API and the search 502s sit on a separate path (search-api/web-bff), not notify; legacy-inventory healthcheck timeouts are status-poller noise; template-svc is healthy with 0 errors."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.1,
+              "evidenceLines": [
+                1118
+              ],
+              "reasoning": "The slow template-svc render (#1118, 2975ms) could have increased in-flight work and memory in notification-svc and amplified the leak. Weak evidence: template-svc logged no errors and its renders are mostly fast (about 30-90ms), so this is not the primary cause."
+            }
+          ],
+          "recommendedAction": "Restarting is only temporary mitigation. Capture a heap dump from notification-svc, find what retains entries in messageCache (missing eviction or TTL, or unbounded growth), and ship a fix that bounds the cache. Add a heap-usage alert on notification-svc. Short term, consider raising the memory limit or adding replicas to reduce the impact of restarts on the notify path."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 7,
+    "toolCalls": 8,
+    "usage": {
+      "inputTokens": 16,
+      "outputTokens": 2724,
+      "cacheReadTokens": 64297,
+      "cacheWriteTokens": 16549
+    },
+    "durationMs": 13391,
+    "stopReason": "tool_use"
+  }
+}

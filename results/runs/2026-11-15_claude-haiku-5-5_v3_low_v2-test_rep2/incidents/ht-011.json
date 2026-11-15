@@ -1,0 +1,197 @@
+{
+  "score": {
+    "incidentId": "ht-011",
+    "difficulty": "hard",
+    "scenario": "data_integrity/sequence-collision",
+    "truth": "data_integrity",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 5,
+      "precision": 0.7142857142857143,
+      "recall": 0.8333333333333334,
+      "f1": 0.7692307692307692
+    },
+    "herringsCited": 0,
+    "secondaryCited": 4,
+    "costUsd": 0.0034786000000000005,
+    "durationMs": 11974,
+    "iterations": 5,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 12,
+      "output": 2468,
+      "cacheRead": 35390,
+      "cacheWrite": 15116
+    }
+  },
+  "result": {
+    "incidentId": "ht-011",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.9,
+          "evidenceLines": [
+            2635,
+            2899,
+            3105,
+            3267,
+            3386,
+            2909,
+            3384
+          ],
+          "reasoning": "At 02:16:00 events-db logged 'restore: table events reloaded from snapshot (1173519 rows); AUTO_INCREMENT left at 1159519'. The restored table holds ids up to ~1173519, but the sequence resumes at 1159519, so new inserts collide with existing primary keys. Failures start about a minute later: 'Duplicate entry 1170038 for key events.PRIMARY' (#2899), then ER_DUP_ENTRY on 1170040, 1170045, 1170050. ingest-api converts these to 409 unique violations (#2909, #3384), and ingest-gateway returns 500 'create failed' on POST /v1/events (#2836, #3094, #3525), which is the alert. Not the cause: the gateway 5xx, the 409s, the flag-sync invalid-key errors, the status-poller legacy-inventory timeouts, and notif-worker's NUL-byte JSON failure (#2216, #2626)."
+        },
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.1,
+          "evidenceLines": [
+            2216,
+            2437,
+            2626,
+            2907
+          ],
+          "reasoning": "notif-worker is repeatedly failing on msg-286485 at offset 346800 because of a NUL byte in the JSON payload. This is real but only affects notifications, not event ingest, so it does not explain the 'could not save' alert."
+        }
+      ],
+      "recommendedAction": "Immediately reset events.AUTO_INCREMENT on events-db to above MAX(id) (with margin), then verify inserts succeed and the gateway error rate drops. Check whether other tables restored in the same snapshot have the same stale sequence. Add a sequence reset step to the restore runbook. Separately, quarantine message msg-286485 (partition 5, offset 346800) in notif-worker, which contains a NUL byte."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "since": "02:05:00",
+          "until": "02:08:00",
+          "limit": 60
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "events-db",
+          "limit": 40
+        },
+        "output": "118 match(es), showing first 40:\n#24 2026-10-25T02:05:06Z INFO events-db InnoDB: page cleaner flushed 260 pages, buffer pool hit rate 99.1%\n#69 2026-10-25T02:05:17Z INFO events-db InnoDB: page cleaner flushed 677 pages, buffer pool hit rate 99.8%\n#112 2026-10-25T02:05:27Z INFO events-db InnoDB: page cleaner flushed 600 pages, buffer pool hit rate 99.7%\n#167 2026-10-25T02:05:42Z INFO events-db InnoDB: page cleaner flushed 455 pages, buffer pool hit rate 99.6%\n#214 2026-10-25T02:05:53Z INFO events-db InnoDB: page cleaner flushed 751 pages, buffer pool hit rate 98.5%\n#266 2026-10-25T02:06:07Z INFO events-db InnoDB: page cleaner flushed 213 pages, buffer pool hit rate 98.6%\n#304 2026-10-25T02:06:17Z INFO events-db InnoDB: page cleaner flushed 523 pages, buffer pool hit rate 99.4%\n#355 2026-10-25T02:06:29Z INFO events-db InnoDB: page cleaner flushed 878 pages, buffer pool hit rate 99.4%\n#406 2026-10-25T02:06:42Z INFO events-db InnoDB: page cleaner flushed 558 pages, buffer pool hit rate 99.4%\n#461 2026-10-25T02:06:55Z INFO events-db InnoDB: page cleaner flushed 158 pages, buffer pool hit rate 99.4%\n#514 2026-10-25T02:07:10Z INFO events-db InnoDB: page cleaner flushed 360 pages, buffer pool hit rate 98.6%\n#553 2026-10-25T02:07:19Z INFO events-db InnoDB: page cleaner flushed 209 pages, buffer pool hit rate 98.7%\n#595 2026-10-25T02:07:30Z INFO events-db InnoDB: page cleaner flushed 166 pages, buffer pool hit rate 99.6%\n#648 2026-10-25T02:07:44Z INFO events-db InnoDB: page cleaner flushed 465 pages, buffer pool hit rate 99%\n#706 2026-10-25T02:07:58Z INFO events-db InnoDB: page cleaner flushed 872 pages, buffer pool hit rate 98.5%\n#765 2026-10-25T02:08:10Z INFO events-db InnoDB: page cleaner flushed 576 pages, buffer pool hit rate 99.6%\n#805 2026-10-25T02:08:22Z INFO events-db InnoDB: page cleaner flushed 298 pages, buffer pool hit rate 99%\n#857 2026-10-25T02:08:35Z INFO events-db InnoDB: page cleaner flushed 451 pages, buffer pool hit rate 99.3%\n#919 2026-10-25T02:08:50Z INFO events-db InnoDB: page cleaner flushed 561 pages, buffer pool hit rate 99%\n#963 2026-10-25T02:09:00Z INFO events-db InnoDB: page cleaner flushed 841 pages, buffer pool hit rate 98.6%\n#1013 2026-10-25T02:09:11Z INFO events-db InnoDB: page cleaner flushed 797 pages, buffer pool hit rate 98.7%\n#1071 2026-10-25T02:09:25Z INFO events-db InnoDB: page cleaner flushed 394 pages, buffer pool hit rate 99.5%\n#1118 2026-10-25T02:09:36Z INFO events-db InnoDB: page cleaner flushed 751 pages, buffer pool hit rate 99.4%\n#1164 2026-10-25T02:09:46Z INFO events-db InnoDB: page cleaner flushed 477 pages, buffer pool hit rate 99.4%\n#1219 2026-10-25T02:09:59Z INFO events-db InnoDB: page cleaner flushed 584 pages, buffer pool hit rate 99.3%\n#1274 2026-10-25T02:10:12Z INFO events-db InnoDB: page cleaner flushed 399 pages, buffer pool hit rate 99.5%\n#1317 2026-10-25T02:10:22Z INFO events-db InnoDB: page cleaner flushed 387 pages, buffer pool hit rate 98.6%\n#1374 2026-10-25T02:10:35Z INFO events-db InnoDB: page cleaner flushed 215 pages, buffer pool hit rate 99.6%\n#1414 2026-10-25T02:10:46Z INFO events-db InnoDB: page cleaner flushed 229 pages, buffer pool hit rate 99.5%\n#1460 2026-10-25T02:10:57Z INFO events-db InnoDB: page cleaner flushed 452 pages, buffer pool hit rate 99.3%\n#1508 2026-10-25T02:11:08Z INFO events-db InnoDB: page cleaner flushed 266 pages, buffer pool hit rate 99%\n#1558 2026-10-25T02:11:20Z INFO events-db InnoDB: page cleaner flushed 718 pages, buffer pool hit rate 99.5%\n#1612 2026-10-25T02:11:34Z INFO events-db InnoDB: page cleaner flushed 696 pages, buffer pool hit rate 99.5%\n#1664 2026-10-25T02:11:47Z INFO events-db InnoDB: page cleaner flushed 695 pages, buffer pool hit rate 99.6%\n#1703 2026-10-25T02:11:57Z INFO events-db InnoDB: page cleaner flushed 443 pages, buffer pool hit rate 99.6%\n#1737 2026-10-25T02:12:06Z INFO events-db InnoDB: page cleaner flushed 769 pages, buffer pool hit rate 98.6%\n#1782 2026-10-25T02:12:16Z INFO events-db InnoDB: page cleaner flushed 861 pages, buffer pool hit rate 98.6%\n#1829 2026-10-25T02:12:28Z INFO events-db InnoDB: page cleaner flushed 116 pages, buffer pool hit rate 99.1%\n#1871 2026-10-25T02:12:37Z INFO events-db InnoDB: page cleaner flushed 193 pages, buffer pool hit rate 98.8%\n#1925 2026-10-25T02:12:52Z INFO events-db InnoDB: page cleaner flushed 280 pages, buffer pool hit rate 99.6%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 60
+        },
+        "output": "63 match(es), showing first 60:\n#1347 2026-10-25T02:10:29Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#1504 2026-10-25T02:11:08Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#1855 2026-10-25T02:12:35Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2004 2026-10-25T02:13:11Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#2216 2026-10-25T02:14:08Z ERROR notif-worker failed to process msg-286485 (partition 5, offset 346800): JSON parse error: unexpected token '\\u0000' at position 216\n#2378 2026-10-25T02:14:50Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2437 2026-10-25T02:15:06Z ERROR notif-worker SyntaxError: Unexpected token \\u0000 in JSON at position 216 (message msg-286485, notifications.outbound[5]@346800)\n#2505 2026-10-25T02:15:24Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#2626 2026-10-25T02:15:57Z ERROR notif-worker handler error for msg-286485 at offset 346800: invalid JSON payload (byte 216 is NUL)\n#2725 2026-10-25T02:16:19Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2836 2026-10-25T02:16:48Z ERROR ingest-gateway [t-5193] POST /v1/events 500 23731ms: upstream ingest-api returned 500 (create failed)\n#2844 2026-10-25T02:16:52Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2899 2026-10-25T02:17:08Z ERROR events-db Duplicate entry '1170038' for key 'events.PRIMARY'\n#2907 2026-10-25T02:17:10Z ERROR notif-worker failed to process msg-286485 (partition 5, offset 346800): JSON parse error: unexpected token '\\u0000' at position 216\n#2909 2026-10-25T02:17:10Z ERROR ingest-api [t-5250] create event failed: unique violation on events.id, returning 409\n#2917 2026-10-25T02:17:13Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2995 2026-10-25T02:17:38Z ERROR notification-svc [t-5314] message m-7441 timed out waiting for downstream confirmation (120s), marked failed\n#3011 2026-10-25T02:17:41Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#3089 2026-10-25T02:18:14Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3094 2026-10-25T02:18:15Z ERROR ingest-gateway [t-5374] POST /v1/events 500 28783ms: upstream ingest-api returned 500 (create failed)\n#3105 2026-10-25T02:18:19Z ERROR events-db ER_DUP_ENTRY (1062): '1170040' already exists in events.PRIMARY\n#3149 2026-10-25T02:18:32Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3194 2026-10-25T02:18:48Z ERROR ingest-gateway [t-5442] POST /v1/events 500 27188ms: upstream ingest-api returned 500 (create failed)\n#3204 2026-10-25T02:18:52Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3267 2026-10-25T02:19:11Z ERROR events-db insert into events rejected: primary key 1170045 is taken\n#3291 2026-10-25T02:19:20Z ERROR ingest-gateway [t-5503] POST /v1/events 500 10344ms: upstream ingest-api returned 500 (create failed)\n#3333 2026-10-25T02:19:33Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3345 2026-10-25T02:19:37Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#3368 2026-10-25T02:19:46Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3384 2026-10-25T02:19:50Z ERROR ingest-api [t-5560] create event failed: unique violation on events.id, returning 409\n#3386 2026-10-25T02:19:51Z ERROR events-db could not insert row 1170050: it conflicts with an existing events primary key\n#3453 2026-10-25T02:20:10Z ERROR notification-svc [t-5610] message m-7676 timed out waiting for downstream confirmation (120s), marked failed\n#3482 2026-10-25T02:20:21Z ERROR events-db Duplicate entry '1170053' for key 'events.PRIMARY'\n#3525 2026-10-25T02:20:38Z ERROR ingest-gateway [t-5639] POST /v1/events 500 27824ms: upstream ingest-api returned 500 (create failed)\n#3536 2026-10-25T02:20:40Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3537 2026-10-25T02:20:41Z ERROR ingest-api [t-5645] create event failed: unique violation on events.id, returning 409\n#3542 2026-10-25T02:20:44Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#3657 2026-10-25T02:21:22Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3666 2026-10-25T02:21:26Z ERROR ingest-gateway [t-5723] POST /v1/events 500 7236ms: upstream ingest-api returned 500 (create failed)\n#3722 2026-10-25T02:21:44Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3757 2026-10-25T02:21:57Z ERROR ingest-api [t-5779] create event failed: unique violation on events.id, returning 409\n#3759 2026-10-25T02:21:58Z ERROR notification-svc [t-5782] message m-7809 timed out waiting for downstream confirmation (120s), marked failed\n#3826 2026-10-25T02:22:21Z ERROR ingest-gateway [t-5821] POST /v1/events 500 19334ms: upstream ingest-api returned 500 (create failed)\n#3839 2026-10-25T02:22:26Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3841 2026-10-25T02:22:27Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3929 2026-10-25T02:22:53Z ERROR ingest-gateway [t-5884] POST /v1/events 500 27171ms: upstream ingest-api returned 500 (create failed)\n#3991 2026-10-25T02:23:13Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4004 2026-10-25T02:23:18Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#4109 2026-10-25T02:23:54Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#4116 2026-10-25T02:23:58Z ERROR ingest-gateway [t-5987] POST /v1/events 500 21850ms: upstream ingest-api returned 500 (create failed)\n#4152 2026-10-25T02:24:06Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4162 2026-10-25T02:24:09Z ERROR ingest-api [t-6025] create event failed: unique violation on events.id, returning 409\n#4227 2026-10-25T02:24:32Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4295 2026-10-25T02:24:54Z ERROR ingest-gateway [t-6106] POST /v1/events 500 10020ms: upstream ingest-api returned 500 (create failed)\n#4356 2026-10-25T02:25:14Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#4366 2026-10-25T02:25:17Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4450 2026-10-25T02:25:47Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4481 2026-10-25T02:25:58Z ERROR ingest-gateway [t-6232] POST /v1/events 500 11917ms: upstream ingest-api returned 500 (create failed)\n#4488 2026-10-25T02:26:00Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#4513 2026-10-25T02:26:07Z ERROR notification-svc [t-6255] message m-8161 timed out waiting for downstream confirmation (120s), marked failed"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "events-db",
+          "since": "02:08:00",
+          "until": "02:17:08",
+          "limit": 60
+        },
+        "output": "49 match(es):\n#765 2026-10-25T02:08:10Z INFO events-db InnoDB: page cleaner flushed 576 pages, buffer pool hit rate 99.6%\n#805 2026-10-25T02:08:22Z INFO events-db InnoDB: page cleaner flushed 298 pages, buffer pool hit rate 99%\n#857 2026-10-25T02:08:35Z INFO events-db InnoDB: page cleaner flushed 451 pages, buffer pool hit rate 99.3%\n#919 2026-10-25T02:08:50Z INFO events-db InnoDB: page cleaner flushed 561 pages, buffer pool hit rate 99%\n#963 2026-10-25T02:09:00Z INFO events-db InnoDB: page cleaner flushed 841 pages, buffer pool hit rate 98.6%\n#1013 2026-10-25T02:09:11Z INFO events-db InnoDB: page cleaner flushed 797 pages, buffer pool hit rate 98.7%\n#1071 2026-10-25T02:09:25Z INFO events-db InnoDB: page cleaner flushed 394 pages, buffer pool hit rate 99.5%\n#1118 2026-10-25T02:09:36Z INFO events-db InnoDB: page cleaner flushed 751 pages, buffer pool hit rate 99.4%\n#1164 2026-10-25T02:09:46Z INFO events-db InnoDB: page cleaner flushed 477 pages, buffer pool hit rate 99.4%\n#1219 2026-10-25T02:09:59Z INFO events-db InnoDB: page cleaner flushed 584 pages, buffer pool hit rate 99.3%\n#1274 2026-10-25T02:10:12Z INFO events-db InnoDB: page cleaner flushed 399 pages, buffer pool hit rate 99.5%\n#1317 2026-10-25T02:10:22Z INFO events-db InnoDB: page cleaner flushed 387 pages, buffer pool hit rate 98.6%\n#1374 2026-10-25T02:10:35Z INFO events-db InnoDB: page cleaner flushed 215 pages, buffer pool hit rate 99.6%\n#1414 2026-10-25T02:10:46Z INFO events-db InnoDB: page cleaner flushed 229 pages, buffer pool hit rate 99.5%\n#1460 2026-10-25T02:10:57Z INFO events-db InnoDB: page cleaner flushed 452 pages, buffer pool hit rate 99.3%\n#1508 2026-10-25T02:11:08Z INFO events-db InnoDB: page cleaner flushed 266 pages, buffer pool hit rate 99%\n#1558 2026-10-25T02:11:20Z INFO events-db InnoDB: page cleaner flushed 718 pages, buffer pool hit rate 99.5%\n#1612 2026-10-25T02:11:34Z INFO events-db InnoDB: page cleaner flushed 696 pages, buffer pool hit rate 99.5%\n#1664 2026-10-25T02:11:47Z INFO events-db InnoDB: page cleaner flushed 695 pages, buffer pool hit rate 99.6%\n#1703 2026-10-25T02:11:57Z INFO events-db InnoDB: page cleaner flushed 443 pages, buffer pool hit rate 99.6%\n#1737 2026-10-25T02:12:06Z INFO events-db InnoDB: page cleaner flushed 769 pages, buffer pool hit rate 98.6%\n#1782 2026-10-25T02:12:16Z INFO events-db InnoDB: page cleaner flushed 861 pages, buffer pool hit rate 98.6%\n#1829 2026-10-25T02:12:28Z INFO events-db InnoDB: page cleaner flushed 116 pages, buffer pool hit rate 99.1%\n#1871 2026-10-25T02:12:37Z INFO events-db InnoDB: page cleaner flushed 193 pages, buffer pool hit rate 98.8%\n#1925 2026-10-25T02:12:52Z INFO events-db InnoDB: page cleaner flushed 280 pages, buffer pool hit rate 99.6%\n#1978 2026-10-25T02:13:06Z INFO events-db InnoDB: page cleaner flushed 142 pages, buffer pool hit rate 98.7%\n#2036 2026-10-25T02:13:20Z INFO events-db InnoDB: page cleaner flushed 355 pages, buffer pool hit rate 99.9%\n#2081 2026-10-25T02:13:30Z INFO events-db InnoDB: page cleaner flushed 279 pages, buffer pool hit rate 98.8%\n#2121 2026-10-25T02:13:42Z INFO events-db InnoDB: page cleaner flushed 437 pages, buffer pool hit rate 98.7%\n#2159 2026-10-25T02:13:51Z INFO events-db InnoDB: page cleaner flushed 793 pages, buffer pool hit rate 99.2%\n#2202 2026-10-25T02:14:04Z INFO events-db InnoDB: page cleaner flushed 709 pages, buffer pool hit rate 98.6%\n#2246 2026-10-25T02:14:15Z INFO events-db InnoDB: page cleaner flushed 836 pages, buffer pool hit rate 99.7%\n#2296 2026-10-25T02:14:28Z INFO events-db InnoDB: page cleaner flushed 426 pages, buffer pool hit rate 99.7%\n#2330 2026-10-25T02:14:38Z INFO events-db InnoDB: page cleaner flushed 635 pages, buffer pool hit rate 99.5%\n#2383 2026-10-25T02:14:52Z INFO events-db InnoDB: page cleaner flushed 784 pages, buffer pool hit rate 99.4%\n#2436 2026-10-25T02:15:05Z INFO events-db InnoDB: page cleaner flushed 829 pages, buffer pool hit rate 99.7%\n#2476 2026-10-25T02:15:16Z INFO events-db InnoDB: page cleaner flushed 383 pages, buffer pool hit rate 99.9%\n#2518 2026-10-25T02:15:28Z INFO events-db InnoDB: page cleaner flushed 521 pages, buffer pool hit rate 99.1%\n#2566 2026-10-25T02:15:41Z INFO events-db InnoDB: page cleaner flushed 734 pages, buffer pool hit rate 98.8%\n#2602 2026-10-25T02:15:51Z INFO events-db InnoDB: page cleaner flushed 886 pages, buffer pool hit rate 98.9%\n#2635 2026-10-25T02:16:00Z INFO events-db restore: table events reloaded from snapshot (1173519 rows); AUTO_INCREMENT left at 1159519\n#2652 2026-10-25T02:16:03Z INFO events-db InnoDB: page cleaner flushed 519 pages, buffer pool hit rate 99.5%\n#2710 2026-10-25T02:16:17Z INFO events-db InnoDB: page cleaner flushed 578 pages, buffer pool hit rate 99.2%\n#2753 2026-10-25T02:16:26Z INFO events-db InnoDB: page cleaner flushed 388 pages, buffer pool hit rate 99.1%\n#2771 2026-10-25T02:16:29Z WARN events-db slow query 1288ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#2802 2026-10-25T02:16:38Z INFO events-db InnoDB: page cleaner flushed 387 pages, buffer pool hit rate 99.2%\n#2845 2026-10-25T02:16:53Z INFO events-db InnoDB: page cleaner flushed 603 pages, buffer pool hit rate 98.6%\n#2882 2026-10-25T02:17:04Z INFO events-db InnoDB: page cleaner flushed 867 pages, buffer pool hit rate 99.4%\n#2899 2026-10-25T02:17:08Z ERROR events-db Duplicate entry '1170038' for key 'events.PRIMARY'"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "sequence",
+          "limit": 30
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                2635,
+                2899,
+                3105,
+                3267,
+                3386,
+                2909,
+                3384
+              ],
+              "reasoning": "At 02:16:00 events-db logged 'restore: table events reloaded from snapshot (1173519 rows); AUTO_INCREMENT left at 1159519'. The restored table holds ids up to ~1173519, but the sequence resumes at 1159519, so every new insert collides with an existing primary key. Within ~1 minute the failures start: 'Duplicate entry 1170038 for key events.PRIMARY' (#2899), then ER_DUP_ENTRY on 1170040, 1170045, 1170050 and so on. ingest-api converts these to 409 unique violations (#2909, #3384), and ingest-gateway returns 500 'create failed' on POST /v1/events (#2836, #3094, #3525), which is the alert. The gap between sequence and max id narrows as the sequence advances past existing rows, so collisions keep occurring. Not the cause: the 5xx at the gateway, the 409s, the flag-sync invalid-key errors, the status-poller legacy-inventory timeouts, and notif-worker's NUL-byte JSON failure (#2216, #2626) are unrelated or downstream.",
+              "recommendedAction": "Immediately reset events.AUTO_INCREMENT to above MAX(id) (for example MAX(id)+1 or higher, with margin) on events-db, then verify that new inserts succeed and the gateway error rate drops. Check that no other tables were restored with the same stale sequence. Review the restore runbook so the sequence is reset after a snapshot reload. Separately, quarantine message msg-286485 (partition 5, offset 346800) in notif-worker, which contains a NUL byte."
+            },
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.1,
+              "evidenceLines": [
+                2216,
+                2437,
+                2626,
+                2907
+              ],
+              "reasoning": "notif-worker is repeatedly failing on msg-286485 at offset 346800 because of a NUL byte in the JSON payload. This is real but affects only notifications, not event ingest, so it is a side issue and not the cause of the 'could not save' alert."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                2635,
+                2899,
+                3105,
+                3267,
+                3386,
+                2909,
+                3384
+              ],
+              "reasoning": "At 02:16:00 events-db logged 'restore: table events reloaded from snapshot (1173519 rows); AUTO_INCREMENT left at 1159519'. The restored table holds ids up to ~1173519, but the sequence resumes at 1159519, so new inserts collide with existing primary keys. Failures start about a minute later: 'Duplicate entry 1170038 for key events.PRIMARY' (#2899), then ER_DUP_ENTRY on 1170040, 1170045, 1170050. ingest-api converts these to 409 unique violations (#2909, #3384), and ingest-gateway returns 500 'create failed' on POST /v1/events (#2836, #3094, #3525), which is the alert. Not the cause: the gateway 5xx, the 409s, the flag-sync invalid-key errors, the status-poller legacy-inventory timeouts, and notif-worker's NUL-byte JSON failure (#2216, #2626).",
+              "recommendedAction": "Immediately reset events.AUTO_INCREMENT on events-db to above MAX(id) (with margin), then verify inserts succeed and the gateway error rate drops. Check whether other tables restored in the same snapshot have the same stale sequence. Add a sequence reset step to the restore runbook. Separately, quarantine message msg-286485 (partition 5, offset 346800) in notif-worker, which contains a NUL byte."
+            },
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.1,
+              "evidenceLines": [
+                2216,
+                2437,
+                2626,
+                2907
+              ],
+              "reasoning": "notif-worker is repeatedly failing on msg-286485 at offset 346800 because of a NUL byte in the JSON payload. This is real but only affects notifications, not event ingest, so it does not explain the 'could not save' alert."
+            }
+          ],
+          "recommendedAction": "Immediately reset events.AUTO_INCREMENT on events-db to above MAX(id) (with margin), then verify inserts succeed and the gateway error rate drops. Check whether other tables restored in the same snapshot have the same stale sequence. Add a sequence reset step to the restore runbook. Separately, quarantine message msg-286485 (partition 5, offset 346800) in notif-worker, which contains a NUL byte."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 2468,
+      "cacheReadTokens": 35390,
+      "cacheWriteTokens": 15116
+    },
+    "durationMs": 11974,
+    "stopReason": "tool_use"
+  }
+}

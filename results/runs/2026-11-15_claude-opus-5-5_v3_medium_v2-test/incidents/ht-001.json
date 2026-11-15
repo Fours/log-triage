@@ -1,0 +1,171 @@
+{
+  "score": {
+    "incidentId": "ht-001",
+    "difficulty": "easy",
+    "scenario": "external_outage/cloud-object-storage",
+    "truth": "external_outage",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 3,
+      "precision": 0.6,
+      "recall": 0.75,
+      "f1": 0.6666666666666665
+    },
+    "herringsCited": 2,
+    "costUsd": 0.071602,
+    "durationMs": 14939,
+    "iterations": 6,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 14,
+      "output": 1363,
+      "cacheRead": 27405,
+      "cacheWrite": 7761
+    }
+  },
+  "result": {
+    "incidentId": "ht-001",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.9,
+          "evidenceLines": [
+            1201,
+            1236,
+            1341,
+            1325,
+            1693
+          ],
+          "reasoning": "enrichment-svc ran normally (POST /enrich ok, 25-90ms, heap healthy) until 16:54:39. From then on, its S3 PutObject calls to s3://ingest-artifacts-prod in us-east-1 started coming back as 500 InternalError and 503 ServiceUnavailable. These are fast server-side errors from AWS, not hangs. enrichment-svc then returns 500 'storage write failed' to ingest-api (#1325, #1693), which passes it on to ingest-gateway as POST /v1/events 500s (#1288 and later). The gateway's long latencies (19-29s) and the aws-sdk 'retry quota exhausted' warning (#1258) come from retries piling up on the failing S3 calls, not from a separate cause. I found no deploy lines. The status-poller timeouts to legacy-inventory, a deprecated endpoint, start at 16:41, before the S3 errors, and nothing on the request path depends on them, so I'm treating them as noise."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.07,
+          "evidenceLines": [
+            1258
+          ],
+          "reasoning": "SDK retries amplified the S3 errors and made the gateway calls take much longer. But the trigger was the S3 errors themselves, not the retries."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.03,
+          "evidenceLines": [
+            272,
+            532
+          ],
+          "reasoning": "status-poller healthchecks to legacy-inventory time out, but they start before the incident, the endpoint has been deprecated since 2025-06, and the failing request path doesn't use it."
+        }
+      ],
+      "recommendedAction": "Check the AWS Health Dashboard for an S3 problem in us-east-1. Meanwhile, make enrichment-svc's artifact upload non-blocking or best-effort (buffer to a local or durable queue and retry asynchronously), or temporarily switch writes to a bucket in another region, so /enrich doesn't fail when S3 does. Also lower SDK retry counts and timeouts so gateway latency stays down. Separately, remove the deprecated legacy-inventory healthcheck from status-poller."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "19 match(es):\n#272 2026-10-23T16:41:48Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#532 2026-10-23T16:45:23Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#632 2026-10-23T16:46:45Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#971 2026-10-23T16:51:22Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1060 2026-10-23T16:52:32Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1201 2026-10-23T16:54:39Z ERROR enrichment-svc [t-3540] S3 upload of e-6314.json returned 500 InternalError (us-east-1, 0045334)\n#1236 2026-10-23T16:55:15Z ERROR enrichment-svc [t-3555] PutObject s3://ingest-artifacts-prod/e-6322.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id 9153A3C)\n#1258 2026-10-23T16:55:45Z WARN enrichment-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (45 failed attempts in 60s)\n#1288 2026-10-23T16:56:12Z ERROR ingest-gateway [t-3576] POST /v1/events 500 19359ms: upstream ingest-api returned 500 Internal Server Error\n#1305 2026-10-23T16:56:32Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1325 2026-10-23T16:57:00Z ERROR ingest-api [t-3582] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#1341 2026-10-23T16:57:19Z ERROR enrichment-svc [t-3586] S3 upload of e-6343.json returned 503 ServiceUnavailable (us-east-1, 01B29AD)\n#1376 2026-10-23T16:57:55Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1442 2026-10-23T16:59:11Z ERROR ingest-gateway [t-3611] POST /v1/events 500 25257ms: upstream ingest-api returned 500 Internal Server Error\n#1507 2026-10-23T17:00:27Z ERROR ingest-gateway [t-3633] POST /v1/events 500 29005ms: upstream ingest-api returned 500 Internal Server Error\n#1509 2026-10-23T17:00:29Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1693 2026-10-23T17:04:10Z ERROR ingest-api [t-3682] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#1727 2026-10-23T17:04:43Z ERROR ingest-gateway [t-3698] POST /v1/events 500 28004ms: upstream ingest-api returned 500 Internal Server Error\n#1767 2026-10-23T17:05:31Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "s3",
+          "limit": 30
+        },
+        "output": "4 match(es):\n#1201 2026-10-23T16:54:39Z ERROR enrichment-svc [t-3540] S3 upload of e-6314.json returned 500 InternalError (us-east-1, 0045334)\n#1236 2026-10-23T16:55:15Z ERROR enrichment-svc [t-3555] PutObject s3://ingest-artifacts-prod/e-6322.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id 9153A3C)\n#1258 2026-10-23T16:55:45Z WARN enrichment-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (45 failed attempts in 60s)\n#1341 2026-10-23T16:57:19Z ERROR enrichment-svc [t-3586] S3 upload of e-6343.json returned 503 ServiceUnavailable (us-east-1, 01B29AD)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-3582"
+        },
+        "output": "1 line(s) for t-3582:\n#1325 2026-10-23T16:57:00Z ERROR ingest-api [t-3582] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "enrichment-svc",
+          "since": "16:52:00",
+          "until": "16:55:00",
+          "limit": 40
+        },
+        "output": "33 match(es):\n#1022 2026-10-23T16:52:01Z DEBUG enrichment-svc GC pause 11ms (young), heap 42%\n#1029 2026-10-23T16:52:06Z INFO enrichment-svc [t-3472] POST /enrich e-6251 ok 65ms\n#1036 2026-10-23T16:52:14Z DEBUG enrichment-svc GC pause 23ms (young), heap 44%\n#1042 2026-10-23T16:52:19Z INFO enrichment-svc [t-3477] POST /enrich e-6256 ok 29ms\n#1049 2026-10-23T16:52:23Z INFO enrichment-svc [t-3479] POST /enrich e-6259 ok 56ms\n#1056 2026-10-23T16:52:29Z INFO enrichment-svc [t-3481] POST /enrich e-6261 ok 68ms\n#1059 2026-10-23T16:52:31Z DEBUG enrichment-svc GC pause 15ms (young), heap 39%\n#1065 2026-10-23T16:52:35Z INFO enrichment-svc [t-3485] POST /enrich e-6264 ok 66ms\n#1069 2026-10-23T16:52:38Z INFO enrichment-svc [t-3488] POST /enrich e-6267 ok 78ms\n#1081 2026-10-23T16:52:46Z INFO enrichment-svc [t-3491] POST /enrich e-6271 ok 88ms\n#1087 2026-10-23T16:52:50Z INFO enrichment-svc [t-3494] POST /enrich e-6273 ok 60ms\n#1092 2026-10-23T16:52:56Z DEBUG enrichment-svc GC pause 8ms (young), heap 34%\n#1093 2026-10-23T16:52:56Z INFO enrichment-svc [t-3498] POST /enrich e-6276 ok 72ms\n#1098 2026-10-23T16:53:00Z INFO enrichment-svc [t-3500] POST /enrich e-6278 ok 55ms\n#1105 2026-10-23T16:53:05Z INFO enrichment-svc [t-3502] POST /enrich e-6281 ok 72ms\n#1109 2026-10-23T16:53:10Z DEBUG enrichment-svc GC pause 5ms (young), heap 38%\n#1111 2026-10-23T16:53:11Z INFO enrichment-svc [t-3505] POST /enrich e-6284 ok 79ms\n#1118 2026-10-23T16:53:16Z INFO enrichment-svc [t-3507] POST /enrich e-6287 ok 33ms\n#1123 2026-10-23T16:53:19Z INFO enrichment-svc [t-3509] POST /enrich e-6290 ok 87ms\n#1132 2026-10-23T16:53:28Z INFO enrichment-svc [t-3515] POST /enrich e-6295 ok 58ms\n#1137 2026-10-23T16:53:31Z INFO enrichment-svc [t-3519] POST /enrich e-6296 ok 24ms\n#1140 2026-10-23T16:53:32Z DEBUG enrichment-svc GC pause 13ms (young), heap 43%\n#1153 2026-10-23T16:53:48Z DEBUG enrichment-svc GC pause 25ms (young), heap 33%\n#1158 2026-10-23T16:53:54Z INFO enrichment-svc [t-3522] POST /enrich e-6301 ok 70ms\n#1166 2026-10-23T16:54:07Z DEBUG enrichment-svc GC pause 9ms (young), heap 32%\n#1179 2026-10-23T16:54:21Z INFO enrichment-svc [t-3525] POST /enrich e-6303 ok 51ms\n#1185 2026-10-23T16:54:26Z DEBUG enrichment-svc GC pause 23ms (young), heap 37%\n#1188 2026-10-23T16:54:29Z INFO enrichment-svc [t-3529] POST /enrich e-6306 ok 44ms\n#1192 2026-10-23T16:54:33Z INFO enrichment-svc [t-3533] POST /enrich e-6307 ok 54ms\n#1201 2026-10-23T16:54:39Z ERROR enrichment-svc [t-3540] S3 upload of e-6314.json returned 500 InternalError (us-east-1, 0045334)\n#1204 2026-10-23T16:54:39Z DEBUG enrichment-svc GC pause 6ms (young), heap 41%\n#1211 2026-10-23T16:54:48Z INFO enrichment-svc [t-3547] POST /enrich e-6317 ok 27ms\n#1217 2026-10-23T16:54:54Z DEBUG enrichment-svc GC pause 17ms (young), heap 36%"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-3576"
+        },
+        "output": "1 line(s) for t-3576:\n#1288 2026-10-23T16:56:12Z ERROR ingest-gateway [t-3576] POST /v1/events 500 19359ms: upstream ingest-api returned 500 Internal Server Error"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.9,
+              "evidenceLines": [
+                1201,
+                1236,
+                1341,
+                1325,
+                1693
+              ],
+              "reasoning": "enrichment-svc ran normally (POST /enrich ok, 25-90ms, heap healthy) until 16:54:39. From then on, its S3 PutObject calls to s3://ingest-artifacts-prod in us-east-1 started coming back as 500 InternalError and 503 ServiceUnavailable. These are fast server-side errors from AWS, not hangs. enrichment-svc then returns 500 'storage write failed' to ingest-api (#1325, #1693), which passes it on to ingest-gateway as POST /v1/events 500s (#1288 and later). The gateway's long latencies (19-29s) and the aws-sdk 'retry quota exhausted' warning (#1258) come from retries piling up on the failing S3 calls, not from a separate cause. I found no deploy lines. The status-poller timeouts to legacy-inventory, a deprecated endpoint, start at 16:41, before the S3 errors, and nothing on the request path depends on them, so I'm treating them as noise."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.07,
+              "evidenceLines": [
+                1258
+              ],
+              "reasoning": "SDK retries amplified the S3 errors and made the gateway calls take much longer. But the trigger was the S3 errors themselves, not the retries."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.03,
+              "evidenceLines": [
+                272,
+                532
+              ],
+              "reasoning": "status-poller healthchecks to legacy-inventory time out, but they start before the incident, the endpoint has been deprecated since 2025-06, and the failing request path doesn't use it."
+            }
+          ],
+          "recommendedAction": "Check the AWS Health Dashboard for an S3 problem in us-east-1. Meanwhile, make enrichment-svc's artifact upload non-blocking or best-effort (buffer to a local or durable queue and retry asynchronously), or temporarily switch writes to a bucket in another region, so /enrich doesn't fail when S3 does. Also lower SDK retry counts and timeouts so gateway latency stays down. Separately, remove the deprecated legacy-inventory healthcheck from status-poller."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 1363,
+      "cacheReadTokens": 27405,
+      "cacheWriteTokens": 7761
+    },
+    "durationMs": 14939,
+    "stopReason": "tool_use"
+  }
+}

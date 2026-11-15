@@ -1,0 +1,145 @@
+{
+  "score": {
+    "incidentId": "ht-035",
+    "difficulty": "hard",
+    "scenario": "poison_message/redelivery-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "poison_message",
+    "confidence": 0.95,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 7,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.056470599999999996,
+    "durationMs": 12445,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 1022,
+      "cacheRead": 14853,
+      "cacheWrite": 6604
+    }
+  },
+  "result": {
+    "incidentId": "ht-035",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.95,
+          "evidenceLines": [
+            3017,
+            3023,
+            3054,
+            3055,
+            3350,
+            3504,
+            3817
+          ],
+          "reasoning": "Message msg-595676 at catalog.updates partition 2, offset 145600, has a NUL byte at position 1860, so its JSON can't be parsed. index-worker nacks it and gets it redelivered over and over: attempt 14 by 19:45:46, and the log says no max-retries is configured. That blocks partition 2. Lag there climbs from about 1k messages (49s) to more than 13k (up to 774s) after 19:46. Because the worker is just retrying one message, CPU stays normal, which fits the alert. Other noise doesn't fit: status-poller errors come from a deprecated legacy-inventory endpoint, metrics-agent drops samples at its exporter, and a single GC pause comes before the failures without explaining them. I found no deploys."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.04,
+          "evidenceLines": [
+            3054
+          ],
+          "reasoning": "A corrupt payload written by the producer (catalog-svc) could be called a data problem. But what stalls the queue is the consumer jamming on that one message."
+        }
+      ],
+      "recommendedAction": "Move msg-595676 (catalog.updates[2]@145600) to a dead-letter queue, or skip it by committing past that offset, so partition 2 starts draining again. Set a max-retries limit with dead-lettering on index-worker. Then check how catalog-svc produced a payload containing a NUL byte, and re-index that catalog item."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "index-worker",
+          "level": "WARN",
+          "limit": 40
+        },
+        "output": "18 match(es):\n#2544 2026-11-09T19:43:35Z WARN index-worker GC pause 914ms (G1 Old Gen), heap 62% after collection\n#3017 2026-11-09T19:45:37Z ERROR index-worker SyntaxError: Unexpected token \\u0000 in JSON at position 1860 (message msg-595676, catalog.updates[2]@145600)\n#3054 2026-11-09T19:45:45Z ERROR index-worker handler error for msg-595676 at offset 145600: invalid JSON payload (byte 1860 is NUL)\n#3285 2026-11-09T19:46:47Z WARN index-worker consumer lag on catalog.updates partition 2: 1062 messages behind (49s)\n#3350 2026-11-09T19:47:04Z ERROR index-worker cannot deserialize msg-595676 from partition 2: malformed body near position 1860\n#3422 2026-11-09T19:47:24Z WARN index-worker consumer lag on catalog.updates partition 2: 2696 messages behind (176s)\n#3504 2026-11-09T19:47:48Z ERROR index-worker failed to process msg-595676 (partition 2, offset 145600): JSON parse error: unexpected token '\\u0000' at position 1860\n#3630 2026-11-09T19:48:29Z WARN index-worker consumer lag on catalog.updates partition 2: 2085 messages behind (219s)\n#3698 2026-11-09T19:48:48Z WARN index-worker consumer lag on catalog.updates partition 2: 2612 messages behind (288s)\n#3789 2026-11-09T19:49:17Z WARN index-worker consumer lag on catalog.updates partition 2: 5885 messages behind (390s)\n#3817 2026-11-09T19:49:23Z ERROR index-worker SyntaxError: Unexpected token \\u0000 in JSON at position 1860 (message msg-595676, catalog.updates[2]@145600)\n#3886 2026-11-09T19:49:49Z WARN index-worker consumer lag on catalog.updates partition 2: 6624 messages behind (324s)\n#4081 2026-11-09T19:50:46Z WARN index-worker consumer lag on catalog.updates partition 2: 7294 messages behind (413s)\n#4210 2026-11-09T19:51:25Z WARN index-worker consumer lag on catalog.updates partition 2: 6840 messages behind (440s)\n#4340 2026-11-09T19:52:04Z WARN index-worker consumer lag on catalog.updates partition 2: 10170 messages behind (774s)\n#4430 2026-11-09T19:52:34Z WARN index-worker consumer lag on catalog.updates partition 2: 8080 messages behind (770s)\n#4576 2026-11-09T19:53:17Z WARN index-worker consumer lag on catalog.updates partition 2: 13079 messages behind (539s)\n#4656 2026-11-09T19:53:43Z WARN index-worker consumer lag on catalog.updates partition 2: 9420 messages behind (576s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 15
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "msg-595676",
+          "limit": 10
+        },
+        "output": "7 match(es):\n#3017 2026-11-09T19:45:37Z ERROR index-worker SyntaxError: Unexpected token \\u0000 in JSON at position 1860 (message msg-595676, catalog.updates[2]@145600)\n#3023 2026-11-09T19:45:38Z INFO index-worker nack msg-595676, redelivering (attempt 9, no max-retries configured)\n#3054 2026-11-09T19:45:45Z ERROR index-worker handler error for msg-595676 at offset 145600: invalid JSON payload (byte 1860 is NUL)\n#3055 2026-11-09T19:45:46Z INFO index-worker nack msg-595676, redelivering (attempt 14, no max-retries configured)\n#3350 2026-11-09T19:47:04Z ERROR index-worker cannot deserialize msg-595676 from partition 2: malformed body near position 1860\n#3504 2026-11-09T19:47:48Z ERROR index-worker failed to process msg-595676 (partition 2, offset 145600): JSON parse error: unexpected token '\\u0000' at position 1860\n#3817 2026-11-09T19:49:23Z ERROR index-worker SyntaxError: Unexpected token \\u0000 in JSON at position 1860 (message msg-595676, catalog.updates[2]@145600)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "until": "19:46:00",
+          "limit": 30
+        },
+        "output": "9 match(es):\n#1474 2026-11-09T19:39:11Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1604 2026-11-09T19:39:41Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2082 2026-11-09T19:41:42Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2307 2026-11-09T19:42:37Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2519 2026-11-09T19:43:30Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2895 2026-11-09T19:45:06Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3017 2026-11-09T19:45:37Z ERROR index-worker SyntaxError: Unexpected token \\u0000 in JSON at position 1860 (message msg-595676, catalog.updates[2]@145600)\n#3054 2026-11-09T19:45:45Z ERROR index-worker handler error for msg-595676 at offset 145600: invalid JSON payload (byte 1860 is NUL)\n#3095 2026-11-09T19:45:57Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1629 samples"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.95,
+              "evidenceLines": [
+                3017,
+                3023,
+                3054,
+                3055,
+                3350,
+                3504,
+                3817
+              ],
+              "reasoning": "Message msg-595676 at catalog.updates partition 2, offset 145600, has a NUL byte at position 1860, so its JSON can't be parsed. index-worker nacks it and gets it redelivered over and over: attempt 14 by 19:45:46, and the log says no max-retries is configured. That blocks partition 2. Lag there climbs from about 1k messages (49s) to more than 13k (up to 774s) after 19:46. Because the worker is just retrying one message, CPU stays normal, which fits the alert. Other noise doesn't fit: status-poller errors come from a deprecated legacy-inventory endpoint, metrics-agent drops samples at its exporter, and a single GC pause comes before the failures without explaining them. I found no deploys."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.04,
+              "evidenceLines": [
+                3054
+              ],
+              "reasoning": "A corrupt payload written by the producer (catalog-svc) could be called a data problem. But what stalls the queue is the consumer jamming on that one message."
+            }
+          ],
+          "recommendedAction": "Move msg-595676 (catalog.updates[2]@145600) to a dead-letter queue, or skip it by committing past that offset, so partition 2 starts draining again. Set a max-retries limit with dead-lettering on index-worker. Then check how catalog-svc produced a payload containing a NUL byte, and re-index that catalog item."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1022,
+      "cacheReadTokens": 14853,
+      "cacheWriteTokens": 6604
+    },
+    "durationMs": 12445,
+    "stopReason": "tool_use"
+  }
+}

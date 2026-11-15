@@ -1,0 +1,167 @@
+{
+  "score": {
+    "incidentId": "ht-028",
+    "difficulty": "hard",
+    "scenario": "data_integrity/partial-migration",
+    "truth": "data_integrity",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.92,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 5,
+      "precision": 0.8333333333333334,
+      "recall": 0.7142857142857143,
+      "f1": 0.7692307692307692
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.0026542250000000005,
+    "durationMs": 9771,
+    "iterations": 5,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 12,
+      "output": 2042,
+      "cacheRead": 31265,
+      "cacheWrite": 10555
+    }
+  },
+  "result": {
+    "incidentId": "ht-028",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.92,
+          "evidenceLines": [
+            3380,
+            3384,
+            3444,
+            3575,
+            3727,
+            3694
+          ],
+          "reasoning": "Order-service migration 0110_add_region_id ran at 03:57:36Z. Step 1 renamed orders.region_id to region_id_old and committed. Step 2 failed on a lock timeout on orders. Because the DDL is non-transactional, step 1 was not rolled back, leaving the schema half-applied. From about 03:58 onward, every query touching orders.region_id fails with 'column does not exist' (postgres #3575, order-service #3727). Order-service then returns 500 on POST /checkout, and api-gateway surfaces that as the 500 rate alert. Checkouts succeeded up to 03:57:55Z, which lines up with the migration. Other errors (ingest-api enrichment connection refused, flag-sync unknown flags, report-cron pandas missing since image 2026.10.2) are unrelated noise. Ingest-gateway 503s are a separate enrichment-svc issue and do not drive checkout."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.3,
+          "evidenceLines": [
+            3380,
+            3444
+          ],
+          "reasoning": "Alternative framing: the migration shipped in an order-service release, so the bad deploy is the trigger. The actual breakage is a schema state left by a partially applied migration, which fits data_integrity better."
+        }
+      ],
+      "recommendedAction": "Restore the orders schema: rename region_id_old back to region_id (or re-add the column and backfill from region_id_old) after confirming no writes depend on the new state. Then roll back or fix order-service migration 0110 so it is transactional or split into idempotent steps. Verify with a checkout canary. Separately, check the enrichment-svc outage (connection refused on 10.38.203.61:9090) and the report-cron pandas dependency missing from image 2026.10.2."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "since": "03:43:00",
+          "until": "03:47:00",
+          "limit": 60
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 60
+        },
+        "output": "67 match(es), showing first 60:\n#1786 2026-10-12T03:50:32Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2192 2026-10-12T03:52:14Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2329 2026-10-12T03:52:50Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2766 2026-10-12T03:54:39Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2943 2026-10-12T03:55:28Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2954 2026-10-12T03:55:31Z ERROR ingest-gateway [t-9558] POST /v1/events 503 8747ms: upstream ingest-api returned 503 Service Unavailable\n#3000 2026-10-12T03:55:44Z ERROR ingest-api [t-9579] POST /enrich to enrichment-svc.internal:9090 failed: Connection refused\n#3095 2026-10-12T03:56:13Z ERROR ingest-api [t-9633] EnrichClient.enrich failed: connect ECONNREFUSED 10.38.203.61:9090 (enrichment-svc.internal)\n#3424 2026-10-12T03:57:48Z ERROR ingest-api [t-9823] dial tcp 10.38.203.61:9090: connect: connection refused (calling enrichment-svc)\n#3439 2026-10-12T03:57:53Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#3463 2026-10-12T03:58:00Z ERROR ingest-api [t-9841] POST /enrich to enrichment-svc.internal:9090 failed: Connection refused\n#3515 2026-10-12T03:58:15Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3554 2026-10-12T03:58:26Z ERROR ingest-gateway [t-9904] POST /v1/events 503 23566ms: upstream ingest-api returned 503 Service Unavailable\n#3575 2026-10-12T03:58:36Z ERROR postgres ERROR:  column orders.region_id does not exist (SQLSTATE 42703)\n#3611 2026-10-12T03:59:01Z ERROR api-gateway [t-9925] POST /checkout 500 27223ms: upstream order-service returned 500 Internal Server Error\n#3620 2026-10-12T03:59:03Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#3655 2026-10-12T03:59:29Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3678 2026-10-12T03:59:44Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3694 2026-10-12T03:59:53Z ERROR postgres statement failed: undefined_column, no attribute region_id on orders\n#3727 2026-10-12T04:00:11Z ERROR order-service [t-9952] query on orders failed for o-6187: column \"region_id\" does not exist\n#3732 2026-10-12T04:00:13Z ERROR ingest-gateway [t-9955] POST /v1/events 503 6937ms: upstream ingest-api returned 503 Service Unavailable\n#3743 2026-10-12T04:00:21Z ERROR api-gateway [t-9958] POST /checkout 500 15113ms: upstream order-service returned 500 Internal Server Error\n#3751 2026-10-12T04:00:27Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#3762 2026-10-12T04:00:34Z ERROR postgres query referencing orders.region_id rejected: the column is not in the current schema\n#3782 2026-10-12T04:00:48Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3797 2026-10-12T04:00:59Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#3822 2026-10-12T04:01:16Z ERROR api-gateway [t-9964] POST /checkout 500 22088ms: upstream order-service returned 500 Internal Server Error\n#3856 2026-10-12T04:01:42Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3882 2026-10-12T04:02:02Z ERROR postgres column \"region_id\" of relation \"orders\" does not exist at character 82\n#3901 2026-10-12T04:02:11Z ERROR order-service [t-9977] query on orders failed for o-6199: column \"region_id\" does not exist\n#3905 2026-10-12T04:02:13Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3940 2026-10-12T04:02:34Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#3951 2026-10-12T04:02:43Z ERROR api-gateway [t-9985] POST /checkout 500 28135ms: upstream order-service returned 500 Internal Server Error\n#4007 2026-10-12T04:03:21Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#4021 2026-10-12T04:03:28Z ERROR api-gateway [t-9999] POST /checkout 500 27401ms: upstream order-service returned 500 Internal Server Error\n#4033 2026-10-12T04:03:38Z ERROR ingest-gateway [t-10003] POST /v1/events 503 7753ms: upstream ingest-api returned 503 Service Unavailable\n#4045 2026-10-12T04:03:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4050 2026-10-12T04:03:47Z ERROR order-service [t-10008] query on orders failed for o-6219: column \"region_id\" does not exist\n#4053 2026-10-12T04:03:50Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#4095 2026-10-12T04:04:20Z ERROR api-gateway [t-10015] POST /checkout 500 12127ms: upstream order-service returned 500 Internal Server Error\n#4119 2026-10-12T04:04:34Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4178 2026-10-12T04:05:09Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#4222 2026-10-12T04:05:37Z ERROR ingest-gateway [t-10049] POST /v1/events 503 19825ms: upstream ingest-api returned 503 Service Unavailable\n#4225 2026-10-12T04:05:38Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#4246 2026-10-12T04:05:51Z ERROR api-gateway [t-10057] POST /checkout 500 29133ms: upstream order-service returned 500 Internal Server Error\n#4271 2026-10-12T04:06:05Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4305 2026-10-12T04:06:26Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#4351 2026-10-12T04:06:59Z ERROR order-service [t-10073] query on orders failed for o-6269: column \"region_id\" does not exist\n#4363 2026-10-12T04:07:06Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#4364 2026-10-12T04:07:06Z ERROR api-gateway [t-10075] POST /checkout 500 18078ms: upstream order-service returned 500 Internal Server Error\n#4394 2026-10-12T04:07:27Z ERROR ingest-gateway [t-10080] POST /v1/events 503 6682ms: upstream ingest-api returned 503 Service Unavailable\n#4416 2026-10-12T04:07:41Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#4435 2026-10-12T04:07:57Z ERROR api-gateway [t-10084] POST /checkout 500 25902ms: upstream order-service returned 500 Internal Server Error\n#4444 2026-10-12T04:08:04Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4480 2026-10-12T04:08:27Z ERROR order-service [t-10094] query on orders failed for o-6281: column \"region_id\" does not exist\n#4511 2026-10-12T04:08:51Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#4541 2026-10-12T04:09:11Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#4568 2026-10-12T04:09:26Z ERROR api-gateway [t-10104] POST /checkout 500 27169ms: upstream order-service returned 500 Internal Server Error\n#4605 2026-10-12T04:09:49Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4648 2026-10-12T04:10:24Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "region_id",
+          "since": "03:43:00",
+          "until": "03:59:00",
+          "limit": 30
+        },
+        "output": "4 match(es):\n#3380 2026-10-12T03:57:36Z INFO order-service migrate: applying 0110_add_region_id (3 steps) to postgres\n#3384 2026-10-12T03:57:38Z INFO order-service migrate: 0110_add_region_id step 1/3 ok: renamed column orders.region_id -> region_id_old\n#3444 2026-10-12T03:57:55Z INFO order-service migrate: 0110_add_region_id step 2/3 failed: lock timeout on orders; step 1 already committed (non-transactional DDL), not rolled back\n#3575 2026-10-12T03:58:36Z ERROR postgres ERROR:  column orders.region_id does not exist (SQLSTATE 42703)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "migration",
+          "limit": 30
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 3444,
+          "before": 3,
+          "after": 6
+        },
+        "output": "#3441 2026-10-12T03:57:54Z INFO order-service [t-9829] order o-6098 accepted, calling payment-svc POST /charge\n#3442 2026-10-12T03:57:54Z INFO payment-svc [t-9829] POST /charge o-6098 ok 32ms\n#3443 2026-10-12T03:57:54Z INFO api-gateway [t-9829] POST /checkout 200 158ms\n#3444 2026-10-12T03:57:55Z INFO order-service migrate: 0110_add_region_id step 2/3 failed: lock timeout on orders; step 1 already committed (non-transactional DDL), not rolled back\n#3445 2026-10-12T03:57:55Z INFO order-service [t-9830] order o-6099 accepted, calling payment-svc POST /charge\n#3446 2026-10-12T03:57:55Z INFO payment-svc [t-9830] POST /charge o-6099 ok 62ms\n#3447 2026-10-12T03:57:55Z INFO api-gateway [t-9830] POST /checkout 200 166ms\n#3448 2026-10-12T03:57:56Z INFO order-service [t-9832] order o-6100 accepted, calling payment-svc POST /charge\n#3449 2026-10-12T03:57:56Z INFO order-consumer processed batch of 45 messages from orders.events (lag 243ms)\n#3450 2026-10-12T03:57:56Z INFO payment-svc [t-9832] POST /charge o-6100 ok 26ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"data_integrity\",\"confidence\":0.92,\"evidenceLines\":[3380,3384,3444,3575,3727,3694],\"reasoning\":\"Order-service migration 0110_add_region_id ran at 03:57:36Z. Step 1 renamed orders.region_id to region_id_old and committed. Step 2 failed on a lock timeout on orders. Because the DDL is non-transactional, step 1 was not rolled back, leaving the schema half-applied. From ~03:58 onward, every query touching orders.region_id fails with 'column does not exist' (postgres #3575, order-service #3727). Order-service then returns 500 on POST /checkout, and api-gateway surfaces that as the 500 rate alert. Checkouts succeeded up to 03:57:55Z, which lines up with the migration. Other errors (ingest-api enrichment connection refused, flag-sync unknown flags, report-cron pandas missing since image 2026.10.2) are unrelated noise. Ingest-gateway 503s are a separate enrichment-svc issue and do not drive checkout.\",\"},{\"rootCause\":\"bad_deploy\",\"confidence\":0.3,\"evidenceLines\":[3380,3444],\"reasoning\":\"Alternative framing: the migration shipped in an order-service release and the bad deploy is the trigger. Still, the actual breakage is a schema/data state left by a partially applied migration, which fits data_integrity better.\"}]",
+          "recommendationAction": "Restore the orders schema: rename region_id_old back to region_id (or re-add the column and backfill from region_id_old) after confirming no writes are depending on the new state. Then roll back or fix order-service migration 0110 so it is transactional or split into idempotent steps. Verify with a checkout canary. Separately, look at the enrichment-svc outage (connection refused on 10.38.203.61:9090) and the report-cron pandas dependency missing from image 2026.10.2."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string; recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.92,
+              "evidenceLines": [
+                3380,
+                3384,
+                3444,
+                3575,
+                3727,
+                3694
+              ],
+              "reasoning": "Order-service migration 0110_add_region_id ran at 03:57:36Z. Step 1 renamed orders.region_id to region_id_old and committed. Step 2 failed on a lock timeout on orders. Because the DDL is non-transactional, step 1 was not rolled back, leaving the schema half-applied. From about 03:58 onward, every query touching orders.region_id fails with 'column does not exist' (postgres #3575, order-service #3727). Order-service then returns 500 on POST /checkout, and api-gateway surfaces that as the 500 rate alert. Checkouts succeeded up to 03:57:55Z, which lines up with the migration. Other errors (ingest-api enrichment connection refused, flag-sync unknown flags, report-cron pandas missing since image 2026.10.2) are unrelated noise. Ingest-gateway 503s are a separate enrichment-svc issue and do not drive checkout."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.3,
+              "evidenceLines": [
+                3380,
+                3444
+              ],
+              "reasoning": "Alternative framing: the migration shipped in an order-service release, so the bad deploy is the trigger. The actual breakage is a schema state left by a partially applied migration, which fits data_integrity better."
+            }
+          ],
+          "recommendedAction": "Restore the orders schema: rename region_id_old back to region_id (or re-add the column and backfill from region_id_old) after confirming no writes depend on the new state. Then roll back or fix order-service migration 0110 so it is transactional or split into idempotent steps. Verify with a checkout canary. Separately, check the enrichment-svc outage (connection refused on 10.38.203.61:9090) and the report-cron pandas dependency missing from image 2026.10.2."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 2042,
+      "cacheReadTokens": 31265,
+      "cacheWriteTokens": 10555
+    },
+    "durationMs": 9771,
+    "stopReason": "tool_use"
+  }
+}

@@ -1,0 +1,194 @@
+{
+  "score": {
+    "incidentId": "ht-004",
+    "difficulty": "hard",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [
+      "resource_exhaustion"
+    ],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 4,
+      "precision": 0.5714285714285714,
+      "recall": 0.6666666666666666,
+      "f1": 0.6153846153846153
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.079842,
+    "durationMs": 15037,
+    "iterations": 5,
+    "toolCalls": 7,
+    "tokens": {
+      "input": 12,
+      "output": 1456,
+      "cacheRead": 25820,
+      "cacheWrite": 9102
+    }
+  },
+  "result": {
+    "incidentId": "ht-004",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.88,
+          "evidenceLines": [
+            2828,
+            2887,
+            2921,
+            3016,
+            3045,
+            3407,
+            3948
+          ],
+          "reasoning": "At 22:04:17 session-cache was restarted after a node replacement with no RDB snapshot, so it came back with 0 keys (#2828). account-svc then saw a 93% miss ratio against a 6% baseline and sent every lookup to accounts-db (#2887). That cache stampede filled accounts-db: 490 of 500 connections in use with CPU at 98–99% (#2921, #3016). After that, account-svc queries on accounts timed out at 5s (#3045 onward), and edge-proxy returned 504s on POST /login starting at 22:06. The trigger, a cold cache, would have been survivable alone. The outage came from the load amplification. Other things in the window don't fit: the template-svc/mailer circuit, the legacy-inventory healthcheck, metrics-agent drops, the disk warning, the TLS cert warning and a single audit_log slow query are all unrelated noise."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.08,
+          "evidenceLines": [
+            3045,
+            2921
+          ],
+          "reasoning": "Another reading is that accounts-db queries simply time out. But the database overload is explained by the stampede after the cache cold start."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.04,
+          "evidenceLines": [
+            2921,
+            3016
+          ],
+          "reasoning": "accounts-db hit its connection and CPU limits, but only because of the abnormal miss load, not ordinary traffic."
+        }
+      ],
+      "recommendedAction": "Shed or rate-limit login traffic and add request coalescing (single-flight) for cache misses in account-svc so accounts-db can recover. Warm session-cache from accounts-db at a controlled rate. Enable RDB/AOF persistence, or a warm-up step, for session-cache node replacements, and add jittered backoff to cache-miss loads."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "session-cache",
+          "since": "22:02:00",
+          "limit": 40
+        },
+        "output": "19 match(es):\n#2389 2026-11-04T22:02:07Z INFO session-cache stats: hits=11517 misses=473 evicted=0 connected_clients=30\n#2415 2026-11-04T22:02:14Z INFO session-cache stats: hits=16051 misses=833 evicted=0 connected_clients=57\n#2442 2026-11-04T22:02:21Z INFO session-cache stats: hits=8641 misses=826 evicted=0 connected_clients=49\n#2478 2026-11-04T22:02:30Z INFO session-cache stats: hits=17620 misses=855 evicted=0 connected_clients=49\n#2496 2026-11-04T22:02:36Z INFO session-cache stats: hits=9389 misses=749 evicted=0 connected_clients=59\n#2523 2026-11-04T22:02:45Z INFO session-cache stats: hits=12761 misses=631 evicted=0 connected_clients=57\n#2556 2026-11-04T22:02:54Z INFO session-cache stats: hits=18536 misses=510 evicted=0 connected_clients=60\n#2581 2026-11-04T22:03:01Z INFO session-cache stats: hits=11703 misses=487 evicted=0 connected_clients=48\n#2605 2026-11-04T22:03:09Z INFO session-cache stats: hits=18952 misses=544 evicted=0 connected_clients=41\n#2626 2026-11-04T22:03:16Z INFO session-cache stats: hits=14978 misses=226 evicted=0 connected_clients=60\n#2649 2026-11-04T22:03:23Z INFO session-cache stats: hits=18755 misses=722 evicted=0 connected_clients=32\n#2664 2026-11-04T22:03:29Z INFO session-cache stats: hits=19265 misses=874 evicted=0 connected_clients=36\n#2697 2026-11-04T22:03:36Z INFO session-cache stats: hits=14162 misses=828 evicted=0 connected_clients=51\n#2716 2026-11-04T22:03:43Z INFO session-cache stats: hits=16023 misses=378 evicted=0 connected_clients=36\n#2735 2026-11-04T22:03:48Z INFO session-cache stats: hits=10240 misses=738 evicted=0 connected_clients=59\n#2768 2026-11-04T22:03:57Z INFO session-cache stats: hits=9841 misses=417 evicted=0 connected_clients=48\n#2797 2026-11-04T22:04:06Z INFO session-cache stats: hits=19407 misses=835 evicted=0 connected_clients=44\n#2823 2026-11-04T22:04:14Z INFO session-cache stats: hits=18082 misses=669 evicted=0 connected_clients=43\n#2828 2026-11-04T22:04:17Z INFO session-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "edge-proxy",
+          "level": "WARN",
+          "limit": 20
+        },
+        "output": "14 match(es):\n#885 2026-11-04T21:55:38Z WARN edge-proxy disk usage 84% on /var/log (threshold 75%)\n#1175 2026-11-04T21:56:51Z WARN edge-proxy TLS certificate for *.internal.example expires in 22 days\n#3049 2026-11-04T22:06:00Z ERROR edge-proxy [t-4511] POST /login 504 14285ms: upstream account-svc timed out\n#3166 2026-11-04T22:06:58Z ERROR edge-proxy [t-4550] POST /login 504 13027ms: upstream account-svc timed out\n#3297 2026-11-04T22:08:03Z ERROR edge-proxy [t-4613] POST /login 504 29995ms: upstream account-svc timed out\n#3479 2026-11-04T22:09:38Z ERROR edge-proxy [t-4692] POST /login 504 19375ms: upstream account-svc timed out\n#3587 2026-11-04T22:10:38Z ERROR edge-proxy [t-4741] POST /login 504 16783ms: upstream account-svc timed out\n#3687 2026-11-04T22:11:24Z ERROR edge-proxy [t-4793] POST /login 504 24454ms: upstream account-svc timed out\n#3869 2026-11-04T22:12:47Z ERROR edge-proxy [t-4885] POST /login 504 18849ms: upstream account-svc timed out\n#4029 2026-11-04T22:13:59Z ERROR edge-proxy [t-4960] POST /login 504 15794ms: upstream account-svc timed out\n#4223 2026-11-04T22:15:31Z ERROR edge-proxy [t-5064] POST /login 504 28729ms: upstream account-svc timed out\n#4330 2026-11-04T22:16:25Z ERROR edge-proxy [t-5118] POST /login 504 13450ms: upstream account-svc timed out\n#4411 2026-11-04T22:17:02Z ERROR edge-proxy [t-5159] POST /login 504 26963ms: upstream account-svc timed out\n#4627 2026-11-04T22:18:47Z ERROR edge-proxy [t-5253] POST /login 504 20747ms: upstream account-svc timed out"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "22:04:00",
+          "until": "22:06:30",
+          "level": "WARN",
+          "limit": 40
+        },
+        "output": "12 match(es):\n#2878 2026-11-04T22:04:41Z ERROR notification-svc [t-4432] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#2897 2026-11-04T22:04:48Z WARN accounts-db slow query 2087ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#2921 2026-11-04T22:05:00Z WARN accounts-db too many clients: 490 of 500 connection slots used, CPU at 98%\n#2935 2026-11-04T22:05:07Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2950 2026-11-04T22:05:12Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1722 samples\n#2957 2026-11-04T22:05:15Z ERROR api-gateway [t-4468] POST /v1/notify 503 8768ms: upstream notification-svc returned 503 Service Unavailable\n#3016 2026-11-04T22:05:44Z WARN accounts-db resource monitor: cpu=99% conns=471/500\n#3019 2026-11-04T22:05:45Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3036 2026-11-04T22:05:53Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 502, re-opening\n#3045 2026-11-04T22:05:59Z ERROR account-svc [t-4506] query on accounts timed out after 5000ms (u-8942)\n#3049 2026-11-04T22:06:00Z ERROR edge-proxy [t-4511] POST /login 504 14285ms: upstream account-svc timed out\n#3111 2026-11-04T22:06:29Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 745 samples"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-4511"
+        },
+        "output": "1 line(s) for t-4511:\n#3049 2026-11-04T22:06:00Z ERROR edge-proxy [t-4511] POST /login 504 14285ms: upstream account-svc timed out"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "account-svc",
+          "since": "22:04:10",
+          "until": "22:05:00",
+          "limit": 30
+        },
+        "output": "24 match(es):\n#2813 2026-11-04T22:04:11Z INFO account-svc [t-4399] user u-8866 accepted, calling auth-svc POST /tokens\n#2817 2026-11-04T22:04:12Z INFO account-svc [t-4402] user u-8869 accepted, calling auth-svc POST /tokens\n#2822 2026-11-04T22:04:14Z INFO account-svc [t-4405] user u-8870 accepted, calling auth-svc POST /tokens\n#2825 2026-11-04T22:04:15Z INFO account-svc [t-4407] user u-8873 accepted, calling auth-svc POST /tokens\n#2833 2026-11-04T22:04:19Z INFO account-svc [t-4409] user u-8876 accepted, calling auth-svc POST /tokens\n#2834 2026-11-04T22:04:19Z DEBUG account-svc GC pause 9ms (young), heap 32%\n#2837 2026-11-04T22:04:21Z INFO account-svc [t-4412] user u-8877 accepted, calling auth-svc POST /tokens\n#2841 2026-11-04T22:04:22Z INFO account-svc [t-4416] user u-8879 accepted, calling auth-svc POST /tokens\n#2850 2026-11-04T22:04:27Z INFO account-svc [t-4417] user u-8882 accepted, calling auth-svc POST /tokens\n#2855 2026-11-04T22:04:29Z INFO account-svc [t-4418] user u-8883 accepted, calling auth-svc POST /tokens\n#2858 2026-11-04T22:04:30Z DEBUG account-svc GC pause 15ms (young), heap 34%\n#2865 2026-11-04T22:04:32Z INFO account-svc [t-4422] user u-8884 accepted, calling auth-svc POST /tokens\n#2872 2026-11-04T22:04:37Z INFO account-svc [t-4426] user u-8886 accepted, calling auth-svc POST /tokens\n#2875 2026-11-04T22:04:40Z INFO account-svc [t-4428] user u-8889 accepted, calling auth-svc POST /tokens\n#2880 2026-11-04T22:04:42Z DEBUG account-svc GC pause 8ms (young), heap 34%\n#2886 2026-11-04T22:04:45Z INFO account-svc [t-4435] user u-8892 accepted, calling auth-svc POST /tokens\n#2887 2026-11-04T22:04:45Z INFO account-svc session-cache miss ratio 93% over last 30s (baseline 6%), loading from accounts-db\n#2891 2026-11-04T22:04:46Z INFO account-svc [t-4436] user u-8893 accepted, calling auth-svc POST /tokens\n#2895 2026-11-04T22:04:47Z INFO account-svc [t-4438] user u-8895 accepted, calling auth-svc POST /tokens\n#2900 2026-11-04T22:04:49Z INFO account-svc [t-4439] user u-8896 accepted, calling auth-svc POST /tokens\n#2902 2026-11-04T22:04:50Z INFO account-svc [t-4440] user u-8897 accepted, calling auth-svc POST /tokens\n#2907 2026-11-04T22:04:51Z INFO account-svc [t-4442] user u-8898 accepted, calling auth-svc POST /tokens\n#2912 2026-11-04T22:04:52Z INFO account-svc [t-4445] user u-8900 accepted, calling auth-svc POST /tokens\n#2916 2026-11-04T22:04:57Z DEBUG account-svc GC pause 11ms (young), heap 34%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "audit_log",
+          "limit": 10
+        },
+        "output": "1 match(es):\n#2897 2026-11-04T22:04:48Z WARN accounts-db slow query 2087ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "account-svc",
+          "level": "ERROR"
+        },
+        "output": "5 match(es):\n#3045 2026-11-04T22:05:59Z ERROR account-svc [t-4506] query on accounts timed out after 5000ms (u-8942)\n#3407 2026-11-04T22:09:02Z ERROR account-svc [t-4661] query on accounts timed out after 5000ms (u-9061)\n#3948 2026-11-04T22:13:24Z ERROR account-svc [t-4919] query on accounts timed out after 5000ms (u-9251)\n#4254 2026-11-04T22:15:46Z ERROR account-svc [t-5080] query on accounts timed out after 5000ms (u-9370)\n#4341 2026-11-04T22:16:28Z ERROR account-svc [t-5125] query on accounts timed out after 5000ms (u-9401)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.88,
+              "evidenceLines": [
+                2828,
+                2887,
+                2921,
+                3016,
+                3045,
+                3407,
+                3948
+              ],
+              "reasoning": "At 22:04:17 session-cache was restarted after a node replacement with no RDB snapshot, so it came back with 0 keys (#2828). account-svc then saw a 93% miss ratio against a 6% baseline and sent every lookup to accounts-db (#2887). That cache stampede filled accounts-db: 490 of 500 connections in use with CPU at 98–99% (#2921, #3016). After that, account-svc queries on accounts timed out at 5s (#3045 onward), and edge-proxy returned 504s on POST /login starting at 22:06. The trigger, a cold cache, would have been survivable alone. The outage came from the load amplification. Other things in the window don't fit: the template-svc/mailer circuit, the legacy-inventory healthcheck, metrics-agent drops, the disk warning, the TLS cert warning and a single audit_log slow query are all unrelated noise."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.08,
+              "evidenceLines": [
+                3045,
+                2921
+              ],
+              "reasoning": "Another reading is that accounts-db queries simply time out. But the database overload is explained by the stampede after the cache cold start."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.04,
+              "evidenceLines": [
+                2921,
+                3016
+              ],
+              "reasoning": "accounts-db hit its connection and CPU limits, but only because of the abnormal miss load, not ordinary traffic."
+            }
+          ],
+          "recommendedAction": "Shed or rate-limit login traffic and add request coalescing (single-flight) for cache misses in account-svc so accounts-db can recover. Warm session-cache from accounts-db at a controlled rate. Enable RDB/AOF persistence, or a warm-up step, for session-cache node replacements, and add jittered backoff to cache-miss loads."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 7,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1456,
+      "cacheReadTokens": 25820,
+      "cacheWriteTokens": 9102
+    },
+    "durationMs": 15037,
+    "stopReason": "tool_use"
+  }
+}

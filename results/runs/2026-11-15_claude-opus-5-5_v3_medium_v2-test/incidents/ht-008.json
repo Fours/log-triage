@@ -1,0 +1,194 @@
+{
+  "score": {
+    "incidentId": "ht-008",
+    "difficulty": "hard",
+    "scenario": "external_outage/provider-5xx",
+    "truth": "external_outage",
+    "acceptable": [
+      "dependency_timeout"
+    ],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 0.8571428571428571,
+      "f1": 0.923076923076923
+    },
+    "herringsCited": 0,
+    "secondaryCited": 2,
+    "costUsd": 0.0889322,
+    "durationMs": 19139,
+    "iterations": 5,
+    "toolCalls": 7,
+    "tokens": {
+      "input": 12,
+      "output": 1570,
+      "cacheRead": 30371,
+      "cacheWrite": 10282
+    }
+  },
+  "result": {
+    "incidentId": "ht-008",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.85,
+          "evidenceLines": [
+            3460,
+            3522,
+            3575,
+            3611,
+            3877,
+            4756
+          ],
+          "reasoning": "The first error on the ingest path is at 19:11:22: the third-party geo-IP provider (api.geoip.example) answered enrichment-svc with 503 Service Unavailable (#3460). It kept failing after that with 502s (#3575), 10s timeouts (#3522, #3611), and half-open probes that also got 503 or 502 (#3877, #4756). At 19:12:56 the circuit breaker opened at a 96% failure rate. From then on enrichment-svc returned 503 (circuit open) to ingest-api, ingest-api returned 503 to ingest-gateway, and that is the 503 rate on POST /v1/events that paged. The provider mostly sent back 5xx errors and the breaker probes kept failing, so this reads as the provider being down. The timeouts alone would point to dependency_timeout. I found no deploy and no internal fault that comes before 19:11:22."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.1,
+          "evidenceLines": [
+            3522,
+            3611
+          ],
+          "reasoning": "Some geo-IP calls hung until the 10s timeout, and that slowness may have added to the failure rate that opened the breaker."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.05,
+          "evidenceLines": [
+            4089,
+            4155,
+            4186
+          ],
+          "reasoning": "Starting at 19:16, accounts-db reports that column status_v2 is missing, which breaks /login through account-svc. This begins after the ingest failures and is on a different path, so it is a separate problem and not the cause of the /v1/events 503s. It still needs its own follow-up."
+        }
+      ],
+      "recommendedAction": "Check the geo-IP provider's status and contact the vendor. While it's down, have enrichment-svc skip geo enrichment (fail open: accept events without geo data, or with cached geo data) so ingest-api stops returning 503s. Look at a backup provider. Separately, look into the missing accounts.status_v2 column that is breaking /login. That looks like a migration that wasn't fully applied, or code that went out before its migration ran."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 60
+        },
+        "output": "70 match(es), showing first 60:\n#1472 2026-11-14T19:03:07Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#1847 2026-11-14T19:04:40Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#1993 2026-11-14T19:05:19Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2403 2026-11-14T19:06:59Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#2693 2026-11-14T19:08:13Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#2893 2026-11-14T19:09:03Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3283 2026-11-14T19:10:39Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3447 2026-11-14T19:11:18Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#3460 2026-11-14T19:11:22Z ERROR enrichment-svc [t-4210] geo-IP provider error response: status=503 body=\"Service Unavailable\" id=85d0e2e\n#3462 2026-11-14T19:11:23Z ERROR ingest-gateway [t-4214] POST /v1/events 503 21962ms: upstream ingest-api returned 503 Service Unavailable\n#3490 2026-11-14T19:11:36Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 194 events (attempt 1/5, then dropped)\n#3522 2026-11-14T19:11:50Z ERROR enrichment-svc [t-4246] geo-IP provider call FAILED: upstream timeout after 10000ms POST https://api.geoip.example/v1/lookup\n#3575 2026-11-14T19:12:17Z ERROR enrichment-svc [t-4267] upstream answered 502, treating the call as failed (2341eb0)\n#3611 2026-11-14T19:12:34Z ERROR enrichment-svc [t-4279] call to the geo-IP provider aborted: no response within 10s\n#3612 2026-11-14T19:12:35Z ERROR ingest-gateway [t-4282] POST /v1/events 503 17405ms: upstream ingest-api returned 503 Service Unavailable\n#3658 2026-11-14T19:12:55Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#3672 2026-11-14T19:12:59Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 360 events (attempt 2/5, then dropped)\n#3732 2026-11-14T19:13:25Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3754 2026-11-14T19:13:36Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 79 events (attempt 3/5, then dropped)\n#3756 2026-11-14T19:13:37Z ERROR ingest-gateway [t-4335] POST /v1/events 503 13989ms: upstream ingest-api returned 503 Service Unavailable\n#3795 2026-11-14T19:13:55Z ERROR ingest-api [t-4350] EnrichClient.enrich failed: enrichment-svc returned 503 (circuit open)\n#3808 2026-11-14T19:14:01Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 196 events (attempt 4/5, then dropped)\n#3885 2026-11-14T19:14:33Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#3970 2026-11-14T19:15:10Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 183 events (attempt 5/5, then dropped)\n#3971 2026-11-14T19:15:10Z ERROR ingest-gateway [t-4409] POST /v1/events 503 12280ms: upstream ingest-api returned 503 Service Unavailable\n#4040 2026-11-14T19:15:43Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 52 events (attempt 1/5, then dropped)\n#4089 2026-11-14T19:16:14Z ERROR accounts-db column \"status_v2\" of relation \"accounts\" does not exist at character 95\n#4093 2026-11-14T19:16:14Z ERROR ingest-api [t-4454] EnrichClient.enrich failed: enrichment-svc returned 503 (circuit open)\n#4102 2026-11-14T19:16:21Z ERROR ingest-gateway [t-4460] POST /v1/events 503 27875ms: upstream ingest-api returned 503 Service Unavailable\n#4120 2026-11-14T19:16:32Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 146 events (attempt 2/5, then dropped)\n#4128 2026-11-14T19:16:36Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#4141 2026-11-14T19:16:43Z ERROR edge-proxy [t-4469] POST /login 500 6889ms: upstream account-svc returned 500 Internal Server Error\n#4155 2026-11-14T19:16:50Z ERROR account-svc [t-4475] query on accounts failed for u-7258: column \"status_v2\" does not exist\n#4161 2026-11-14T19:16:55Z ERROR ingest-gateway [t-4476] POST /v1/events 503 13040ms: upstream ingest-api returned 503 Service Unavailable\n#4186 2026-11-14T19:17:08Z ERROR accounts-db ERROR:  column accounts.status_v2 does not exist (SQLSTATE 42703)\n#4192 2026-11-14T19:17:14Z ERROR edge-proxy [t-4487] POST /login 500 18317ms: upstream account-svc returned 500 Internal Server Error\n#4231 2026-11-14T19:17:32Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 396 events (attempt 3/5, then dropped)\n#4250 2026-11-14T19:17:44Z ERROR ingest-gateway [t-4504] POST /v1/events 503 26958ms: upstream ingest-api returned 503 Service Unavailable\n#4254 2026-11-14T19:17:48Z ERROR ingest-api [t-4508] EnrichClient.enrich failed: enrichment-svc returned 503 (circuit open)\n#4266 2026-11-14T19:17:55Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#4287 2026-11-14T19:18:06Z ERROR accounts-db statement failed: undefined_column, no attribute status_v2 on accounts\n#4304 2026-11-14T19:18:17Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#4327 2026-11-14T19:18:31Z ERROR edge-proxy [t-4529] POST /login 500 26235ms: upstream account-svc returned 500 Internal Server Error\n#4328 2026-11-14T19:18:33Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 152 events (attempt 4/5, then dropped)\n#4334 2026-11-14T19:18:35Z ERROR account-svc [t-4532] query on accounts failed for u-7299: column \"status_v2\" does not exist\n#4389 2026-11-14T19:19:05Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 300 events (attempt 5/5, then dropped)\n#4415 2026-11-14T19:19:26Z ERROR edge-proxy [t-4554] POST /login 500 11473ms: upstream account-svc returned 500 Internal Server Error\n#4424 2026-11-14T19:19:33Z ERROR accounts-db column \"status_v2\" of relation \"accounts\" does not exist at character 100\n#4433 2026-11-14T19:19:38Z ERROR ingest-gateway [t-4555] POST /v1/events 503 24834ms: upstream ingest-api returned 503 Service Unavailable\n#4462 2026-11-14T19:19:54Z ERROR ingest-api [t-4572] EnrichClient.enrich failed: enrichment-svc returned 503 (circuit open)\n#4465 2026-11-14T19:19:55Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 102 events (attempt 1/5, then dropped)\n#4477 2026-11-14T19:20:04Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#4493 2026-11-14T19:20:14Z ERROR ingest-gateway [t-4579] POST /v1/events 503 8879ms: upstream ingest-api returned 503 Service Unavailable\n#4507 2026-11-14T19:20:20Z ERROR account-svc [t-4586] query on accounts failed for u-7333: column \"status_v2\" does not exist\n#4547 2026-11-14T19:20:35Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#4553 2026-11-14T19:20:40Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 375 events (attempt 2/5, then dropped)\n#4570 2026-11-14T19:20:49Z ERROR ingest-api [t-4619] EnrichClient.enrich failed: enrichment-svc returned 503 (circuit open)\n#4584 2026-11-14T19:20:55Z ERROR edge-proxy [t-4627] POST /login 500 27842ms: upstream account-svc returned 500 Internal Server Error\n#4590 2026-11-14T19:21:01Z ERROR ingest-gateway [t-4628] POST /v1/events 503 18001ms: upstream ingest-api returned 503 Service Unavailable\n#4660 2026-11-14T19:21:43Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 250 events (attempt 3/5, then dropped)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "enrichment-svc",
+          "level": "WARN",
+          "limit": 30
+        },
+        "output": "7 match(es):\n#3460 2026-11-14T19:11:22Z ERROR enrichment-svc [t-4210] geo-IP provider error response: status=503 body=\"Service Unavailable\" id=85d0e2e\n#3522 2026-11-14T19:11:50Z ERROR enrichment-svc [t-4246] geo-IP provider call FAILED: upstream timeout after 10000ms POST https://api.geoip.example/v1/lookup\n#3575 2026-11-14T19:12:17Z ERROR enrichment-svc [t-4267] upstream answered 502, treating the call as failed (2341eb0)\n#3611 2026-11-14T19:12:34Z ERROR enrichment-svc [t-4279] call to the geo-IP provider aborted: no response within 10s\n#3661 2026-11-14T19:12:56Z WARN enrichment-svc circuit breaker OPEN for api.geoip.example (failure rate 96% over 20 calls), failing fast for 30s\n#3877 2026-11-14T19:14:29Z WARN enrichment-svc circuit breaker half-open probe to api.geoip.example failed: 503, re-opening\n#4756 2026-11-14T19:22:41Z WARN enrichment-svc circuit breaker half-open probe to api.geoip.example failed: 502, re-opening"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "geo",
+          "until": "19:11:30",
+          "limit": 30
+        },
+        "output": "1 match(es):\n#3460 2026-11-14T19:11:22Z ERROR enrichment-svc [t-4210] geo-IP provider error response: status=503 body=\"Service Unavailable\" id=85d0e2e"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "status-poller",
+          "since": "19:05:00",
+          "query": "geo",
+          "limit": 20
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 20
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "status-poller",
+          "since": "19:08:00",
+          "until": "19:16:00",
+          "limit": 15
+        },
+        "output": "48 match(es), showing first 15:\n#2675 2026-11-14T19:08:08Z INFO status-poller poll cycle complete: 36 targets checked in 314ms\n#2697 2026-11-14T19:08:14Z INFO status-poller poll cycle complete: 38 targets checked in 530ms\n#2735 2026-11-14T19:08:22Z INFO status-poller poll cycle complete: 28 targets checked in 632ms\n#2772 2026-11-14T19:08:32Z INFO status-poller poll cycle complete: 24 targets checked in 667ms\n#2809 2026-11-14T19:08:43Z INFO status-poller poll cycle complete: 29 targets checked in 393ms\n#2866 2026-11-14T19:08:57Z INFO status-poller poll cycle complete: 33 targets checked in 626ms\n#2898 2026-11-14T19:09:03Z INFO status-poller poll cycle complete: 37 targets checked in 746ms\n#2942 2026-11-14T19:09:15Z INFO status-poller poll cycle complete: 33 targets checked in 772ms\n#2996 2026-11-14T19:09:27Z INFO status-poller poll cycle complete: 19 targets checked in 702ms\n#3045 2026-11-14T19:09:39Z INFO status-poller poll cycle complete: 18 targets checked in 899ms\n#3093 2026-11-14T19:09:51Z INFO status-poller poll cycle complete: 36 targets checked in 535ms\n#3121 2026-11-14T19:09:58Z INFO status-poller poll cycle complete: 31 targets checked in 657ms\n#3164 2026-11-14T19:10:08Z INFO status-poller poll cycle complete: 18 targets checked in 435ms\n#3220 2026-11-14T19:10:22Z INFO status-poller poll cycle complete: 30 targets checked in 598ms\n#3268 2026-11-14T19:10:35Z INFO status-poller poll cycle complete: 27 targets checked in 496ms"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-4210"
+        },
+        "output": "1 line(s) for t-4210:\n#3460 2026-11-14T19:11:22Z ERROR enrichment-svc [t-4210] geo-IP provider error response: status=503 body=\"Service Unavailable\" id=85d0e2e"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.85,
+              "evidenceLines": [
+                3460,
+                3522,
+                3575,
+                3611,
+                3877,
+                4756
+              ],
+              "reasoning": "The first error on the ingest path is at 19:11:22: the third-party geo-IP provider (api.geoip.example) answered enrichment-svc with 503 Service Unavailable (#3460). It kept failing after that with 502s (#3575), 10s timeouts (#3522, #3611), and half-open probes that also got 503 or 502 (#3877, #4756). At 19:12:56 the circuit breaker opened at a 96% failure rate. From then on enrichment-svc returned 503 (circuit open) to ingest-api, ingest-api returned 503 to ingest-gateway, and that is the 503 rate on POST /v1/events that paged. The provider mostly sent back 5xx errors and the breaker probes kept failing, so this reads as the provider being down. The timeouts alone would point to dependency_timeout. I found no deploy and no internal fault that comes before 19:11:22."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.1,
+              "evidenceLines": [
+                3522,
+                3611
+              ],
+              "reasoning": "Some geo-IP calls hung until the 10s timeout, and that slowness may have added to the failure rate that opened the breaker."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.05,
+              "evidenceLines": [
+                4089,
+                4155,
+                4186
+              ],
+              "reasoning": "Starting at 19:16, accounts-db reports that column status_v2 is missing, which breaks /login through account-svc. This begins after the ingest failures and is on a different path, so it is a separate problem and not the cause of the /v1/events 503s. It still needs its own follow-up."
+            }
+          ],
+          "recommendedAction": "Check the geo-IP provider's status and contact the vendor. While it's down, have enrichment-svc skip geo enrichment (fail open: accept events without geo data, or with cached geo data) so ingest-api stops returning 503s. Look at a backup provider. Separately, look into the missing accounts.status_v2 column that is breaking /login. That looks like a migration that wasn't fully applied, or code that went out before its migration ran."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 7,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1570,
+      "cacheReadTokens": 30371,
+      "cacheWriteTokens": 10282
+    },
+    "durationMs": 19139,
+    "stopReason": "tool_use"
+  }
+}

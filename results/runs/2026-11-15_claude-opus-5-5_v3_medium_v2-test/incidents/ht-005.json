@@ -1,0 +1,187 @@
+{
+  "score": {
+    "incidentId": "ht-005",
+    "difficulty": "hard",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 8,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.0920452,
+    "durationMs": 18218,
+    "iterations": 5,
+    "toolCalls": 8,
+    "tokens": {
+      "input": 12,
+      "output": 1615,
+      "cacheRead": 28436,
+      "cacheWrite": 10802
+    }
+  },
+  "result": {
+    "incidentId": "ht-005",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.9,
+          "evidenceLines": [
+            2707,
+            3535,
+            3801,
+            3805,
+            4275,
+            4276,
+            4635,
+            4640
+          ],
+          "reasoning": "ingest-api's old gen keeps growing and full GC can't reclaim it: heap is 78% after full GC at 01:01:11 and 87% at 01:04:40, with GC overhead climbing. The first OutOfMemoryError comes at 01:05:46 and the container is OOMKilled right after. It then crash-loops: each restart warms eventCache, runs out of heap while growing eventCache (64MB requested against a 1536MB max) and gets OOMKilled again (restarts 2 and 3). Each time a pod dies, ingest-gateway returns 502 'connection reset (no healthy upstream)' on POST /v1/events. The first 502 is at 01:06:08, about 20s after the first OOM, and they keep coming in bursts that line up with the crash/restart cycle. No ingest-api release appears in the window; v1.9.1 shows only at restarts. The report-cron pandas deploy error, the event-processor rollout, the TLS expiry warning and the single slow enrichment call don't touch this path."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.07,
+          "evidenceLines": [
+            3895,
+            4336
+          ],
+          "reasoning": "ingest-api v1.9.1 may have brought in the eventCache growth, but the rollout itself isn't in this window, so I can't confirm it."
+        }
+      ],
+      "recommendedAction": "Raise the ingest-api memory limit or heap max for now, or cap/turn off eventCache warming, so the pods stop crash-looping. Then analyse /tmp/heap.hprof to find the unbounded eventCache growth, and add a size or eviction limit. Check whether v1.9.1 is where the cache behaviour changed, and roll back if it is."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-gateway",
+          "level": "WARN",
+          "limit": 40
+        },
+        "output": "14 match(es):\n#2069 2026-10-20T00:58:32Z WARN ingest-gateway TLS certificate for *.internal.example expires in 19 days\n#3636 2026-10-20T01:05:05Z WARN ingest-gateway rate limiter: client key k-6873 throttled (429), 85 req/s over quota\n#3866 2026-10-20T01:06:08Z ERROR ingest-gateway [t-5697] POST /v1/events 502 25162ms: upstream ingest-api connection reset (no healthy upstream)\n#4097 2026-10-20T01:07:34Z ERROR ingest-gateway [t-5816] POST /v1/events 502 7508ms: upstream ingest-api connection reset (no healthy upstream)\n#4162 2026-10-20T01:07:55Z ERROR ingest-gateway [t-5858] POST /v1/events 502 16789ms: upstream ingest-api connection reset (no healthy upstream)\n#4283 2026-10-20T01:08:40Z ERROR ingest-gateway [t-5918] POST /v1/events 502 19636ms: upstream ingest-api connection reset (no healthy upstream)\n#4521 2026-10-20T01:10:13Z ERROR ingest-gateway [t-6027] POST /v1/events 502 23209ms: upstream ingest-api connection reset (no healthy upstream)\n#4642 2026-10-20T01:11:08Z ERROR ingest-gateway [t-6089] POST /v1/events 502 24332ms: upstream ingest-api connection reset (no healthy upstream)\n#4729 2026-10-20T01:11:51Z ERROR ingest-gateway [t-6122] POST /v1/events 502 19954ms: upstream ingest-api connection reset (no healthy upstream)\n#4801 2026-10-20T01:12:22Z ERROR ingest-gateway [t-6150] POST /v1/events 502 22489ms: upstream ingest-api connection reset (no healthy upstream)\n#4973 2026-10-20T01:13:37Z ERROR ingest-gateway [t-6227] POST /v1/events 502 7605ms: upstream ingest-api connection reset (no healthy upstream)\n#5106 2026-10-20T01:14:34Z ERROR ingest-gateway [t-6298] POST /v1/events 502 16289ms: upstream ingest-api connection reset (no healthy upstream)\n#5255 2026-10-20T01:15:44Z ERROR ingest-gateway [t-6364] POST /v1/events 502 22353ms: upstream ingest-api connection reset (no healthy upstream)\n#5416 2026-10-20T01:16:50Z ERROR ingest-gateway [t-6452] POST /v1/events 502 26863ms: upstream ingest-api connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "level": "WARN",
+          "limit": 40
+        },
+        "output": "7 match(es):\n#1880 2026-10-20T00:57:42Z WARN ingest-api [t-4405] EnrichClient.enrich slow: 2561ms calling enrichment-svc POST /enrich (soft threshold 2000ms)\n#3801 2026-10-20T01:05:46Z FATAL ingest-api Exception in thread \"worker-2\" java.lang.OutOfMemoryError: Java heap space\n#3805 2026-10-20T01:05:47Z ERROR ingest-api oom-killer: killed process 1 in ingest-api-2, cgroup memory limit reached (restart 1)\n#4275 2026-10-20T01:08:37Z FATAL ingest-api fatal: heap exhausted while growing eventCache (requested 64MB, max 1536MB)\n#4276 2026-10-20T01:08:38Z ERROR ingest-api container ingest-api-0 killed: OOMKilled (memory limit 2Gi), restart count 2\n#4635 2026-10-20T01:11:07Z FATAL ingest-api JVM terminating after OutOfMemoryError in eventCache.put; heap dump written to /tmp/heap.hprof\n#4640 2026-10-20T01:11:08Z ERROR ingest-api kubelet: ingest-api-0 terminated (reason OOMKilled, exit code 137), restarts=3"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "query": "heap",
+          "limit": 30
+        },
+        "output": "118 match(es), showing first 30:\n#14 2026-10-20T00:50:04Z DEBUG ingest-api GC pause 6ms (young), heap 42%\n#58 2026-10-20T00:50:15Z DEBUG ingest-api GC pause 15ms (young), heap 48%\n#99 2026-10-20T00:50:26Z DEBUG ingest-api GC pause 21ms (young), heap 33%\n#181 2026-10-20T00:50:44Z DEBUG ingest-api GC pause 17ms (young), heap 40%\n#224 2026-10-20T00:50:55Z DEBUG ingest-api GC pause 5ms (young), heap 31%\n#275 2026-10-20T00:51:08Z DEBUG ingest-api GC pause 16ms (young), heap 33%\n#335 2026-10-20T00:51:23Z DEBUG ingest-api GC pause 19ms (young), heap 31%\n#390 2026-10-20T00:51:35Z DEBUG ingest-api GC pause 10ms (young), heap 31%\n#437 2026-10-20T00:51:47Z DEBUG ingest-api GC pause 9ms (young), heap 43%\n#502 2026-10-20T00:52:06Z DEBUG ingest-api GC pause 6ms (young), heap 32%\n#572 2026-10-20T00:52:23Z DEBUG ingest-api GC pause 17ms (young), heap 37%\n#634 2026-10-20T00:52:39Z DEBUG ingest-api GC pause 4ms (young), heap 46%\n#675 2026-10-20T00:52:49Z DEBUG ingest-api GC pause 18ms (young), heap 38%\n#737 2026-10-20T00:53:03Z DEBUG ingest-api GC pause 20ms (young), heap 48%\n#795 2026-10-20T00:53:18Z DEBUG ingest-api GC pause 5ms (young), heap 44%\n#864 2026-10-20T00:53:35Z DEBUG ingest-api GC pause 8ms (young), heap 48%\n#921 2026-10-20T00:53:47Z DEBUG ingest-api GC pause 14ms (young), heap 34%\n#957 2026-10-20T00:53:57Z DEBUG ingest-api GC pause 7ms (young), heap 45%\n#1021 2026-10-20T00:54:12Z DEBUG ingest-api GC pause 10ms (young), heap 32%\n#1069 2026-10-20T00:54:23Z DEBUG ingest-api GC pause 15ms (young), heap 45%\n#1141 2026-10-20T00:54:41Z DEBUG ingest-api GC pause 12ms (young), heap 42%\n#1208 2026-10-20T00:54:57Z DEBUG ingest-api GC pause 21ms (young), heap 43%\n#1264 2026-10-20T00:55:11Z DEBUG ingest-api GC pause 9ms (young), heap 33%\n#1307 2026-10-20T00:55:22Z DEBUG ingest-api GC pause 17ms (young), heap 48%\n#1377 2026-10-20T00:55:40Z DEBUG ingest-api GC pause 19ms (young), heap 36%\n#1433 2026-10-20T00:55:53Z DEBUG ingest-api GC pause 16ms (young), heap 46%\n#1489 2026-10-20T00:56:06Z DEBUG ingest-api GC pause 11ms (young), heap 42%\n#1562 2026-10-20T00:56:22Z DEBUG ingest-api GC pause 24ms (young), heap 32%\n#1607 2026-10-20T00:56:35Z DEBUG ingest-api GC pause 12ms (young), heap 44%\n#1659 2026-10-20T00:56:48Z DEBUG ingest-api GC pause 10ms (young), heap 31%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 30
+        },
+        "output": "16 match(es):\n#1924 2026-10-20T00:57:54Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2276 2026-10-20T00:59:24Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2514 2026-10-20T01:00:21Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2943 2026-10-20T01:02:10Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3118 2026-10-20T01:02:56Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3413 2026-10-20T01:04:10Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3521 2026-10-20T01:04:37Z INFO event-processor deploy: rolling out event-processor v4.14.6 (build 23786b7)\n#3780 2026-10-20T01:05:40Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4021 2026-10-20T01:07:07Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4230 2026-10-20T01:08:21Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4453 2026-10-20T01:09:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4577 2026-10-20T01:10:40Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4724 2026-10-20T01:11:49Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4921 2026-10-20T01:13:16Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#5231 2026-10-20T01:15:32Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#5319 2026-10-20T01:16:10Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "query": "cache",
+          "limit": 30
+        },
+        "output": "5 match(es):\n#3895 2026-10-20T01:06:19Z INFO ingest-api started ingest-api v1.9.1, pid 1, warming event cache\n#4275 2026-10-20T01:08:37Z FATAL ingest-api fatal: heap exhausted while growing eventCache (requested 64MB, max 1536MB)\n#4336 2026-10-20T01:08:59Z INFO ingest-api started ingest-api v1.9.1, pid 1, warming event cache\n#4635 2026-10-20T01:11:07Z FATAL ingest-api JVM terminating after OutOfMemoryError in eventCache.put; heap dump written to /tmp/heap.hprof\n#4707 2026-10-20T01:11:40Z INFO ingest-api started ingest-api v1.9.1, pid 1, warming event cache"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "query": "heap",
+          "since": "01:01:00",
+          "until": "01:06:00",
+          "limit": 30
+        },
+        "output": "23 match(es):\n#2685 2026-10-20T01:01:06Z DEBUG ingest-api GC pause 15ms (young), heap 33%\n#2707 2026-10-20T01:01:11Z INFO ingest-api heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#2755 2026-10-20T01:01:24Z DEBUG ingest-api GC pause 5ms (young), heap 41%\n#2806 2026-10-20T01:01:36Z DEBUG ingest-api GC pause 22ms (young), heap 43%\n#2848 2026-10-20T01:01:47Z DEBUG ingest-api GC pause 23ms (young), heap 48%\n#2893 2026-10-20T01:01:58Z DEBUG ingest-api GC pause 22ms (young), heap 31%\n#2958 2026-10-20T01:02:14Z DEBUG ingest-api GC pause 4ms (young), heap 30%\n#2995 2026-10-20T01:02:25Z DEBUG ingest-api GC pause 10ms (young), heap 32%\n#3056 2026-10-20T01:02:40Z DEBUG ingest-api GC pause 19ms (young), heap 33%\n#3112 2026-10-20T01:02:55Z DEBUG ingest-api GC pause 18ms (young), heap 44%\n#3158 2026-10-20T01:03:07Z DEBUG ingest-api GC pause 24ms (young), heap 42%\n#3215 2026-10-20T01:03:22Z DEBUG ingest-api GC pause 24ms (young), heap 41%\n#3297 2026-10-20T01:03:41Z DEBUG ingest-api GC pause 15ms (young), heap 33%\n#3353 2026-10-20T01:03:55Z DEBUG ingest-api GC pause 12ms (young), heap 41%\n#3394 2026-10-20T01:04:07Z DEBUG ingest-api GC pause 25ms (young), heap 44%\n#3457 2026-10-20T01:04:21Z DEBUG ingest-api GC pause 24ms (young), heap 45%\n#3534 2026-10-20T01:04:40Z DEBUG ingest-api GC pause 13ms (young), heap 34%\n#3535 2026-10-20T01:04:40Z INFO ingest-api heap usage 87% after full GC (old gen not reclaimed), GC overhead 35%\n#3586 2026-10-20T01:04:52Z DEBUG ingest-api GC pause 7ms (young), heap 40%\n#3651 2026-10-20T01:05:08Z DEBUG ingest-api GC pause 4ms (young), heap 48%\n#3721 2026-10-20T01:05:26Z DEBUG ingest-api GC pause 8ms (young), heap 38%\n#3795 2026-10-20T01:05:44Z DEBUG ingest-api GC pause 18ms (young), heap 42%\n#3801 2026-10-20T01:05:46Z FATAL ingest-api Exception in thread \"worker-2\" java.lang.OutOfMemoryError: Java heap space"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "v1.9",
+          "limit": 10
+        },
+        "output": "3 match(es):\n#3895 2026-10-20T01:06:19Z INFO ingest-api started ingest-api v1.9.1, pid 1, warming event cache\n#4336 2026-10-20T01:08:59Z INFO ingest-api started ingest-api v1.9.1, pid 1, warming event cache\n#4707 2026-10-20T01:11:40Z INFO ingest-api started ingest-api v1.9.1, pid 1, warming event cache"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "query": "full GC",
+          "limit": 10
+        },
+        "output": "2 match(es):\n#2707 2026-10-20T01:01:11Z INFO ingest-api heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#3535 2026-10-20T01:04:40Z INFO ingest-api heap usage 87% after full GC (old gen not reclaimed), GC overhead 35%"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.9,
+              "evidenceLines": [
+                2707,
+                3535,
+                3801,
+                3805,
+                4275,
+                4276,
+                4635,
+                4640
+              ],
+              "reasoning": "ingest-api's old gen keeps growing and full GC can't reclaim it: heap is 78% after full GC at 01:01:11 and 87% at 01:04:40, with GC overhead climbing. The first OutOfMemoryError comes at 01:05:46 and the container is OOMKilled right after. It then crash-loops: each restart warms eventCache, runs out of heap while growing eventCache (64MB requested against a 1536MB max) and gets OOMKilled again (restarts 2 and 3). Each time a pod dies, ingest-gateway returns 502 'connection reset (no healthy upstream)' on POST /v1/events. The first 502 is at 01:06:08, about 20s after the first OOM, and they keep coming in bursts that line up with the crash/restart cycle. No ingest-api release appears in the window; v1.9.1 shows only at restarts. The report-cron pandas deploy error, the event-processor rollout, the TLS expiry warning and the single slow enrichment call don't touch this path."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.07,
+              "evidenceLines": [
+                3895,
+                4336
+              ],
+              "reasoning": "ingest-api v1.9.1 may have brought in the eventCache growth, but the rollout itself isn't in this window, so I can't confirm it."
+            }
+          ],
+          "recommendedAction": "Raise the ingest-api memory limit or heap max for now, or cap/turn off eventCache warming, so the pods stop crash-looping. Then analyse /tmp/heap.hprof to find the unbounded eventCache growth, and add a size or eviction limit. Check whether v1.9.1 is where the cache behaviour changed, and roll back if it is."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 8,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1615,
+      "cacheReadTokens": 28436,
+      "cacheWriteTokens": 10802
+    },
+    "durationMs": 18218,
+    "stopReason": "tool_use"
+  }
+}

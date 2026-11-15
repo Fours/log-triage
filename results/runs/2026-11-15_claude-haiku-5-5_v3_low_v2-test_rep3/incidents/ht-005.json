@@ -1,0 +1,185 @@
+{
+  "score": {
+    "incidentId": "ht-005",
+    "difficulty": "hard",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.8,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 6,
+      "precision": 0.75,
+      "recall": 0.75,
+      "f1": 0.75
+    },
+    "herringsCited": 1,
+    "secondaryCited": 0,
+    "costUsd": 0.0033936599999999997,
+    "durationMs": 13306,
+    "iterations": 5,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 12,
+      "output": 2531,
+      "cacheRead": 37671,
+      "cacheWrite": 14002
+    }
+  },
+  "result": {
+    "incidentId": "ht-005",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.8,
+          "evidenceLines": [
+            3801,
+            3805,
+            4275,
+            4276,
+            4635,
+            4640,
+            3866,
+            4283
+          ],
+          "reasoning": "ingest-api (v1.9.1) runs out of heap. Its eventCache grows without bound: the JVM fails with 'heap exhausted while growing eventCache (requested 64MB, max 1536MB)' (#4275) and 'OutOfMemoryError in eventCache.put' (#4635). The container is OOMKilled (2Gi limit, #4276, #4640, restarts up to 3). Each restart re-warms the cache, so the pod is down or unstable in bursts. ingest-gateway then returns 502 'upstream ingest-api connection reset (no healthy upstream)' (#3866, #4283), which is the alerted symptom. Gateway and api-gateway 5xx and order-service failures are downstream of this. The OOM first appears at #3801 (01:05:46) after a steady climb. Heap readings were 38-48% just before, so the cache growth is the trigger. Alternatives considered: enrichment-svc slowness (#1880, one soft-threshold warning, no hang), the postgres currency_code error (#4365, #4655, which hits checkout/order-service only), and the report-cron pandas deploy failure (#1924, unrelated). Not a dependency timeout, since ingest-api crashes rather than waits."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.1,
+          "evidenceLines": [
+            1880
+          ],
+          "reasoning": "Weak alternative: enrichment-svc calls were slow (2561ms, #1880), but this is a single soft-threshold warning with no hang or timeout cascade into ingest-api, so it does not explain the 502s."
+        }
+      ],
+      "recommendedAction": "Immediately restore ingest-api capacity: restart or scale out ingest-api to stop the OOM crash loop. Cap or add TTL/eviction to the unbounded eventCache, and raise the memory limit only as a stopgap. Pull /tmp/heap.hprof from ingest-api-0 to confirm what is retained. Separately, fix the report-cron image (missing pandas in report-cron:2026.10.2) and the orders.currency_code schema mismatch (order-service checkout 500s), which are unrelated but also firing."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "68 match(es), showing first 60:\n#1880 2026-10-20T00:57:42Z WARN ingest-api [t-4405] EnrichClient.enrich slow: 2561ms calling enrichment-svc POST /enrich (soft threshold 2000ms)\n#1924 2026-10-20T00:57:54Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2069 2026-10-20T00:58:32Z WARN ingest-gateway TLS certificate for *.internal.example expires in 19 days\n#2276 2026-10-20T00:59:24Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2514 2026-10-20T01:00:21Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2943 2026-10-20T01:02:10Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3118 2026-10-20T01:02:56Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3413 2026-10-20T01:04:10Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3636 2026-10-20T01:05:05Z WARN ingest-gateway rate limiter: client key k-6873 throttled (429), 85 req/s over quota\n#3723 2026-10-20T01:05:26Z WARN events-db slow query 1945ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#3780 2026-10-20T01:05:40Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3801 2026-10-20T01:05:46Z FATAL ingest-api Exception in thread \"worker-2\" java.lang.OutOfMemoryError: Java heap space\n#3805 2026-10-20T01:05:47Z ERROR ingest-api oom-killer: killed process 1 in ingest-api-2, cgroup memory limit reached (restart 1)\n#3826 2026-10-20T01:05:54Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3866 2026-10-20T01:06:08Z ERROR ingest-gateway [t-5697] POST /v1/events 502 25162ms: upstream ingest-api connection reset (no healthy upstream)\n#3934 2026-10-20T01:06:33Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4012 2026-10-20T01:07:04Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4021 2026-10-20T01:07:07Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4097 2026-10-20T01:07:34Z ERROR ingest-gateway [t-5816] POST /v1/events 502 7508ms: upstream ingest-api connection reset (no healthy upstream)\n#4108 2026-10-20T01:07:38Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4162 2026-10-20T01:07:55Z ERROR ingest-gateway [t-5858] POST /v1/events 502 16789ms: upstream ingest-api connection reset (no healthy upstream)\n#4230 2026-10-20T01:08:21Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4275 2026-10-20T01:08:37Z FATAL ingest-api fatal: heap exhausted while growing eventCache (requested 64MB, max 1536MB)\n#4276 2026-10-20T01:08:38Z ERROR ingest-api container ingest-api-0 killed: OOMKilled (memory limit 2Gi), restart count 2\n#4283 2026-10-20T01:08:40Z ERROR ingest-gateway [t-5918] POST /v1/events 502 19636ms: upstream ingest-api connection reset (no healthy upstream)\n#4289 2026-10-20T01:08:42Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4319 2026-10-20T01:08:54Z ERROR api-gateway [t-5938] POST /checkout 500 16807ms: upstream order-service returned 500 Internal Server Error\n#4337 2026-10-20T01:08:59Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4365 2026-10-20T01:09:10Z ERROR postgres ERROR:  column orders.currency_code does not exist (SQLSTATE 42703)\n#4453 2026-10-20T01:09:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4480 2026-10-20T01:09:53Z ERROR order-service [t-6013] query on orders failed for o-9891: column \"currency_code\" does not exist\n#4514 2026-10-20T01:10:11Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4521 2026-10-20T01:10:13Z ERROR ingest-gateway [t-6027] POST /v1/events 502 23209ms: upstream ingest-api connection reset (no healthy upstream)\n#4571 2026-10-20T01:10:38Z ERROR postgres statement failed: undefined_column, no attribute currency_code on orders\n#4572 2026-10-20T01:10:38Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4577 2026-10-20T01:10:40Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4587 2026-10-20T01:10:46Z ERROR api-gateway [t-6056] POST /checkout 500 16351ms: upstream order-service returned 500 Internal Server Error\n#4635 2026-10-20T01:11:07Z FATAL ingest-api JVM terminating after OutOfMemoryError in eventCache.put; heap dump written to /tmp/heap.hprof\n#4640 2026-10-20T01:11:08Z ERROR ingest-api kubelet: ingest-api-0 terminated (reason OOMKilled, exit code 137), restarts=3\n#4642 2026-10-20T01:11:08Z ERROR ingest-gateway [t-6089] POST /v1/events 502 24332ms: upstream ingest-api connection reset (no healthy upstream)\n#4650 2026-10-20T01:11:13Z ERROR api-gateway [t-6092] POST /checkout 500 24207ms: upstream order-service returned 500 Internal Server Error\n#4655 2026-10-20T01:11:16Z ERROR postgres column \"currency_code\" of relation \"orders\" does not exist at character 94\n#4694 2026-10-20T01:11:34Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4710 2026-10-20T01:11:41Z ERROR order-service [t-6115] query on orders failed for o-9955: column \"currency_code\" does not exist\n#4724 2026-10-20T01:11:49Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4729 2026-10-20T01:11:51Z ERROR ingest-gateway [t-6122] POST /v1/events 502 19954ms: upstream ingest-api connection reset (no healthy upstream)\n#4772 2026-10-20T01:12:08Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4799 2026-10-20T01:12:20Z ERROR postgres ERROR:  column orders.currency_code does not exist (SQLSTATE 42703)\n#4801 2026-10-20T01:12:22Z ERROR ingest-gateway [t-6150] POST /v1/events 502 22489ms: upstream ingest-api connection reset (no healthy upstream)\n#4864 2026-10-20T01:12:53Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4906 2026-10-20T01:13:11Z ERROR api-gateway [t-6195] POST /checkout 500 8609ms: upstream order-service returned 500 Internal Server Error\n#4921 2026-10-20T01:13:16Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4973 2026-10-20T01:13:37Z ERROR ingest-gateway [t-6227] POST /v1/events 502 7605ms: upstream ingest-api connection reset (no healthy upstream)\n#4977 2026-10-20T01:13:41Z ERROR order-service [t-6231] query on orders failed for o-10045: column \"currency_code\" does not exist\n#5012 2026-10-20T01:13:52Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#5090 2026-10-20T01:14:29Z ERROR api-gateway [t-6288] POST /checkout 500 24469ms: upstream order-service returned 500 Internal Server Error\n#5106 2026-10-20T01:14:34Z ERROR ingest-gateway [t-6298] POST /v1/events 502 16289ms: upstream ingest-api connection reset (no healthy upstream)\n#5118 2026-10-20T01:14:40Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#5156 2026-10-20T01:15:00Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#5229 2026-10-20T01:15:32Z ERROR api-gateway [t-6350] POST /checkout 500 24016ms: upstream order-service returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "postgres",
+          "limit": 30
+        },
+        "output": "77 match(es), showing first 30:\n#43 2026-10-20T00:50:12Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 24\n#158 2026-10-20T00:50:40Z INFO postgres checkpoint complete: wrote 1340 buffers (3.7%)\n#242 2026-10-20T00:51:00Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 1\n#316 2026-10-20T00:51:18Z INFO postgres checkpoint complete: wrote 1221 buffers (2.3%)\n#429 2026-10-20T00:51:45Z INFO postgres checkpoint complete: wrote 825 buffers (3.9%)\n#512 2026-10-20T00:52:07Z INFO postgres checkpoint complete: wrote 1328 buffers (1.8%)\n#589 2026-10-20T00:52:27Z INFO postgres checkpoint complete: wrote 442 buffers (7.8%)\n#661 2026-10-20T00:52:46Z INFO postgres checkpoint complete: wrote 1230 buffers (1.0%)\n#762 2026-10-20T00:53:10Z INFO postgres checkpoint complete: wrote 758 buffers (2.6%)\n#841 2026-10-20T00:53:29Z INFO postgres checkpoint complete: wrote 793 buffers (7.9%)\n#930 2026-10-20T00:53:48Z INFO postgres checkpoint complete: wrote 442 buffers (1.0%)\n#1031 2026-10-20T00:54:14Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 7\n#1134 2026-10-20T00:54:39Z INFO postgres checkpoint complete: wrote 1274 buffers (4.2%)\n#1217 2026-10-20T00:55:00Z INFO postgres checkpoint complete: wrote 1031 buffers (1.1%)\n#1302 2026-10-20T00:55:21Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 20\n#1380 2026-10-20T00:55:40Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 36\n#1464 2026-10-20T00:56:01Z INFO postgres checkpoint complete: wrote 1101 buffers (6.5%)\n#1537 2026-10-20T00:56:17Z INFO postgres checkpoint complete: wrote 860 buffers (4.0%)\n#1625 2026-10-20T00:56:39Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 37\n#1693 2026-10-20T00:56:56Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 36\n#1805 2026-10-20T00:57:23Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 12\n#1902 2026-10-20T00:57:48Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 33\n#1965 2026-10-20T00:58:04Z INFO postgres checkpoint complete: wrote 371 buffers (6.8%)\n#2064 2026-10-20T00:58:31Z INFO postgres checkpoint complete: wrote 740 buffers (6.6%)\n#2157 2026-10-20T00:58:57Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 3\n#2236 2026-10-20T00:59:15Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 31\n#2310 2026-10-20T00:59:34Z INFO postgres checkpoint complete: wrote 1134 buffers (6.1%)\n#2410 2026-10-20T00:59:56Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 29\n#2529 2026-10-20T01:00:24Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 4\n#2625 2026-10-20T01:00:48Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 12"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "query": "cache",
+          "limit": 40
+        },
+        "output": "5 match(es):\n#3895 2026-10-20T01:06:19Z INFO ingest-api started ingest-api v1.9.1, pid 1, warming event cache\n#4275 2026-10-20T01:08:37Z FATAL ingest-api fatal: heap exhausted while growing eventCache (requested 64MB, max 1536MB)\n#4336 2026-10-20T01:08:59Z INFO ingest-api started ingest-api v1.9.1, pid 1, warming event cache\n#4635 2026-10-20T01:11:07Z FATAL ingest-api JVM terminating after OutOfMemoryError in eventCache.put; heap dump written to /tmp/heap.hprof\n#4707 2026-10-20T01:11:40Z INFO ingest-api started ingest-api v1.9.1, pid 1, warming event cache"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "level": "WARN",
+          "until": "01:05:00",
+          "limit": 30
+        },
+        "output": "1 match(es):\n#1880 2026-10-20T00:57:42Z WARN ingest-api [t-4405] EnrichClient.enrich slow: 2561ms calling enrichment-svc POST /enrich (soft threshold 2000ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "since": "01:05:00",
+          "until": "01:06:20",
+          "limit": 40
+        },
+        "output": "58 match(es), showing first 40:\n#3621 2026-10-20T01:05:00Z INFO ingest-api [t-5544] event e-9507 accepted, calling enrichment-svc POST /enrich\n#3623 2026-10-20T01:05:02Z INFO ingest-api [t-5545] event e-9509 accepted, calling enrichment-svc POST /enrich\n#3625 2026-10-20T01:05:02Z INFO ingest-api [t-5546] event e-9510 accepted, calling enrichment-svc POST /enrich\n#3632 2026-10-20T01:05:03Z INFO ingest-api [t-5548] event e-9513 accepted, calling enrichment-svc POST /enrich\n#3637 2026-10-20T01:05:05Z INFO ingest-api [t-5552] event e-9515 accepted, calling enrichment-svc POST /enrich\n#3642 2026-10-20T01:05:06Z INFO ingest-api [t-5556] event e-9518 accepted, calling enrichment-svc POST /enrich\n#3646 2026-10-20T01:05:07Z INFO ingest-api [t-5557] event e-9520 accepted, calling enrichment-svc POST /enrich\n#3651 2026-10-20T01:05:08Z DEBUG ingest-api GC pause 4ms (young), heap 48%\n#3653 2026-10-20T01:05:09Z INFO ingest-api [t-5559] event e-9522 accepted, calling enrichment-svc POST /enrich\n#3657 2026-10-20T01:05:11Z INFO ingest-api [t-5563] event e-9524 accepted, calling enrichment-svc POST /enrich\n#3662 2026-10-20T01:05:12Z INFO ingest-api [t-5564] event e-9527 accepted, calling enrichment-svc POST /enrich\n#3670 2026-10-20T01:05:13Z INFO ingest-api [t-5569] event e-9531 accepted, calling enrichment-svc POST /enrich\n#3675 2026-10-20T01:05:15Z INFO ingest-api [t-5570] event e-9534 accepted, calling enrichment-svc POST /enrich\n#3681 2026-10-20T01:05:16Z INFO ingest-api [t-5571] event e-9537 accepted, calling enrichment-svc POST /enrich\n#3688 2026-10-20T01:05:18Z INFO ingest-api [t-5574] event e-9543 accepted, calling enrichment-svc POST /enrich\n#3691 2026-10-20T01:05:19Z INFO ingest-api [t-5578] event e-9545 accepted, calling enrichment-svc POST /enrich\n#3695 2026-10-20T01:05:21Z INFO ingest-api [t-5582] event e-9548 accepted, calling enrichment-svc POST /enrich\n#3699 2026-10-20T01:05:21Z INFO ingest-api [t-5586] event e-9550 accepted, calling enrichment-svc POST /enrich\n#3706 2026-10-20T01:05:23Z INFO ingest-api [t-5592] event e-9554 accepted, calling enrichment-svc POST /enrich\n#3708 2026-10-20T01:05:24Z INFO ingest-api [t-5593] event e-9555 accepted, calling enrichment-svc POST /enrich\n#3715 2026-10-20T01:05:25Z INFO ingest-api [t-5598] event e-9559 accepted, calling enrichment-svc POST /enrich\n#3719 2026-10-20T01:05:26Z INFO ingest-api [t-5599] event e-9560 accepted, calling enrichment-svc POST /enrich\n#3721 2026-10-20T01:05:26Z DEBUG ingest-api GC pause 8ms (young), heap 38%\n#3724 2026-10-20T01:05:27Z INFO ingest-api [t-5602] event e-9563 accepted, calling enrichment-svc POST /enrich\n#3731 2026-10-20T01:05:28Z INFO ingest-api [t-5609] event e-9567 accepted, calling enrichment-svc POST /enrich\n#3735 2026-10-20T01:05:30Z INFO ingest-api [t-5611] event e-9570 accepted, calling enrichment-svc POST /enrich\n#3740 2026-10-20T01:05:31Z INFO ingest-api [t-5612] event e-9573 accepted, calling enrichment-svc POST /enrich\n#3745 2026-10-20T01:05:32Z INFO ingest-api [t-5615] event e-9576 accepted, calling enrichment-svc POST /enrich\n#3751 2026-10-20T01:05:33Z INFO ingest-api [t-5620] event e-9578 accepted, calling enrichment-svc POST /enrich\n#3753 2026-10-20T01:05:34Z INFO ingest-api [t-5624] event e-9580 accepted, calling enrichment-svc POST /enrich\n#3759 2026-10-20T01:05:35Z INFO ingest-api [t-5632] event e-9582 accepted, calling enrichment-svc POST /enrich\n#3761 2026-10-20T01:05:37Z INFO ingest-api [t-5636] event e-9583 accepted, calling enrichment-svc POST /enrich\n#3766 2026-10-20T01:05:37Z INFO ingest-api [t-5641] event e-9586 accepted, calling enrichment-svc POST /enrich\n#3772 2026-10-20T01:05:39Z INFO ingest-api [t-5643] event e-9589 accepted, calling enrichment-svc POST /enrich\n#3775 2026-10-20T01:05:39Z INFO ingest-api [t-5645] event e-9591 accepted, calling enrichment-svc POST /enrich\n#3781 2026-10-20T01:05:41Z INFO ingest-api [t-5649] event e-9593 accepted, calling enrichment-svc POST /enrich\n#3783 2026-10-20T01:05:42Z INFO ingest-api [t-5650] event e-9594 accepted, calling enrichment-svc POST /enrich\n#3792 2026-10-20T01:05:44Z INFO ingest-api [t-5656] event e-9598 accepted, calling enrichment-svc POST /enrich\n#3795 2026-10-20T01:05:44Z DEBUG ingest-api GC pause 18ms (young), heap 42%\n#3798 2026-10-20T01:05:45Z INFO ingest-api [t-5660] event e-9599 accepted, calling enrichment-svc POST /enrich"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.8,
+              "evidenceLines": [
+                3801,
+                3805,
+                4275,
+                4276,
+                4635,
+                4640,
+                3866,
+                4283
+              ],
+              "reasoning": "ingest-api (v1.9.1) runs out of heap. Its eventCache grows without bound: the JVM fails with 'heap exhausted while growing eventCache (requested 64MB, max 1536MB)' (#4275) and 'OutOfMemoryError in eventCache.put' (#4635). The container is OOMKilled (2Gi limit, #4276, #4640, restarts up to 3). Each restart re-warms the cache, so the pod is down or unstable in bursts. ingest-gateway then returns 502 'upstream ingest-api connection reset (no healthy upstream)' (#3866, #4283), which is the alerted symptom. Gateway and api-gateway 5xx and order-service failures are downstream of this. The OOM first appears at #3801 (01:05:46) after a steady climb. Heap readings were 38-48% just before, so the cache growth is the trigger. Alternatives considered: enrichment-svc slowness (#1880, one soft-threshold warning, no hang), the postgres currency_code error (#4365, #4655, which hits checkout/order-service only), and the report-cron pandas deploy failure (#1924, unrelated). Not a dependency timeout, since ingest-api crashes rather than waits.",
+              "recommendedAction": "Immediately restore ingest-api capacity: restart or scale out and stop the crash loop. Cap or add TTL/eviction to eventCache, and raise or tune the memory limit only as a stopgap. Pull /tmp/heap.hprof from ingest-api-0 to confirm what is retained. Separately, fix the report-cron image (missing pandas in report-cron:2026.10.2) and the orders.currency_code schema mismatch (order-service checkout 500s), which are unrelated but also firing."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.8,
+              "evidenceLines": [
+                3801,
+                3805,
+                4275,
+                4276,
+                4635,
+                4640,
+                3866,
+                4283
+              ],
+              "reasoning": "ingest-api (v1.9.1) runs out of heap. Its eventCache grows without bound: the JVM fails with 'heap exhausted while growing eventCache (requested 64MB, max 1536MB)' (#4275) and 'OutOfMemoryError in eventCache.put' (#4635). The container is OOMKilled (2Gi limit, #4276, #4640, restarts up to 3). Each restart re-warms the cache, so the pod is down or unstable in bursts. ingest-gateway then returns 502 'upstream ingest-api connection reset (no healthy upstream)' (#3866, #4283), which is the alerted symptom. Gateway and api-gateway 5xx and order-service failures are downstream of this. The OOM first appears at #3801 (01:05:46) after a steady climb. Heap readings were 38-48% just before, so the cache growth is the trigger. Alternatives considered: enrichment-svc slowness (#1880, one soft-threshold warning, no hang), the postgres currency_code error (#4365, #4655, which hits checkout/order-service only), and the report-cron pandas deploy failure (#1924, unrelated). Not a dependency timeout, since ingest-api crashes rather than waits.",
+              "recommendedAction": "Immediately restore ingest-api capacity: restart or scale out and stop the crash loop. Cap or add TTL/eviction to eventCache, and raise or tune the memory limit only as a stopgap. Pull /tmp/heap.hprof from ingest-api-0 to confirm what is retained. Separately, fix the report-cron image (missing pandas in report-cron:2026.10.2) and the orders.currency_code schema mismatch (order-service checkout 500s), which are unrelated but also firing."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.1,
+              "evidenceLines": [
+                1880
+              ],
+              "reasoning": "Weak alternative: enrichment-svc calls were slow (2561ms, #1880), but this is a single soft-threshold warning with no hang or timeout cascade into ingest-api, so it does not explain the 502s.",
+              "recommendedAction": "Monitor enrichment-svc latency; no action needed for this incident."
+            }
+          ],
+          "recommendedAction": "Immediately restore ingest-api capacity: restart or scale out ingest-api to stop the OOM crash loop. Cap or add TTL/eviction to the unbounded eventCache, and raise the memory limit only as a stopgap. Pull /tmp/heap.hprof from ingest-api-0 to confirm what is retained. Separately, fix the report-cron image (missing pandas in report-cron:2026.10.2) and the orders.currency_code schema mismatch (order-service checkout 500s), which are unrelated but also firing."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 2531,
+      "cacheReadTokens": 37671,
+      "cacheWriteTokens": 14002
+    },
+    "durationMs": 13306,
+    "stopReason": "tool_use"
+  }
+}

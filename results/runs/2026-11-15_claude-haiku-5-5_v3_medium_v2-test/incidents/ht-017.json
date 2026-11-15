@@ -1,0 +1,203 @@
+{
+  "score": {
+    "incidentId": "ht-017",
+    "difficulty": "easy",
+    "scenario": "data_integrity/sequence-collision",
+    "truth": "data_integrity",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 4,
+      "precision": 0.5,
+      "recall": 1,
+      "f1": 0.6666666666666666
+    },
+    "herringsCited": 0,
+    "costUsd": 0.004078605,
+    "durationMs": 14294,
+    "iterations": 8,
+    "toolCalls": 10,
+    "tokens": {
+      "input": 18,
+      "output": 2745,
+      "cacheRead": 65643,
+      "cacheWrite": 16383
+    }
+  },
+  "result": {
+    "incidentId": "ht-017",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.88,
+          "evidenceLines": [
+            875,
+            1058,
+            1149,
+            1233,
+            1357,
+            1528,
+            1202,
+            1387
+          ],
+          "reasoning": "At 09:08:39Z catalog-db logged a restore of the products table from a snapshot (979231 rows) that left the sequence products_id_seq at 965985, far behind the table's max id. Shortly after, new product inserts began colliding with existing ids: duplicate key violations on products_pkey at 09:11:15 (id 976166), 09:12:51 (976171), 09:14:24 (976176). search-api converted these to 409 'unique violation on products.id' (#1357, #1528), and web-bff surfaced them as GET /search 500 'upstream search-api returned 500 (create failed)' (#1202, #1387). The web-bff 5xx are downstream symptoms. The sequence-behind-data fault fits the timing: failures start about 2.5 minutes after the restore, as the sequence hands out ids already in the table. The legacy-inventory healthcheck timeouts in status-poller (#553, #799, etc.) are a separate deprecated-endpoint issue and do not explain the save failures."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.1,
+          "evidenceLines": [
+            875
+          ],
+          "reasoning": "Less likely: the restore may have been triggered by an operator config or runbook mistake rather than a data-integrity fault. The log does not show the trigger, so this only explains how the restore happened, not the collision mechanism."
+        }
+      ],
+      "recommendedAction": "Immediately reset the products_id_seq sequence in catalog-db to above max(id), e.g. setval to max(id)+1 (around 979232 or higher). Then verify inserts succeed and the search-api 409s stop. Audit the restore that reloaded products from snapshot without resetting the sequence, and add a post-restore sequence-sync step. Check whether index-worker or catalog.updates saw any duplicated ids. Retry the affected customer product creates. Treat the legacy-inventory healthcheck timeouts as a separate follow-up."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "17 match(es):\n#553 2026-11-01T09:04:28Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#799 2026-11-01T09:07:39Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#875 2026-11-01T09:08:39Z WARN catalog-db restore: table products reloaded from snapshot (979231 rows); sequence products_id_seq left at 965985\n#1044 2026-11-01T09:11:03Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1058 2026-11-01T09:11:15Z ERROR catalog-db duplicate key value violates unique constraint \"products_pkey\" DETAIL: Key (id)=(976166) already exists.\n#1149 2026-11-01T09:12:51Z ERROR catalog-db ERROR: 23505 unique_violation on products (id 976171 is already present)\n#1202 2026-11-01T09:13:53Z ERROR web-bff [t-8398] GET /search 500 7562ms: upstream search-api returned 500 (create failed)\n#1233 2026-11-01T09:14:24Z ERROR catalog-db duplicate key value violates unique constraint \"products_pkey\" DETAIL: Key (id)=(976176) already exists.\n#1245 2026-11-01T09:14:36Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1357 2026-11-01T09:16:31Z ERROR search-api [t-8461] create product failed: unique violation on products.id, returning 409\n#1387 2026-11-01T09:16:59Z ERROR web-bff [t-8474] GET /search 500 22865ms: upstream search-api returned 500 (create failed)\n#1438 2026-11-01T09:17:54Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1528 2026-11-01T09:19:31Z ERROR search-api [t-8522] create product failed: unique violation on products.id, returning 409\n#1561 2026-11-01T09:20:08Z ERROR web-bff [t-8532] GET /search 500 5015ms: upstream search-api returned 500 (create failed)\n#1655 2026-11-01T09:21:49Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1765 2026-11-01T09:23:49Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1867 2026-11-01T09:25:26Z ERROR web-bff [t-8641] GET /search 500 21341ms: upstream search-api returned 500 (create failed)"
+      },
+      {
+        "tool": "list_services",
+        "input": {},
+        "output": "window 2026-11-01T08:57:01Z .. 2026-11-01T09:25:58Z, 1895 lines total\n- status-poller: 141 lines, 7 error+ (2026-11-01T08:57:14Z .. 2026-11-01T09:25:49Z)\n- web-bff: 349 lines, 4 error+ (2026-11-01T08:57:02Z .. 2026-11-01T09:25:52Z)\n- catalog-db: 114 lines, 3 error+ (2026-11-01T08:57:10Z .. 2026-11-01T09:25:51Z)\n- search-api: 406 lines, 2 error+ (2026-11-01T08:57:02Z .. 2026-11-01T09:25:53Z)\n- index-worker: 324 lines, 0 error+ (2026-11-01T08:57:01Z .. 2026-11-01T09:25:55Z)\n- catalog-svc: 255 lines, 0 error+ (2026-11-01T08:57:04Z .. 2026-11-01T09:25:52Z)\n- redis-cache: 175 lines, 0 error+ (2026-11-01T08:57:03Z .. 2026-11-01T09:25:58Z)\n- flag-sync: 131 lines, 0 error+ (2026-11-01T08:57:06Z .. 2026-11-01T09:25:56Z)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 875,
+          "before": 12,
+          "after": 6
+        },
+        "output": "#863 2026-11-01T09:08:31Z INFO catalog-svc [t-8264] GET /products/batch p-7302 ok 43ms\n#864 2026-11-01T09:08:31Z INFO web-bff [t-8264] GET /search 200 67ms\n#865 2026-11-01T09:08:32Z DEBUG web-bff upstream health: search-api ok, catalog-svc ok\n#866 2026-11-01T09:08:33Z DEBUG search-api GC pause 4ms (young), heap 44%\n#867 2026-11-01T09:08:33Z INFO index-worker processed batch of 71 messages from catalog.updates (lag 197ms)\n#868 2026-11-01T09:08:34Z INFO search-api [t-8265] product p-7303 accepted, calling catalog-svc GET /products/batch\n#869 2026-11-01T09:08:34Z INFO web-bff [t-8265] GET /search 200 107ms\n#870 2026-11-01T09:08:37Z INFO redis-cache stats: hits=15666 misses=843 evicted=0 connected_clients=56\n#871 2026-11-01T09:08:37Z INFO status-poller poll cycle complete: 36 targets checked in 881ms\n#872 2026-11-01T09:08:38Z INFO search-api [t-8268] product p-7305 accepted, calling catalog-svc GET /products/batch\n#873 2026-11-01T09:08:38Z INFO catalog-svc [t-8268] GET /products/batch p-7305 ok 53ms\n#874 2026-11-01T09:08:38Z INFO web-bff [t-8268] GET /search 200 88ms\n#875 2026-11-01T09:08:39Z WARN catalog-db restore: table products reloaded from snapshot (979231 rows); sequence products_id_seq left at 965985\n#876 2026-11-01T09:08:40Z INFO index-worker processed batch of 30 messages from catalog.updates (lag 103ms)\n#877 2026-11-01T09:08:41Z INFO catalog-db checkpoint complete: wrote 909 buffers (6.2%)\n#878 2026-11-01T09:08:42Z INFO search-api [t-8271] product p-7308 accepted, calling catalog-svc GET /products/batch\n#879 2026-11-01T09:08:42Z INFO web-bff [t-8271] GET /search 200 89ms\n#880 2026-11-01T09:08:43Z DEBUG catalog-svc GC pause 25ms (young), heap 38%\n#881 2026-11-01T09:08:44Z INFO flag-sync synced 80 feature flags from flag service (etag 8e81140)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "restore",
+          "limit": 30
+        },
+        "output": "1 match(es):\n#875 2026-11-01T09:08:39Z WARN catalog-db restore: table products reloaded from snapshot (979231 rows); sequence products_id_seq left at 965985"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-db",
+          "since": "08:57:00",
+          "until": "09:12:00",
+          "limit": 60
+        },
+        "output": "tool error: since (08:57:00) is after until (09:12:00)",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-db",
+          "limit": 120
+        },
+        "output": "114 match(es):\n#10 2026-11-01T08:57:10Z INFO catalog-db checkpoint complete: wrote 1217 buffers (1.5%)\n#29 2026-11-01T08:57:21Z INFO catalog-db checkpoint complete: wrote 1342 buffers (7.9%)\n#46 2026-11-01T08:57:35Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 10\n#69 2026-11-01T08:57:51Z INFO catalog-db checkpoint complete: wrote 523 buffers (6.2%)\n#81 2026-11-01T08:58:03Z INFO catalog-db checkpoint complete: wrote 669 buffers (5.5%)\n#102 2026-11-01T08:58:18Z INFO catalog-db checkpoint complete: wrote 449 buffers (5.0%)\n#118 2026-11-01T08:58:35Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 5\n#133 2026-11-01T08:58:48Z INFO catalog-db checkpoint complete: wrote 1225 buffers (5.0%)\n#152 2026-11-01T08:59:01Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 29\n#167 2026-11-01T08:59:14Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 16\n#182 2026-11-01T08:59:28Z INFO catalog-db checkpoint complete: wrote 677 buffers (4.5%)\n#202 2026-11-01T08:59:46Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 33\n#220 2026-11-01T09:00:04Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 25\n#238 2026-11-01T09:00:15Z INFO catalog-db checkpoint complete: wrote 989 buffers (2.4%)\n#256 2026-11-01T09:00:32Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 5\n#279 2026-11-01T09:00:49Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 5\n#297 2026-11-01T09:01:05Z INFO catalog-db checkpoint complete: wrote 1021 buffers (7.4%)\n#311 2026-11-01T09:01:17Z INFO catalog-db checkpoint complete: wrote 816 buffers (5.2%)\n#323 2026-11-01T09:01:29Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 30\n#343 2026-11-01T09:01:44Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 36\n#368 2026-11-01T09:02:02Z INFO catalog-db checkpoint complete: wrote 1344 buffers (3.1%)\n#390 2026-11-01T09:02:19Z INFO catalog-db checkpoint complete: wrote 620 buffers (6.0%)\n#413 2026-11-01T09:02:39Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 8\n#437 2026-11-01T09:02:59Z INFO catalog-db checkpoint complete: wrote 1103 buffers (5.7%)\n#466 2026-11-01T09:03:18Z INFO catalog-db checkpoint complete: wrote 797 buffers (5.3%)\n#479 2026-11-01T09:03:30Z INFO catalog-db checkpoint complete: wrote 287 buffers (7.7%)\n#499 2026-11-01T09:03:46Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 23\n#514 2026-11-01T09:03:59Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 24\n#538 2026-11-01T09:04:17Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 19\n#561 2026-11-01T09:04:32Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 11\n#578 2026-11-01T09:04:43Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 20\n#599 2026-11-01T09:04:58Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 21\n#620 2026-11-01T09:05:16Z INFO catalog-db checkpoint complete: wrote 1161 buffers (4.9%)\n#635 2026-11-01T09:05:28Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 0\n#654 2026-11-01T09:05:41Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 18\n#674 2026-11-01T09:06:00Z INFO catalog-db checkpoint complete: wrote 1086 buffers (2.7%)\n#692 2026-11-01T09:06:15Z INFO catalog-db checkpoint complete: wrote 921 buffers (5.2%)\n#710 2026-11-01T09:06:28Z INFO catalog-db checkpoint complete: wrote 1208 buffers (2.7%)\n#730 2026-11-01T09:06:44Z INFO catalog-db checkpoint complete: wrote 369 buffers (3.2%)\n#748 2026-11-01T09:06:58Z INFO catalog-db checkpoint complete: wrote 1199 buffers (3.6%)\n#772 2026-11-01T09:07:17Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 32\n#797 2026-11-01T09:07:36Z INFO catalog-db checkpoint complete: wrote 630 buffers (1.3%)\n#809 2026-11-01T09:07:48Z INFO catalog-db checkpoint complete: wrote 1264 buffers (7.1%)\n#830 2026-11-01T09:08:05Z INFO catalog-db checkpoint complete: wrote 239 buffers (5.7%)\n#852 2026-11-01T09:08:22Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 15\n#875 2026-11-01T09:08:39Z WARN catalog-db restore: table products reloaded from snapshot (979231 rows); sequence products_id_seq left at 965985\n#877 2026-11-01T09:08:41Z INFO catalog-db checkpoint complete: wrote 909 buffers (6.2%)\n#899 2026-11-01T09:08:59Z INFO catalog-db checkpoint complete: wrote 653 buffers (8.0%)\n#913 2026-11-01T09:09:11Z INFO catalog-db checkpoint complete: wrote 1172 buffers (7.6%)\n#935 2026-11-01T09:09:29Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 13\n#952 2026-11-01T09:09:43Z INFO catalog-db checkpoint complete: wrote 1172 buffers (7.9%)\n#973 2026-11-01T09:10:00Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 1\n#996 2026-11-01T09:10:18Z INFO catalog-db checkpoint complete: wrote 1398 buffers (1.1%)\n#1018 2026-11-01T09:10:38Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 34\n#1030 2026-11-01T09:10:53Z INFO catalog-db checkpoint complete: wrote 1050 buffers (2.4%)\n#1056 2026-11-01T09:11:12Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 9\n#1058 2026-11-01T09:11:15Z ERROR catalog-db duplicate key value violates unique constraint \"products_pkey\" DETAIL: Key (id)=(976166) already exists.\n#1068 2026-11-01T09:11:28Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 7\n#1086 2026-11-01T09:11:47Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 7\n#1105 2026-11-01T09:12:03Z INFO catalog-db checkpoint complete: wrote 893 buffers (4.0%)\n#1122 2026-11-01T09:12:17Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 40\n#1132 2026-11-01T09:12:29Z INFO catalog-db checkpoint complete: wrote 201 buffers (2.5%)\n#1145 2026-11-01T09:12:40Z INFO catalog-db checkpoint complete: wrote 756 buffers (2.8%)\n#1149 2026-11-01T09:12:51Z ERROR catalog-db ERROR: 23505 unique_violation on products (id 976171 is already present)\n#1158 2026-11-01T09:13:00Z INFO catalog-db checkpoint complete: wrote 523 buffers (5.2%)\n#1172 2026-11-01T09:13:16Z INFO catalog-db checkpoint complete: wrote 1246 buffers (4.1%)\n#1181 2026-11-01T09:13:27Z INFO catalog-db checkpoint complete: wrote 911 buffers (3.4%)\n#1198 2026-11-01T09:13:47Z INFO catalog-db checkpoint complete: wrote 512 buffers (4.8%)\n#1216 2026-11-01T09:14:07Z INFO catalog-db checkpoint complete: wrote 313 buffers (5.7%)\n#1233 2026-11-01T09:14:24Z ERROR catalog-db duplicate key value violates unique constraint \"products_pkey\" DETAIL: Key (id)=(976176) already exists.\n#1234 2026-11-01T09:14:25Z INFO catalog-db checkpoint complete: wrote 1182 buffers (6.4%)\n#1254 2026-11-01T09:14:45Z INFO catalog-db checkpoint complete: wrote 739 buffers (4.1%)\n#1266 2026-11-01T09:15:02Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 1\n#1279 2026-11-01T09:15:15Z INFO catalog-db checkpoint complete: wrote 544 buffers (7.0%)\n#1300 2026-11-01T09:15:35Z INFO catalog-db checkpoint complete: wrote 475 buffers (7.2%)\n#1315 2026-11-01T09:15:47Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 40\n#1328 2026-11-01T09:16:02Z INFO catalog-db checkpoint complete: wrote 635 buffers (5.9%)\n#1348 2026-11-01T09:16:20Z INFO catalog-db checkpoint complete: wrote 742 buffers (4.6%)\n#1361 2026-11-01T09:16:37Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 16\n#1378 2026-11-01T09:16:49Z INFO catalog-db checkpoint complete: wrote 570 buffers (2.4%)\n#1392 2026-11-01T09:17:04Z INFO catalog-db checkpoint complete: wrote 833 buffers (2.9%)\n#1402 2026-11-01T09:17:16Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 39\n#1418 2026-11-01T09:17:31Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 5\n#1433 2026-11-01T09:17:49Z INFO catalog-db checkpoint complete: wrote 875 buffers (4.4%)\n#1446 2026-11-01T09:18:05Z INFO catalog-db checkpoint complete: wrote 1067 buffers (3.9%)\n#1458 2026-11-01T09:18:21Z INFO catalog-db checkpoint complete: wrote 985 buffers (5.3%)\n#1476 2026-11-01T09:18:38Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 6\n#1490 2026-11-01T09:18:52Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 13\n#1505 2026-11-01T09:19:08Z INFO catalog-db checkpoint complete: wrote 582 buffers (6.7%)\n#1513 2026-11-01T09:19:20Z INFO catalog-db checkpoint complete: wrote 661 buffers (4.8%)\n#1529 2026-11-01T09:19:31Z INFO catalog-db checkpoint complete: wrote 325 buffers (2.7%)\n#1544 2026-11-01T09:19:48Z INFO catalog-db checkpoint complete: wrote 1176 buffers (7.0%)\n#1557 2026-11-01T09:20:03Z INFO catalog-db checkpoint complete: wrote 1294 buffers (6.4%)\n#1572 2026-11-01T09:20:21Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 11\n#1586 2026-11-01T09:20:39Z INFO catalog-db checkpoint complete: wrote 451 buffers (6.9%)\n#1608 2026-11-01T09:20:59Z INFO catalog-db checkpoint complete: wrote 948 buffers (7.4%)\n#1624 2026-11-01T09:21:16Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 34\n#1641 2026-11-01T09:21:34Z INFO catalog-db checkpoint complete: wrote 1135 buffers (7.7%)\n#1659 2026-11-01T09:21:52Z INFO catalog-db checkpoint complete: wrote 1248 buffers (3.4%)\n#1671 2026-11-01T09:22:05Z INFO catalog-db checkpoint complete: wrote 667 buffers (2.9%)\n#1684 2026-11-01T09:22:24Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 34\n#1705 2026-11-01T09:22:43Z INFO catalog-db checkpoint complete: wrote 1324 buffers (3.7%)\n#1724 2026-11-01T09:23:03Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 36\n#1742 2026-11-01T09:23:17Z INFO catalog-db checkpoint complete: wrote 505 buffers (1.3%)\n#1755 2026-11-01T09:23:36Z INFO catalog-db checkpoint complete: wrote 248 buffers (7.5%)\n#1763 2026-11-01T09:23:47Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 28\n#1781 2026-11-01T09:24:01Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 32\n#1804 2026-11-01T09:24:20Z INFO catalog-db checkpoint complete: wrote 765 buffers (7.1%)\n#1822 2026-11-01T09:24:37Z INFO catalog-db checkpoint complete: wrote 410 buffers (5.3%)\n#1838 2026-11-01T09:24:51Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 26\n#1855 2026-11-01T09:25:10Z INFO catalog-db checkpoint complete: wrote 924 buffers (5.4%)\n#1865 2026-11-01T09:25:25Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 24\n#1878 2026-11-01T09:25:39Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 30\n#1888 2026-11-01T09:25:51Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 20"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "snapshot",
+          "limit": 30
+        },
+        "output": "1 match(es):\n#875 2026-11-01T09:08:39Z WARN catalog-db restore: table products reloaded from snapshot (979231 rows); sequence products_id_seq left at 965985"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "products_id_seq",
+          "limit": 30
+        },
+        "output": "1 match(es):\n#875 2026-11-01T09:08:39Z WARN catalog-db restore: table products reloaded from snapshot (979231 rows); sequence products_id_seq left at 965985"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "search-api",
+          "since": "09:08:39",
+          "until": "09:11:20",
+          "limit": 40
+        },
+        "output": "41 match(es), showing first 40:\n#878 2026-11-01T09:08:42Z INFO search-api [t-8271] product p-7308 accepted, calling catalog-svc GET /products/batch\n#883 2026-11-01T09:08:46Z INFO search-api [t-8273] product p-7311 accepted, calling catalog-svc GET /products/batch\n#886 2026-11-01T09:08:47Z DEBUG search-api GC pause 11ms (young), heap 40%\n#888 2026-11-01T09:08:52Z INFO search-api [t-8274] product p-7312 accepted, calling catalog-svc GET /products/batch\n#893 2026-11-01T09:08:56Z INFO search-api [t-8277] product p-7315 accepted, calling catalog-svc GET /products/batch\n#896 2026-11-01T09:08:59Z INFO search-api [t-8279] product p-7317 accepted, calling catalog-svc GET /products/batch\n#903 2026-11-01T09:09:02Z DEBUG search-api GC pause 18ms (young), heap 40%\n#905 2026-11-01T09:09:03Z INFO search-api [t-8282] product p-7318 accepted, calling catalog-svc GET /products/batch\n#909 2026-11-01T09:09:06Z INFO search-api [t-8284] product p-7320 accepted, calling catalog-svc GET /products/batch\n#914 2026-11-01T09:09:11Z INFO search-api [t-8286] product p-7322 accepted, calling catalog-svc GET /products/batch\n#919 2026-11-01T09:09:17Z INFO search-api [t-8288] product p-7323 accepted, calling catalog-svc GET /products/batch\n#921 2026-11-01T09:09:20Z INFO search-api [t-8292] product p-7326 accepted, calling catalog-svc GET /products/batch\n#928 2026-11-01T09:09:25Z INFO search-api [t-8294] product p-7327 accepted, calling catalog-svc GET /products/batch\n#932 2026-11-01T09:09:27Z DEBUG search-api GC pause 11ms (young), heap 45%\n#937 2026-11-01T09:09:30Z INFO search-api [t-8298] product p-7330 accepted, calling catalog-svc GET /products/batch\n#941 2026-11-01T09:09:35Z INFO search-api [t-8301] product p-7331 accepted, calling catalog-svc GET /products/batch\n#946 2026-11-01T09:09:39Z INFO search-api [t-8302] product p-7332 accepted, calling catalog-svc GET /products/batch\n#953 2026-11-01T09:09:45Z INFO search-api [t-8303] product p-7334 accepted, calling catalog-svc GET /products/batch\n#955 2026-11-01T09:09:45Z DEBUG search-api GC pause 8ms (young), heap 42%\n#959 2026-11-01T09:09:49Z INFO search-api [t-8307] product p-7336 accepted, calling catalog-svc GET /products/batch\n#962 2026-11-01T09:09:52Z INFO search-api [t-8311] product p-7339 accepted, calling catalog-svc GET /products/batch\n#967 2026-11-01T09:09:56Z INFO search-api [t-8312] product p-7340 accepted, calling catalog-svc GET /products/batch\n#975 2026-11-01T09:10:02Z INFO search-api [t-8316] product p-7342 accepted, calling catalog-svc GET /products/batch\n#978 2026-11-01T09:10:03Z DEBUG search-api GC pause 6ms (young), heap 44%\n#981 2026-11-01T09:10:06Z INFO search-api [t-8318] product p-7343 accepted, calling catalog-svc GET /products/batch\n#987 2026-11-01T09:10:12Z INFO search-api [t-8319] product p-7345 accepted, calling catalog-svc GET /products/batch\n#992 2026-11-01T09:10:16Z INFO search-api [t-8323] product p-7346 accepted, calling catalog-svc GET /products/batch\n#995 2026-11-01T09:10:18Z INFO search-api [t-8326] product p-7347 accepted, calling catalog-svc GET /products/batch\n#1000 2026-11-01T09:10:21Z DEBUG search-api GC pause 22ms (young), heap 43%\n#1001 2026-11-01T09:10:21Z INFO search-api [t-8329] product p-7350 accepted, calling catalog-svc GET /products/batch\n#1007 2026-11-01T09:10:32Z INFO search-api [t-8331] product p-7352 accepted, calling catalog-svc GET /products/batch\n#1011 2026-11-01T09:10:34Z INFO search-api [t-8333] product p-7353 accepted, calling catalog-svc GET /products/batch\n#1014 2026-11-01T09:10:37Z INFO search-api [t-8336] product p-7354 accepted, calling catalog-svc GET /products/batch\n#1023 2026-11-01T09:10:43Z DEBUG search-api GC pause 14ms (young), heap 42%\n#1027 2026-11-01T09:10:52Z INFO search-api [t-8339] product p-7355 accepted, calling catalog-svc GET /products/batch\n#1035 2026-11-01T09:10:56Z INFO search-api [t-8343] product p-7358 accepted, calling catalog-svc GET /products/batch\n#1039 2026-11-01T09:10:58Z DEBUG search-api GC pause 16ms (young), heap 40%\n#1040 2026-11-01T09:10:59Z INFO search-api [t-8346] product p-7361 accepted, calling catalog-svc GET /products/batch\n#1046 2026-11-01T09:11:06Z INFO search-api [t-8350] product p-7362 accepted, calling catalog-svc GET /products/batch\n#1053 2026-11-01T09:11:11Z INFO search-api [t-8351] product p-7364 accepted, calling catalog-svc GET /products/batch"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-8461"
+        },
+        "output": "1 line(s) for t-8461:\n#1357 2026-11-01T09:16:31Z ERROR search-api [t-8461] create product failed: unique violation on products.id, returning 409"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"data_integrity\",\"confidence\":0.88,\"evidenceLines\":[875,1058,1149,1233,1357,1528,1202,1387],\"reasoning\":\"At 09:08:39Z catalog-db logged a restore of the products table from a snapshot (979231 rows) that left the sequence products_id_seq at 965985, far behind the table's max id. Shortly after, new product inserts began colliding with existing ids: duplicate key violations on products_pkey at 09:11:15 (id 976166), 09:12:51 (976171), 09:14:24 (976176). search-api converted these to 409 'unique violation on products.id' (#1357, #1528), and web-bff surfaced them as GET /search 500 'upstream search-api returned 500 (create failed)' (#1202, #1387). The 5xx at web-bff are downstream symptoms. The sequence-behind-data integrity fault explains the timing (starts right after the restore, failures start ~2.5 min later as the sequence hands out ids already in the table) and the 'could not save' symptom. The legacy-inventory healthcheck timeouts in status-poller (#553, #799, etc.) are a separate, unrelated deprecated endpoint and do not explain the save failures.\",\"},{\"rootCause\":\"config_error\",\"confidence\":0.1,\"evidenceLines\":[875],\"reasoning\":\"Less likely: the restore could have been triggered by an operator config/runbook mistake rather than a data-integrity fault. The log does not show the trigger, so this only accounts for how the restore happened, not the collision mechanism itself.\"}]",
+          "recommendedAction": "Immediately reset the products_id_seq sequence in catalog-db to above max(id) (e.g. setval to max(id)+1, around 979232 or higher), then verify inserts succeed and that the failing creates in search-api stop returning 409. Audit the restore that reloaded the products table from snapshot without resetting the sequence, and add a post-restore sequence-sync step. Check whether any ids were written by the restore gap or duplicated in index-worker/catalog.updates. Retry the affected customer product creates. Treat the legacy-inventory healthcheck timeouts as a separate follow-up."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.88,
+              "evidenceLines": [
+                875,
+                1058,
+                1149,
+                1233,
+                1357,
+                1528,
+                1202,
+                1387
+              ],
+              "reasoning": "At 09:08:39Z catalog-db logged a restore of the products table from a snapshot (979231 rows) that left the sequence products_id_seq at 965985, far behind the table's max id. Shortly after, new product inserts began colliding with existing ids: duplicate key violations on products_pkey at 09:11:15 (id 976166), 09:12:51 (976171), 09:14:24 (976176). search-api converted these to 409 'unique violation on products.id' (#1357, #1528), and web-bff surfaced them as GET /search 500 'upstream search-api returned 500 (create failed)' (#1202, #1387). The web-bff 5xx are downstream symptoms. The sequence-behind-data fault fits the timing: failures start about 2.5 minutes after the restore, as the sequence hands out ids already in the table. The legacy-inventory healthcheck timeouts in status-poller (#553, #799, etc.) are a separate deprecated-endpoint issue and do not explain the save failures."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.1,
+              "evidenceLines": [
+                875
+              ],
+              "reasoning": "Less likely: the restore may have been triggered by an operator config or runbook mistake rather than a data-integrity fault. The log does not show the trigger, so this only explains how the restore happened, not the collision mechanism."
+            }
+          ],
+          "recommendedAction": "Immediately reset the products_id_seq sequence in catalog-db to above max(id), e.g. setval to max(id)+1 (around 979232 or higher). Then verify inserts succeed and the search-api 409s stop. Audit the restore that reloaded products from snapshot without resetting the sequence, and add a post-restore sequence-sync step. Check whether index-worker or catalog.updates saw any duplicated ids. Retry the affected customer product creates. Treat the legacy-inventory healthcheck timeouts as a separate follow-up."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 8,
+    "toolCalls": 10,
+    "usage": {
+      "inputTokens": 18,
+      "outputTokens": 2745,
+      "cacheReadTokens": 65643,
+      "cacheWriteTokens": 16383
+    },
+    "durationMs": 14294,
+    "stopReason": "tool_use"
+  }
+}

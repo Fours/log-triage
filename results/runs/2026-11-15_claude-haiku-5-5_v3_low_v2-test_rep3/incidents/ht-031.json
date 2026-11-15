@@ -1,0 +1,200 @@
+{
+  "score": {
+    "incidentId": "ht-031",
+    "difficulty": "hard",
+    "scenario": "bad_deploy/dependency-contract-change",
+    "truth": "bad_deploy",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "bad_deploy",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 3,
+    "secondaryCited": 4,
+    "costUsd": 0.00450896,
+    "durationMs": 13838,
+    "iterations": 5,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 12,
+      "output": 3034,
+      "cacheRead": 48576,
+      "cacheWrite": 20040
+    }
+  },
+  "result": {
+    "incidentId": "ht-031",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.88,
+          "evidenceLines": [
+            1867,
+            1967,
+            2005,
+            2167,
+            2271,
+            2422
+          ],
+          "reasoning": "catalog-svc v1.10.0 was rolled out at 19:01:41 (#1867) and started at 19:02:04 with 'response serializer v2 enabled' (#1967). Immediately after, search-api began failing to decode GET /products/batch responses: 'missing required field status (got keys: id, state, updatedAt)' (#2005), with further schema-validation and KeyError 'status' failures (#2167, #2271, #2422). search-api cannot map the payload, so /search fails and web-bff returns 502s (downstream symptoms, not cited). Search 502s begin at 19:02:13 right after the deploy. The config reload at #2004 changed 0 keys, so the serializer change is the origin. The 'status' field was dropped or renamed to 'state' in the new serializer, which breaks the contract with search-api."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.2,
+          "evidenceLines": [
+            1911,
+            2024,
+            2092
+          ],
+          "reasoning": "billing-reconciler reports invoice_archive checksum-constraint violations from 19:01:52 onward. These are real but are in billing, not on the /search path, and do not explain the search 502s. Likely a separate background data-quality issue."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.15,
+          "evidenceLines": [
+            2060,
+            2181,
+            2355,
+            2190,
+            2642
+          ],
+          "reasoning": "A parallel fault: accounts-db lock contention (ShareLock on transaction 83747, #2060) causes auth-svc UPDATE accounts statement timeouts (#2181, #2355), which cascade into account-svc token timeouts, pool exhaustion, and edge-proxy /login 504s. This affects login, not GET /search, so it is a separate incident. Its origin (the lock holder) is not yet identified."
+        }
+      ],
+      "recommendedAction": "Roll back catalog-svc from v1.10.0 to v1.9.4 immediately (the build that still emits the 'status' field). This should restore search-api decoding and clear the /search 502s. Alternatively, fix the v1.10.0 serializer to keep 'status', or coordinate the contract change with search-api before re-deploying. Separately, investigate the accounts-db ShareLock holder (txn 83747) causing auth-svc/account-svc login timeouts, and the invoice_archive checksum violations in billing-reconciler."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 60
+        },
+        "output": "69 match(es), showing first 60:\n#981 2026-11-13T18:58:04Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#1216 2026-11-13T18:59:02Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#1297 2026-11-13T18:59:21Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#1645 2026-11-13T19:00:44Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#1723 2026-11-13T19:01:02Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#1911 2026-11-13T19:01:52Z ERROR billing-reconciler invoice_archive row inv-145047 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1923 2026-11-13T19:01:54Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#1987 2026-11-13T19:02:13Z ERROR web-bff [t-4178] GET /search 502 25303ms: upstream search-api returned 502 Bad Gateway\n#2005 2026-11-13T19:02:21Z ERROR search-api [t-4185] failed to decode catalog-svc GET /products/batch response for p-9755: missing required field \"status\" (got keys: id, state, updatedAt)\n#2015 2026-11-13T19:02:26Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2024 2026-11-13T19:02:30Z ERROR billing-reconciler invoice_archive row inv-672507 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2092 2026-11-13T19:02:59Z ERROR billing-reconciler invoice_archive row inv-646504 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2127 2026-11-13T19:03:17Z ERROR web-bff [t-4238] GET /search 502 11118ms: upstream search-api returned 502 Bad Gateway\n#2138 2026-11-13T19:03:23Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2150 2026-11-13T19:03:29Z ERROR billing-reconciler invoice_archive row inv-258508 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2167 2026-11-13T19:03:38Z ERROR search-api [t-4251] schema validation error on catalog-svc reply (p-9802): required property 'status' not found\n#2181 2026-11-13T19:03:45Z ERROR auth-svc [t-4261] query canceled: statement timeout 10000ms (UPDATE accounts WHERE id = u-9806)\n#2190 2026-11-13T19:03:50Z ERROR account-svc [t-4261] AuthClient.issueToken timed out after 15000ms calling auth-svc POST /tokens (u-9806)\n#2197 2026-11-13T19:03:56Z ERROR web-bff [t-4264] GET /search 502 7064ms: upstream search-api returned 502 Bad Gateway\n#2236 2026-11-13T19:04:15Z ERROR billing-reconciler invoice_archive row inv-336683 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2238 2026-11-13T19:04:15Z ERROR auth-svc [t-4280] canceling UPDATE on accounts for u-9819 due to statement_timeout\n#2241 2026-11-13T19:04:19Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2247 2026-11-13T19:04:20Z ERROR account-svc [t-4280] upstream request to auth-svc failed: ReadTimeout (read timeout=15s) [u-9819]\n#2267 2026-11-13T19:04:37Z ERROR billing-reconciler invoice_archive row inv-200893 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2269 2026-11-13T19:04:37Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#2271 2026-11-13T19:04:37Z ERROR search-api [t-4288] CatalogClient.getBatch: unexpected payload for p-9824, cannot map status (present: id, state, updatedAt)\n#2296 2026-11-13T19:04:54Z ERROR web-bff [t-4295] GET /search 502 19476ms: upstream search-api returned 502 Bad Gateway\n#2307 2026-11-13T19:05:04Z ERROR billing-reconciler invoice_archive row inv-915031 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2348 2026-11-13T19:05:25Z ERROR billing-reconciler invoice_archive row inv-947244 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2355 2026-11-13T19:05:28Z ERROR auth-svc [t-4316] db write accounts/u-9841 aborted: QueryCanceled after 10.0s\n#2362 2026-11-13T19:05:33Z ERROR account-svc [t-4316] POST /tokens -> auth-svc: context deadline exceeded after 15.0s (u-9841)\n#2367 2026-11-13T19:05:35Z ERROR edge-proxy [t-4320] POST /login 504 9752ms: upstream account-svc timed out\n#2376 2026-11-13T19:05:39Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2412 2026-11-13T19:05:53Z ERROR web-bff [t-4339] GET /search 502 9392ms: upstream search-api returned 502 Bad Gateway\n#2422 2026-11-13T19:05:59Z ERROR search-api [t-4340] deserializing catalog-svc response for p-9858 failed: KeyError 'status'\n#2450 2026-11-13T19:06:18Z ERROR billing-reconciler invoice_archive row inv-177676 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2473 2026-11-13T19:06:29Z ERROR web-bff [t-4358] GET /search 502 15191ms: upstream search-api returned 502 Bad Gateway\n#2475 2026-11-13T19:06:30Z ERROR billing-reconciler invoice_archive row inv-258450 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2490 2026-11-13T19:06:39Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2514 2026-11-13T19:06:54Z ERROR billing-reconciler invoice_archive row inv-311483 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2516 2026-11-13T19:06:55Z ERROR edge-proxy [t-4365] POST /login 504 15100ms: upstream account-svc timed out\n#2530 2026-11-13T19:07:05Z ERROR web-bff [t-4371] GET /search 502 26491ms: upstream search-api returned 502 Bad Gateway\n#2550 2026-11-13T19:07:15Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#2575 2026-11-13T19:07:27Z ERROR billing-reconciler invoice_archive row inv-299198 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2616 2026-11-13T19:07:46Z ERROR edge-proxy [t-4407] POST /login 504 19732ms: upstream account-svc timed out\n#2626 2026-11-13T19:07:52Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#2642 2026-11-13T19:07:59Z ERROR account-svc pool checkout timeout: no connection to auth-svc available after 5000ms\n#2648 2026-11-13T19:08:03Z ERROR billing-reconciler invoice_archive row inv-236246 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2690 2026-11-13T19:08:26Z ERROR web-bff [t-4428] GET /search 502 29362ms: upstream search-api returned 502 Bad Gateway\n#2691 2026-11-13T19:08:26Z ERROR billing-reconciler invoice_archive row inv-275830 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2692 2026-11-13T19:08:26Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2728 2026-11-13T19:08:47Z ERROR web-bff [t-4448] GET /search 502 28459ms: upstream search-api returned 502 Bad Gateway\n#2731 2026-11-13T19:08:49Z ERROR edge-proxy [t-4450] POST /login 504 5594ms: upstream account-svc timed out\n#2765 2026-11-13T19:09:07Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2772 2026-11-13T19:09:09Z ERROR edge-proxy [t-4464] POST /login 504 19427ms: upstream account-svc timed out\n#2783 2026-11-13T19:09:17Z ERROR billing-reconciler invoice_archive row inv-779026 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2827 2026-11-13T19:09:37Z ERROR web-bff [t-4488] GET /search 502 22470ms: upstream search-api returned 502 Bad Gateway\n#2837 2026-11-13T19:09:41Z ERROR billing-reconciler invoice_archive row inv-735735 violates checksum constraint, skipping (archive partition 2019-Q3)\n#2870 2026-11-13T19:09:57Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#2917 2026-11-13T19:10:22Z ERROR billing-reconciler invoice_archive row inv-403111 violates checksum constraint, skipping (archive partition 2019-Q2)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 40
+        },
+        "output": "75 match(es), showing first 40:\n#321 2026-11-13T18:55:20Z WARN web-bff TLS certificate for *.internal.example expires in 18 days\n#981 2026-11-13T18:58:04Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#1216 2026-11-13T18:59:02Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#1297 2026-11-13T18:59:21Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#1645 2026-11-13T19:00:44Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#1723 2026-11-13T19:01:02Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#1911 2026-11-13T19:01:52Z ERROR billing-reconciler invoice_archive row inv-145047 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1923 2026-11-13T19:01:54Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#1987 2026-11-13T19:02:13Z ERROR web-bff [t-4178] GET /search 502 25303ms: upstream search-api returned 502 Bad Gateway\n#2005 2026-11-13T19:02:21Z ERROR search-api [t-4185] failed to decode catalog-svc GET /products/batch response for p-9755: missing required field \"status\" (got keys: id, state, updatedAt)\n#2015 2026-11-13T19:02:26Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2024 2026-11-13T19:02:30Z ERROR billing-reconciler invoice_archive row inv-672507 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2059 2026-11-13T19:02:42Z WARN catalog-db slow query 2230ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#2060 2026-11-13T19:02:42Z WARN accounts-db process 29724 still waiting for ShareLock on transaction 83747 after 1000.000 ms (UPDATE accounts SET ...)\n#2092 2026-11-13T19:02:59Z ERROR billing-reconciler invoice_archive row inv-646504 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2127 2026-11-13T19:03:17Z ERROR web-bff [t-4238] GET /search 502 11118ms: upstream search-api returned 502 Bad Gateway\n#2138 2026-11-13T19:03:23Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2150 2026-11-13T19:03:29Z ERROR billing-reconciler invoice_archive row inv-258508 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2167 2026-11-13T19:03:38Z ERROR search-api [t-4251] schema validation error on catalog-svc reply (p-9802): required property 'status' not found\n#2181 2026-11-13T19:03:45Z ERROR auth-svc [t-4261] query canceled: statement timeout 10000ms (UPDATE accounts WHERE id = u-9806)\n#2187 2026-11-13T19:03:48Z WARN accounts-db process 56570 still waiting for ShareLock on transaction 83747 after 1000.000 ms (UPDATE accounts SET ...)\n#2190 2026-11-13T19:03:50Z ERROR account-svc [t-4261] AuthClient.issueToken timed out after 15000ms calling auth-svc POST /tokens (u-9806)\n#2197 2026-11-13T19:03:56Z ERROR web-bff [t-4264] GET /search 502 7064ms: upstream search-api returned 502 Bad Gateway\n#2236 2026-11-13T19:04:15Z ERROR billing-reconciler invoice_archive row inv-336683 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2238 2026-11-13T19:04:15Z ERROR auth-svc [t-4280] canceling UPDATE on accounts for u-9819 due to statement_timeout\n#2241 2026-11-13T19:04:19Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2247 2026-11-13T19:04:20Z ERROR account-svc [t-4280] upstream request to auth-svc failed: ReadTimeout (read timeout=15s) [u-9819]\n#2267 2026-11-13T19:04:37Z ERROR billing-reconciler invoice_archive row inv-200893 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2269 2026-11-13T19:04:37Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#2271 2026-11-13T19:04:37Z ERROR search-api [t-4288] CatalogClient.getBatch: unexpected payload for p-9824, cannot map status (present: id, state, updatedAt)\n#2296 2026-11-13T19:04:54Z ERROR web-bff [t-4295] GET /search 502 19476ms: upstream search-api returned 502 Bad Gateway\n#2307 2026-11-13T19:05:04Z ERROR billing-reconciler invoice_archive row inv-915031 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2320 2026-11-13T19:05:09Z WARN account-svc HTTP connection pool to auth-svc at capacity (50/50 in use), 40 requests queued\n#2348 2026-11-13T19:05:25Z ERROR billing-reconciler invoice_archive row inv-947244 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2355 2026-11-13T19:05:28Z ERROR auth-svc [t-4316] db write accounts/u-9841 aborted: QueryCanceled after 10.0s\n#2362 2026-11-13T19:05:33Z ERROR account-svc [t-4316] POST /tokens -> auth-svc: context deadline exceeded after 15.0s (u-9841)\n#2367 2026-11-13T19:05:35Z ERROR edge-proxy [t-4320] POST /login 504 9752ms: upstream account-svc timed out\n#2376 2026-11-13T19:05:39Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2412 2026-11-13T19:05:53Z ERROR web-bff [t-4339] GET /search 502 9392ms: upstream search-api returned 502 Bad Gateway\n#2422 2026-11-13T19:05:59Z ERROR search-api [t-4340] deserializing catalog-svc response for p-9858 failed: KeyError 'status'"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-svc",
+          "since": "18:54:00",
+          "until": "19:03:00",
+          "limit": 60
+        },
+        "output": "256 match(es), showing first 60:\n#3 2026-11-13T18:54:00Z INFO catalog-svc [t-2852] GET /products/batch p-8687 ok 78ms\n#10 2026-11-13T18:54:02Z INFO catalog-svc [t-2855] GET /products/batch p-8692 ok 46ms\n#18 2026-11-13T18:54:04Z INFO catalog-svc [t-2860] GET /products/batch p-8696 ok 41ms\n#23 2026-11-13T18:54:05Z INFO catalog-svc [t-2863] GET /products/batch p-8698 ok 44ms\n#36 2026-11-13T18:54:09Z INFO catalog-svc [t-2873] GET /products/batch p-8707 ok 62ms\n#47 2026-11-13T18:54:12Z INFO catalog-svc [t-2887] GET /products/batch p-8715 ok 89ms\n#53 2026-11-13T18:54:13Z INFO catalog-svc [t-2888] GET /products/batch p-8718 ok 86ms\n#62 2026-11-13T18:54:15Z INFO catalog-svc [t-2896] GET /products/batch p-8723 ok 25ms\n#64 2026-11-13T18:54:16Z DEBUG catalog-svc GC pause 11ms (young), heap 38%\n#66 2026-11-13T18:54:16Z INFO catalog-svc [t-2900] GET /products/batch p-8724 ok 86ms\n#99 2026-11-13T18:54:25Z INFO catalog-svc [t-2928] GET /products/batch p-8744 ok 27ms\n#103 2026-11-13T18:54:26Z INFO catalog-svc [t-2930] GET /products/batch p-8746 ok 65ms\n#106 2026-11-13T18:54:27Z DEBUG catalog-svc GC pause 7ms (young), heap 39%\n#111 2026-11-13T18:54:27Z INFO catalog-svc [t-2937] GET /products/batch p-8751 ok 59ms\n#126 2026-11-13T18:54:31Z INFO catalog-svc [t-2948] GET /products/batch p-8761 ok 46ms\n#132 2026-11-13T18:54:33Z INFO catalog-svc [t-2951] GET /products/batch p-8764 ok 34ms\n#142 2026-11-13T18:54:34Z INFO catalog-svc [t-2954] GET /products/batch p-8767 ok 52ms\n#166 2026-11-13T18:54:41Z INFO catalog-svc [t-2974] GET /products/batch p-8778 ok 74ms\n#174 2026-11-13T18:54:43Z INFO catalog-svc [t-2983] GET /products/batch p-8785 ok 64ms\n#176 2026-11-13T18:54:43Z DEBUG catalog-svc GC pause 11ms (young), heap 44%\n#181 2026-11-13T18:54:44Z INFO catalog-svc [t-2984] GET /products/batch p-8787 ok 78ms\n#202 2026-11-13T18:54:50Z INFO catalog-svc [t-2993] GET /products/batch p-8799 ok 72ms\n#212 2026-11-13T18:54:53Z INFO catalog-svc [t-2998] GET /products/batch p-8806 ok 62ms\n#214 2026-11-13T18:54:54Z DEBUG catalog-svc GC pause 16ms (young), heap 34%\n#218 2026-11-13T18:54:54Z INFO catalog-svc [t-2999] GET /products/batch p-8808 ok 76ms\n#224 2026-11-13T18:54:56Z INFO catalog-svc [t-3001] GET /products/batch p-8809 ok 53ms\n#228 2026-11-13T18:54:57Z INFO catalog-svc [t-3008] GET /products/batch p-8813 ok 72ms\n#232 2026-11-13T18:54:58Z INFO catalog-svc [t-3009] GET /products/batch p-8815 ok 49ms\n#237 2026-11-13T18:55:00Z INFO catalog-svc [t-3011] GET /products/batch p-8817 ok 42ms\n#258 2026-11-13T18:55:05Z INFO catalog-svc [t-3027] GET /products/batch p-8831 ok 50ms\n#268 2026-11-13T18:55:07Z DEBUG catalog-svc GC pause 12ms (young), heap 28%\n#272 2026-11-13T18:55:08Z INFO catalog-svc [t-3031] GET /products/batch p-8837 ok 29ms\n#275 2026-11-13T18:55:09Z INFO catalog-svc [t-3033] GET /products/batch p-8839 ok 47ms\n#284 2026-11-13T18:55:10Z INFO catalog-svc [t-3039] GET /products/batch p-8842 ok 31ms\n#295 2026-11-13T18:55:14Z INFO catalog-svc [t-3049] GET /products/batch p-8850 ok 58ms\n#301 2026-11-13T18:55:15Z INFO catalog-svc [t-3051] GET /products/batch p-8854 ok 34ms\n#311 2026-11-13T18:55:19Z INFO catalog-svc [t-3060] GET /products/batch p-8858 ok 63ms\n#316 2026-11-13T18:55:20Z INFO catalog-svc [t-3063] GET /products/batch p-8860 ok 90ms\n#324 2026-11-13T18:55:21Z INFO catalog-svc [t-3065] GET /products/batch p-8863 ok 63ms\n#328 2026-11-13T18:55:22Z INFO catalog-svc [t-3069] GET /products/batch p-8864 ok 23ms\n#341 2026-11-13T18:55:24Z INFO catalog-svc [t-3076] GET /products/batch p-8870 ok 40ms\n#349 2026-11-13T18:55:26Z DEBUG catalog-svc GC pause 20ms (young), heap 28%\n#359 2026-11-13T18:55:28Z INFO catalog-svc [t-3093] GET /products/batch p-8878 ok 53ms\n#363 2026-11-13T18:55:29Z INFO catalog-svc [t-3097] GET /products/batch p-8879 ok 66ms\n#377 2026-11-13T18:55:33Z INFO catalog-svc [t-3108] GET /products/batch p-8886 ok 42ms\n#388 2026-11-13T18:55:34Z INFO catalog-svc [t-3117] GET /products/batch p-8891 ok 84ms\n#396 2026-11-13T18:55:37Z INFO catalog-svc [t-3119] GET /products/batch p-8896 ok 25ms\n#398 2026-11-13T18:55:37Z DEBUG catalog-svc GC pause 22ms (young), heap 44%\n#401 2026-11-13T18:55:37Z INFO catalog-svc [t-3120] GET /products/batch p-8898 ok 64ms\n#404 2026-11-13T18:55:38Z INFO catalog-svc [t-3121] GET /products/batch p-8900 ok 78ms\n#410 2026-11-13T18:55:39Z INFO catalog-svc [t-3124] GET /products/batch p-8903 ok 73ms\n#417 2026-11-13T18:55:41Z INFO catalog-svc [t-3127] GET /products/batch p-8906 ok 53ms\n#422 2026-11-13T18:55:42Z INFO catalog-svc [t-3129] GET /products/batch p-8908 ok 89ms\n#444 2026-11-13T18:55:48Z INFO catalog-svc [t-3144] GET /products/batch p-8924 ok 54ms\n#451 2026-11-13T18:55:50Z DEBUG catalog-svc GC pause 4ms (young), heap 34%\n#463 2026-11-13T18:55:54Z INFO catalog-svc [t-3158] GET /products/batch p-8938 ok 31ms\n#469 2026-11-13T18:55:54Z INFO catalog-svc [t-3160] GET /products/batch p-8940 ok 64ms\n#473 2026-11-13T18:55:56Z INFO catalog-svc [t-3164] GET /products/batch p-8943 ok 83ms\n#480 2026-11-13T18:55:58Z INFO catalog-svc [t-3171] GET /products/batch p-8947 ok 82ms\n#488 2026-11-13T18:56:00Z INFO catalog-svc [t-3174] GET /products/batch p-8952 ok 72ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "status",
+          "since": "18:54:00",
+          "until": "19:02:30",
+          "limit": 40
+        },
+        "output": "1 match(es):\n#2005 2026-11-13T19:02:21Z ERROR search-api [t-4185] failed to decode catalog-svc GET /products/batch response for p-9755: missing required field \"status\" (got keys: id, state, updatedAt)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-svc",
+          "since": "19:00:00",
+          "until": "19:03:00",
+          "limit": 80
+        },
+        "output": "74 match(es):\n#1463 2026-11-13T19:00:00Z DEBUG catalog-svc GC pause 14ms (young), heap 31%\n#1478 2026-11-13T19:00:03Z INFO catalog-svc [t-3853] GET /products/batch p-9480 ok 41ms\n#1481 2026-11-13T19:00:04Z INFO catalog-svc [t-3854] GET /products/batch p-9483 ok 36ms\n#1485 2026-11-13T19:00:05Z INFO catalog-svc [t-3855] GET /products/batch p-9485 ok 64ms\n#1498 2026-11-13T19:00:08Z INFO catalog-svc [t-3863] GET /products/batch p-9492 ok 53ms\n#1504 2026-11-13T19:00:10Z INFO catalog-svc [t-3867] GET /products/batch p-9497 ok 35ms\n#1510 2026-11-13T19:00:11Z INFO catalog-svc [t-3875] GET /products/batch p-9502 ok 58ms\n#1517 2026-11-13T19:00:13Z INFO catalog-svc [t-3876] GET /products/batch p-9505 ok 52ms\n#1526 2026-11-13T19:00:15Z DEBUG catalog-svc GC pause 25ms (young), heap 41%\n#1530 2026-11-13T19:00:16Z INFO catalog-svc [t-3889] GET /products/batch p-9514 ok 81ms\n#1534 2026-11-13T19:00:17Z INFO catalog-svc [t-3890] GET /products/batch p-9516 ok 59ms\n#1541 2026-11-13T19:00:19Z INFO catalog-svc [t-3895] GET /products/batch p-9520 ok 65ms\n#1544 2026-11-13T19:00:19Z INFO catalog-svc [t-3899] GET /products/batch p-9522 ok 64ms\n#1557 2026-11-13T19:00:22Z INFO catalog-svc [t-3906] GET /products/batch p-9528 ok 29ms\n#1580 2026-11-13T19:00:29Z INFO catalog-svc [t-3917] GET /products/batch p-9540 ok 60ms\n#1590 2026-11-13T19:00:31Z INFO catalog-svc [t-3926] GET /products/batch p-9545 ok 86ms\n#1594 2026-11-13T19:00:32Z INFO catalog-svc [t-3929] GET /products/batch p-9547 ok 24ms\n#1602 2026-11-13T19:00:33Z INFO catalog-svc [t-3934] GET /products/batch p-9552 ok 63ms\n#1606 2026-11-13T19:00:34Z DEBUG catalog-svc GC pause 10ms (young), heap 39%\n#1615 2026-11-13T19:00:36Z INFO catalog-svc [t-3939] GET /products/batch p-9560 ok 67ms\n#1618 2026-11-13T19:00:37Z INFO catalog-svc [t-3942] GET /products/batch p-9562 ok 24ms\n#1627 2026-11-13T19:00:39Z INFO catalog-svc [t-3946] GET /products/batch p-9566 ok 65ms\n#1632 2026-11-13T19:00:41Z INFO catalog-svc [t-3951] GET /products/batch p-9569 ok 51ms\n#1644 2026-11-13T19:00:44Z INFO catalog-svc [t-3960] GET /products/batch p-9574 ok 56ms\n#1650 2026-11-13T19:00:45Z INFO catalog-svc [t-3962] GET /products/batch p-9577 ok 86ms\n#1655 2026-11-13T19:00:46Z INFO catalog-svc [t-3963] GET /products/batch p-9579 ok 25ms\n#1657 2026-11-13T19:00:46Z DEBUG catalog-svc GC pause 4ms (young), heap 44%\n#1660 2026-11-13T19:00:47Z INFO catalog-svc [t-3966] GET /products/batch p-9581 ok 40ms\n#1677 2026-11-13T19:00:50Z INFO catalog-svc [t-3974] GET /products/batch p-9590 ok 82ms\n#1682 2026-11-13T19:00:52Z INFO catalog-svc [t-3977] GET /products/batch p-9595 ok 66ms\n#1696 2026-11-13T19:00:56Z INFO catalog-svc [t-3991] GET /products/batch p-9606 ok 68ms\n#1706 2026-11-13T19:00:58Z INFO catalog-svc [t-3997] GET /products/batch p-9610 ok 57ms\n#1712 2026-11-13T19:00:59Z INFO catalog-svc [t-4001] GET /products/batch p-9612 ok 83ms\n#1716 2026-11-13T19:01:01Z INFO catalog-svc [t-4002] GET /products/batch p-9615 ok 86ms\n#1725 2026-11-13T19:01:02Z DEBUG catalog-svc GC pause 12ms (young), heap 42%\n#1734 2026-11-13T19:01:05Z INFO catalog-svc [t-4010] GET /products/batch p-9621 ok 43ms\n#1739 2026-11-13T19:01:07Z INFO catalog-svc [t-4014] GET /products/batch p-9622 ok 71ms\n#1748 2026-11-13T19:01:09Z INFO catalog-svc [t-4019] GET /products/batch p-9626 ok 24ms\n#1759 2026-11-13T19:01:12Z DEBUG catalog-svc GC pause 22ms (young), heap 29%\n#1764 2026-11-13T19:01:13Z INFO catalog-svc [t-4027] GET /products/batch p-9634 ok 30ms\n#1773 2026-11-13T19:01:16Z INFO catalog-svc [t-4033] GET /products/batch p-9638 ok 30ms\n#1788 2026-11-13T19:01:19Z INFO catalog-svc [t-4042] GET /products/batch p-9646 ok 76ms\n#1798 2026-11-13T19:01:22Z INFO catalog-svc [t-4051] GET /products/batch p-9653 ok 55ms\n#1801 2026-11-13T19:01:23Z DEBUG catalog-svc GC pause 20ms (young), heap 43%\n#1806 2026-11-13T19:01:25Z INFO catalog-svc [t-4059] GET /products/batch p-9658 ok 57ms\n#1821 2026-11-13T19:01:29Z INFO catalog-svc [t-4068] GET /products/batch p-9666 ok 73ms\n#1827 2026-11-13T19:01:30Z INFO catalog-svc [t-4074] GET /products/batch p-9669 ok 51ms\n#1833 2026-11-13T19:01:31Z INFO catalog-svc [t-4077] GET /products/batch p-9670 ok 37ms\n#1837 2026-11-13T19:01:33Z INFO catalog-svc [t-4078] GET /products/batch p-9673 ok 86ms\n#1848 2026-11-13T19:01:36Z INFO catalog-svc [t-4087] GET /products/batch p-9678 ok 82ms\n#1865 2026-11-13T19:01:40Z INFO catalog-svc [t-4103] GET /products/batch p-9688 ok 32ms\n#1867 2026-11-13T19:01:41Z INFO catalog-svc deploy: rolling out catalog-svc v1.10.0 (build e91880e), replacing v1.9.4\n#1871 2026-11-13T19:01:42Z DEBUG catalog-svc GC pause 12ms (young), heap 37%\n#1877 2026-11-13T19:01:43Z INFO catalog-svc [t-4110] GET /products/batch p-9692 ok 38ms\n#1898 2026-11-13T19:01:50Z INFO catalog-svc [t-4126] GET /products/batch p-9705 ok 30ms\n#1903 2026-11-13T19:01:51Z INFO catalog-svc [t-4128] GET /products/batch p-9707 ok 72ms\n#1917 2026-11-13T19:01:54Z DEBUG catalog-svc GC pause 17ms (young), heap 45%\n#1921 2026-11-13T19:01:54Z INFO catalog-svc [t-4143] GET /products/batch p-9716 ok 64ms\n#1926 2026-11-13T19:01:55Z INFO catalog-svc [t-4144] GET /products/batch p-9717 ok 77ms\n#1929 2026-11-13T19:01:56Z INFO catalog-svc [t-4145] GET /products/batch p-9719 ok 52ms\n#1937 2026-11-13T19:01:58Z INFO catalog-svc [t-4154] GET /products/batch p-9723 ok 55ms\n#1945 2026-11-13T19:02:00Z INFO catalog-svc [t-4160] GET /products/batch p-9726 ok 49ms\n#1954 2026-11-13T19:02:02Z INFO catalog-svc [t-4163] GET /products/batch p-9729 ok 50ms\n#1959 2026-11-13T19:02:03Z INFO catalog-svc [t-4165] GET /products/batch p-9731 ok 37ms\n#1962 2026-11-13T19:02:04Z INFO catalog-svc [t-4167] GET /products/batch p-9732 ok 51ms\n#1967 2026-11-13T19:02:04Z INFO catalog-svc started catalog-svc v1.10.0: response serializer v2 enabled\n#1978 2026-11-13T19:02:08Z DEBUG catalog-svc GC pause 12ms (young), heap 37%\n#1998 2026-11-13T19:02:18Z DEBUG catalog-svc GC pause 20ms (young), heap 28%\n#2004 2026-11-13T19:02:21Z INFO catalog-svc config reloaded from config-service (revision 780): 0 keys changed\n#2029 2026-11-13T19:02:30Z DEBUG catalog-svc GC pause 15ms (young), heap 37%\n#2032 2026-11-13T19:02:31Z INFO catalog-svc [t-4197] GET /products/batch p-9764 ok 63ms\n#2038 2026-11-13T19:02:33Z INFO catalog-svc [t-4199] GET /products/batch p-9765 ok 75ms\n#2051 2026-11-13T19:02:39Z INFO catalog-svc [t-4208] GET /products/batch p-9772 ok 75ms\n#2074 2026-11-13T19:02:47Z DEBUG catalog-svc GC pause 23ms (young), heap 36%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 30
+        },
+        "output": "1 match(es):\n#1867 2026-11-13T19:01:41Z INFO catalog-svc deploy: rolling out catalog-svc v1.10.0 (build e91880e), replacing v1.9.4"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"bad_deploy\",\"confidence\":0.88,\"evidenceLines\":[1867,1967,2005,2167,2271,2422],\"reasoning\":\"catalog-svc v1.10.0 was rolled out at 19:01:41 (#1867) and started at 19:02:04 with 'response serializer v2 enabled' (#1967). Immediately after, search-api began failing to decode GET /products/batch responses: 'missing required field status (got keys: id, state, updatedAt)' (#2005), with further schema-validation and KeyError 'status' failures (#2167, #2271, #2422). search-api cannot map the payload, so /search fails and web-bff returns 502s (#1987, #2127, #2197, etc., omitted from evidence as downstream symptoms). Onset of search 502s (19:02:13) follows the deploy directly, and the catalog-svc config reload at #2004 changed 0 keys, so the serializer change is the origin. The 'status' field was dropped/renamed to 'state' in the new serializer, a contract break between catalog-svc and search-api.\",\"}, {\"rootCause\":\"data_integrity\",\"confidence\":0.2,\"evidenceLines\":[1911,2024,2092],\"reasoning\":\"billing-reconciler reports invoice_archive checksum-constraint violations from 19:01:52 onward. These are real but are in billing, not on the /search path, and they do not explain the search 502s. Likely a separate, background data-quality issue.\",\"}, {\"rootCause\":\"dependency_timeout\",\"confidence\":0.15,\"evidenceLines\":[2060,2181,2355,2190,2642],\"reasoning\":\"A separate fault: accounts-db lock contention (ShareLock on transaction 83747, #2060) causes auth-svc UPDATE accounts statement timeouts (#2181, #2355), which cascade into account-svc token timeouts and pool exhaustion and edge-proxy /login 504s. This affects login, not GET /search, so it is a parallel incident rather than the cause of the search 502s. Its origin (the lock holder) is not yet identified.\",\"}]",
+          "recommendedAction": "Roll back catalog-svc from v1.10.0 to v1.9.4 immediately (the build that still emits the 'status' field), which should restore search-api decoding and clear the /search 502s. Alternatively, fix the v1.10.0 serializer to keep 'status' or coordinate a contract change with search-api before re-deploying. Separately, investigate the accounts-db ShareLock holder (txn 83747) that is causing auth-svc/account-svc login timeouts, and the invoice_archive checksum violations in billing-reconciler."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.88,
+              "evidenceLines": [
+                1867,
+                1967,
+                2005,
+                2167,
+                2271,
+                2422
+              ],
+              "reasoning": "catalog-svc v1.10.0 was rolled out at 19:01:41 (#1867) and started at 19:02:04 with 'response serializer v2 enabled' (#1967). Immediately after, search-api began failing to decode GET /products/batch responses: 'missing required field status (got keys: id, state, updatedAt)' (#2005), with further schema-validation and KeyError 'status' failures (#2167, #2271, #2422). search-api cannot map the payload, so /search fails and web-bff returns 502s (downstream symptoms, not cited). Search 502s begin at 19:02:13 right after the deploy. The config reload at #2004 changed 0 keys, so the serializer change is the origin. The 'status' field was dropped or renamed to 'state' in the new serializer, which breaks the contract with search-api."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.2,
+              "evidenceLines": [
+                1911,
+                2024,
+                2092
+              ],
+              "reasoning": "billing-reconciler reports invoice_archive checksum-constraint violations from 19:01:52 onward. These are real but are in billing, not on the /search path, and do not explain the search 502s. Likely a separate background data-quality issue."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.15,
+              "evidenceLines": [
+                2060,
+                2181,
+                2355,
+                2190,
+                2642
+              ],
+              "reasoning": "A parallel fault: accounts-db lock contention (ShareLock on transaction 83747, #2060) causes auth-svc UPDATE accounts statement timeouts (#2181, #2355), which cascade into account-svc token timeouts, pool exhaustion, and edge-proxy /login 504s. This affects login, not GET /search, so it is a separate incident. Its origin (the lock holder) is not yet identified."
+            }
+          ],
+          "recommendedAction": "Roll back catalog-svc from v1.10.0 to v1.9.4 immediately (the build that still emits the 'status' field). This should restore search-api decoding and clear the /search 502s. Alternatively, fix the v1.10.0 serializer to keep 'status', or coordinate the contract change with search-api before re-deploying. Separately, investigate the accounts-db ShareLock holder (txn 83747) causing auth-svc/account-svc login timeouts, and the invoice_archive checksum violations in billing-reconciler."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 3034,
+      "cacheReadTokens": 48576,
+      "cacheWriteTokens": 20040
+    },
+    "durationMs": 13838,
+    "stopReason": "tool_use"
+  }
+}
