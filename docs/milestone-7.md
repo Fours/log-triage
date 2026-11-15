@@ -117,8 +117,8 @@ Do these in order. Each one ends with `npm test` and `npm run typecheck` passing
 | --- | --- | --- |
 | T1. Dataset plumbing for generator v2 | Done | 53ca8b7 |
 | T2. Quiet causes and paraphrased evidence | Done | 60e1f8a |
-| T3. Loud decoys | Done | |
-| T4. Concurrent incidents and the `secondary` role | Not started | |
+| T3. Loud decoys | Done | c3e7876 |
+| T4. Concurrent incidents and the `secondary` role | Done | |
 | T5. Long haystacks, fairness checks, baseline ceiling | Not started | |
 | T6. Pilot and calibrate on the v2 dev set | Not started | |
 | T7. Model matrix and repeats on the v2 test set | Not started | |
@@ -170,6 +170,10 @@ Result: the first ERROR line is evidence in 0 of 48 incidents in both v2 sets (3
 - `IncidentScore.secondaryCited`, plus a summary field and a report line. No change to existing metrics.
 
 **Done when:** every v2 hard incident has a secondary fault with its own cause lines; scorer tests cover `secondaryCited`; old run records rescore unchanged (`npm run rescore` leaves v1 summaries identical apart from the new zero field).
+
+Done: `concurrentIncident` in `src/generator/index.ts`. On v2 hard incidents a second scenario runs on a **different topology**, a separate product sharing no service with the primary, because every scenario touches its own topology's edge and app. `checkout` and `notifications` share `api-gateway` and `redis`, so they never pair. The second scenario runs at medium difficulty with its own v2 difficulty object and background traffic, before the decoys, so decoys still top the overview. `IncidentBuilder.within(scope)` retags its cause lines as `secondary`, applies its own quiet setting, prefixes its message families, and keeps its first signs out of the incident's origin lines. The label gains optional `secondaryLines` and `secondaryScenario`. They're optional rather than defaulted, so v1 files stay byte-identical, and the spec's "new zero field" didn't turn out to be needed: `secondaryCited` and `Summary.secondary` are only present when an incident has a second fault, so `npm run rescore` leaves every committed run byte-identical. The report adds a "Concurrent incidents" line when a run has any. Tests: `test:generator` (present exactly on v2 hard, a fair pairing, onset within ±5 minutes, other services only, not named in the alert, never evidence or herring) and `test:eval` (`secondaryCited` across all hypotheses, absent otherwise, and the summary and report line).
+
+Sizes now: v2 easy 148–266 lines, medium 211–356, hard 425–712 (the second product roughly doubles a hard incident). T5's volume factor applies on top.
 
 ### T5. Long haystacks, fairness checks, baseline ceiling
 

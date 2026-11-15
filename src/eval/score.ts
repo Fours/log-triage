@@ -41,6 +41,8 @@ export interface IncidentScore {
   evidence: EvidenceScore;
   /** Red-herring lines cited anywhere in the verdict. */
   herringsCited: number;
+  /** Lines of a concurrent, unrelated fault cited anywhere in the verdict. Only set when the incident has one (v2 hard). */
+  secondaryCited?: number;
   costUsd: number | null;
   durationMs: number;
   iterations: number;
@@ -84,6 +86,9 @@ export function scoreIncident(incident: Incident, result: TriageResult): Inciden
       f1: precision + recall ? (2 * precision * recall) / (precision + recall) : 0,
     },
     herringsCited: [...allCited].filter((n) => herrings.has(n)).length,
+    ...(label.secondaryLines?.length
+      ? { secondaryCited: [...allCited].filter((n) => label.secondaryLines!.includes(n)).length }
+      : {}),
     costUsd: costUsd(result.model, result.usage),
     durationMs: result.durationMs,
     iterations: result.iterations,
@@ -137,6 +142,11 @@ export interface Summary {
   };
   /** Mean red-herring lines cited per incident, and share of incidents citing any. */
   herrings: { meanCited: number; incidentsCitingAny: number };
+  /**
+   * Over incidents with a concurrent, unrelated fault (v2 hard): how often its
+   * lines were cited. Absent when the run has none, so older summaries are unchanged.
+   */
+  secondary?: { incidents: number; meanCited: number; incidentsCitingAny: number };
   /** confusion[truth][predicted] — predicted "none" when there was no verdict. */
   confusion: Record<string, Record<string, number>>;
   cost: { totalUsd: number | null; meanUsd: number | null };
@@ -198,6 +208,18 @@ export function calibration(scores: IncidentScore[], binCount = 5): Summary["cal
   };
 }
 
+function secondarySummary(scores: IncidentScore[]): Pick<Summary, "secondary"> {
+  const withSecondary = scores.filter((s) => s.secondaryCited !== undefined);
+  if (!withSecondary.length) return {};
+  return {
+    secondary: {
+      incidents: withSecondary.length,
+      meanCited: mean(withSecondary.map((s) => s.secondaryCited!)),
+      incidentsCitingAny: withSecondary.filter((s) => s.secondaryCited! > 0).length,
+    },
+  };
+}
+
 export function summarize(scores: IncidentScore[]): Summary {
   const outcomes = { submitted: 0, budget_exhausted: 0, no_verdict: 0, refused: 0, api_error: 0 } as Record<Outcome, number>;
   for (const s of scores) outcomes[s.outcome] += 1;
@@ -234,6 +256,7 @@ export function summarize(scores: IncidentScore[]): Summary {
       meanCited: mean(scores.map((s) => s.herringsCited)),
       incidentsCitingAny: scores.filter((s) => s.herringsCited > 0).length,
     },
+    ...secondarySummary(scores),
     confusion,
     cost: priced
       ? { totalUsd: costs.reduce((a, b) => a! + b!, 0)!, meanUsd: mean(costs as number[]) }

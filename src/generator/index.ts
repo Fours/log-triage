@@ -6,6 +6,7 @@ import type { Ctx, Difficulty, GeneratorVersion, Scenario } from "./context.js";
 import { backgroundTraffic, plantHerrings } from "./noise.js";
 import { createRng } from "./rng.js";
 import { TOPOLOGIES, servicesOf, type Topology } from "./topologies.js";
+import { cite } from "./builder.js";
 import { dbDiskFull, dbLockWait, externalHang, memoryLeakOom } from "./scenarios/timeouts-and-resources.js";
 import { contractChange, newVersionException, rotatedCredential, wrongEndpoint } from "./scenarios/deploys-and-config.js";
 import { crashLoop, deserializeLoop, duplicateKey, failedMigration } from "./scenarios/queues-and-data.js";
@@ -94,7 +95,9 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
 
   const result = spec.scenario.run(c);
   const herrings = plantHerrings({ ...c, rng: rng.fork("herrings") }, spec.scenario.rootCause, spec.scenario.confusableWith);
-  // Generator v2: loud decoys sized to out-shout the real path, plus a healthy auxiliary service.
+  // Generator v2, hard: a second, unrelated fault on another product's services, at about the same time.
+  const second = spec.version >= 2 && spec.difficulty === "hard" ? concurrentIncident(spec, c, result.acceptableCauses ?? [], rng) : null;
+  // Generator v2: loud decoys sized to out-shout every other service, plus a healthy auxiliary service.
   const decoys: PlantedDecoys | null =
     spec.version >= 2 ? plantDecoys(c, spec.scenario.rootCause, spec.scenario.confusableWith, b.maxErrorsPerService()) : null;
   backgroundTraffic(
@@ -107,8 +110,20 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
 
   const built = b.build();
   const { logs, evidence, roles } = built;
-  const info = { ...built.info, decoyServices: decoys?.decoyServices ?? [] };
-  const services = decoys ? hard.rng.shuffle([...servicesOf(spec.topology), ...decoys.services]) : servicesOf(spec.topology);
+  const secondaryLines = logs.filter((_, i) => roles[i] === "secondary").map((l) => l.n);
+  const info = {
+    ...built.info,
+    decoyServices: decoys?.decoyServices ?? [],
+    onsets: { primary: c.onset, ...(second ? { secondary: second.onset } : {}) },
+  };
+  const services = decoys
+    ? hard.rng.shuffle([...servicesOf(spec.topology), ...(second ? servicesOf(second.topology) : []), ...decoys.services])
+    : servicesOf(spec.topology);
+  const secondNote = second
+    ? ` Separately, ${second.topology.edge}'s ${second.topology.route} had its own, unrelated incident at about the same time (${second.scenario.key}; ` +
+      `${cite(secondaryLines.slice(0, 3).map((n) => ({ n, at: 0, role: "secondary" as const })))}` +
+      `${secondaryLines.length > 3 ? ` and ${secondaryLines.length - 3} more` : ""}). None of it touches ${spec.topology.route}.`
+    : "";
   const errorIdx = logs.findIndex((l) => l.level === "ERROR" || l.level === "FATAL");
 
   const incident = Incident.parse({
@@ -120,11 +135,12 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
     label: {
       rootCause: spec.scenario.rootCause,
       evidenceLines: evidence,
-      explanation: b.resolve(result.explain() + herrings.note() + (decoys?.note() ?? "")),
+      explanation: b.resolve(result.explain() + herrings.note() + (decoys?.note() ?? "") + secondNote),
       difficulty: spec.difficulty,
       acceptableCauses: result.acceptableCauses ?? [],
       herringLines: logs.filter((_, i) => roles[i] === "herring").map((l) => l.n),
       scenario: spec.scenario.key,
+      ...(second ? { secondaryLines, secondaryScenario: second.scenario.key } : {}),
     },
   });
 
@@ -140,6 +156,43 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
       firstErrorIsEvidence: errorIdx >= 0 && roles[errorIdx] === "cause",
     },
   };
+}
+
+/**
+ * Generator v2, hard: a second, real fault that does not explain the alert. It
+ * runs on a different topology (another product, sharing no service with this
+ * one), from a different category that isn't one of this incident's acceptable
+ * answers, starting within ±5 minutes of onset, at medium difficulty. Its cause
+ * lines become `secondary`; its services get normal background traffic.
+ */
+function concurrentIncident(spec: IncidentSpec, c: Ctx, acceptable: RootCauseCategory[], rng: ReturnType<typeof createRng>) {
+  const r = c.hard.rng;
+  const mine = new Set(servicesOf(spec.topology));
+  const topology = r.pick(TOPOLOGIES.filter((t) => t.key !== spec.topology.key && servicesOf(t).every((s) => !mine.has(s))));
+  const candidates = Object.values(SCENARIOS)
+    .flat()
+    .filter((s) => s.rootCause !== spec.scenario.rootCause && !acceptable.includes(s.rootCause));
+  const scenario = r.pick(candidates);
+  // Within ±5 minutes, kept inside the window (the clamp only ever moves it toward the primary onset).
+  const onset = Math.round(Math.min(c.end * 0.7, Math.max(c.end * 0.25, c.onset + r.float(-300, 300))));
+  const hard2 = createHardness({
+    version: spec.version,
+    difficulty: "medium",
+    scenarioKey: scenario.key,
+    quietable: scenario.quietable,
+    allQuietable: QUIETABLE,
+    rng: rng.fork("secondary-hardness"),
+  });
+  const c2: Ctx = { ...c, t: topology, rng: rng.fork("secondary"), difficulty: "medium", hard: hard2, onset };
+  const result = c.b.within({ roles: { cause: "secondary" }, quietOrigins: hard2.quietCauses, familyPrefix: "secondary:" }, () => {
+    const res = scenario.run(c2);
+    backgroundTraffic(
+      { ...c2, rng: rng.fork("secondary-noise") },
+      { healthyAfterOnset: res.traffic?.healthyAfterOnset ?? 0.35, quietAfterOnset: new Set(res.traffic?.quietAfterOnset ?? []) },
+    );
+    return res;
+  });
+  return { topology, scenario, onset, result };
 }
 
 /**

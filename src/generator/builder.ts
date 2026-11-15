@@ -9,8 +9,9 @@ import type { Rng } from "./rng.js";
  * - symptom: downstream effect of the fault (5xx at the edge, saturated pools)
  * - herring: plausible-looking anomaly unrelated to this incident
  * - noise:   healthy background traffic and housekeeping
+ * - secondary: cause line of a second, unrelated fault running at the same time (v2 hard)
  */
-export type Role = "cause" | "symptom" | "herring" | "noise";
+export type Role = "cause" | "symptom" | "herring" | "noise" | "secondary";
 
 /**
  * Handle to an emitted line. `n` is filled in by `build()` once lines are
@@ -51,6 +52,18 @@ export interface BuildInfo {
   families: Record<string, { n: number; variant: number }[]>;
   /** Generator v2: auxiliary services carrying a loud decoy (set by the generator after build). */
   decoyServices: string[];
+  /** Window seconds when each fault began (set by the generator after build). */
+  onsets: { primary: number; secondary?: number };
+}
+
+/** While a second, unrelated fault is generated: how its lines are tagged. */
+export interface Scope {
+  /** Role remapping, e.g. its cause lines become `secondary`. */
+  roles: Partial<Record<Role, Role>>;
+  /** Whether its originating lines are logged quietly (its own difficulty decides). */
+  quietOrigins: boolean;
+  /** Prefix for its message families, so they don't merge with the primary's. */
+  familyPrefix: string;
 }
 
 const QUIET: Partial<Record<LogLevel, LogLevel>> = { WARN: "INFO", ERROR: "INFO", FATAL: "INFO" };
@@ -65,6 +78,18 @@ export class IncidentBuilder {
   private ids = new Map<string, string>();
   /** Generator v2: log originating cause lines at INFO. Off for v1. */
   quietOrigins = false;
+  private scope: Scope | null = null;
+
+  /** Generate a second, unrelated fault: its lines are retagged per `scope`. */
+  within<T>(scope: Scope, fn: () => T): T {
+    const outer = this.scope;
+    this.scope = scope;
+    try {
+      return fn();
+    } finally {
+      this.scope = outer;
+    }
+  }
 
   constructor(
     private readonly rng: Rng,
@@ -92,18 +117,22 @@ export class IncidentBuilder {
   /** Emit a line `at` seconds after the window start. Role defaults to noise. */
   log(at: number, service: string, level: LogLevel, msg: string | Phrased, opts: LogOpts = {}): LineRef {
     const phrased = typeof msg === "string" ? null : msg;
-    const origin = opts.origin === true;
+    const baseRole = opts.role ?? "noise";
+    const role = this.scope?.roles[baseRole] ?? baseRole;
+    const quiet = this.scope ? this.scope.quietOrigins : this.quietOrigins;
+    const isOrigin = opts.origin === true;
     const draft: Draft = {
       n: 0,
       at: Math.max(0, at),
-      role: opts.role ?? "noise",
+      role,
       seq: this.seq++,
       service,
-      level: origin && this.quietOrigins ? (QUIET[level] ?? level) : level,
+      level: isOrigin && quiet ? (QUIET[level] ?? level) : level,
       traceId: opts.trace,
       msg: phrased ? phrased.msg : (msg as string),
-      origin,
-      family: phrased?.family,
+      // Only the incident's own fault counts as "origin"; a second fault's first signs are just secondary lines.
+      origin: isOrigin && role === "cause",
+      family: phrased ? `${this.scope?.familyPrefix ?? ""}${phrased.family}` : undefined,
       variant: phrased?.variant,
     };
     this.drafts.push(draft);
@@ -157,7 +186,7 @@ export class IncidentBuilder {
     const evidence = sorted.filter((d) => d.role === "cause").map((d) => d.n);
     const families: BuildInfo["families"] = {};
     for (const d of sorted) if (d.family !== undefined) (families[d.family] ??= []).push({ n: d.n, variant: d.variant ?? 0 });
-    const info: BuildInfo = { origins: sorted.filter((d) => d.origin).map((d) => d.n), families, decoyServices: [] };
+    const info: BuildInfo = { origins: sorted.filter((d) => d.origin).map((d) => d.n), families, decoyServices: [], onsets: { primary: 0 } };
     return { logs, evidence, roles: sorted.map((d) => d.role), info };
   }
 

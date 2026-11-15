@@ -55,6 +55,14 @@ export const IncidentLabel = z.object({
   herringLines: z.array(z.number().int().positive()).default([]),
   /** Generator scenario key (e.g. "dependency_timeout/db-lock-wait"), for slicing results. */
   scenario: z.string().optional(),
+  /**
+   * Generator v2, hard incidents only: cause lines of a second, unrelated fault
+   * that happened at the same time on another product's services. Not evidence,
+   * not a herring. Absent (not empty) elsewhere, so v1 files are unchanged.
+   */
+  secondaryLines: z.array(z.number().int().positive()).optional(),
+  /** Scenario key of that second fault. */
+  secondaryScenario: z.string().optional(),
 });
 export type IncidentLabel = z.infer<typeof IncidentLabel>;
 

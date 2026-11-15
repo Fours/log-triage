@@ -96,6 +96,14 @@ export function renderRunReport(config: RunConfig, summary: Summary, scores: Inc
       "*Herring cites* is mean red-herring lines cited (incidents citing any). ECE/Brier measure how well top-1 confidence tracks correctness (lower is better). An incident without a verdict counts as wrong.",
   );
 
+  if (s.secondary) {
+    lines.push(
+      "",
+      `Concurrent incidents: ${s.secondary.incidents} incidents also had a second, unrelated fault on another product's services. ` +
+        `The agent cited its lines in ${s.secondary.incidentsCitingAny} of them (mean ${num(s.secondary.meanCited)} lines). Those lines aren't evidence, so citing them costs precision.`,
+    );
+  }
+
   lines.push("", "## By difficulty", "", SLICE_HEAD);
   for (const [d, sl] of Object.entries(s.byDifficulty)) lines.push(sliceRow(d, sl));
 

@@ -157,6 +157,29 @@ check("summary: rates over all incidents, outcome counts, confusion with 'none'"
   assert.equal(s.cost.totalUsd, 6.2 * 3);
 });
 
+check("concurrent faults: secondaryCited counts them anywhere in the verdict; absent when there's none", () => {
+  const withSecond = { ...incident, label: { ...incident.label, secondaryLines: [10, 11] } };
+  const s = scoreIncident(withSecond, result([hyp("config_error", [3, 10]), hyp("bad_deploy", [11, 12])]));
+  assert.equal(s.secondaryCited, 2);
+  assert.ok(s.evidence.precision < 1, "a cited secondary line costs precision");
+  const plain = scoreIncident(incident, result([hyp("config_error", [3])]));
+  assert.equal(plain.secondaryCited, undefined);
+  assert.ok(!("secondaryCited" in JSON.parse(JSON.stringify(plain))), "old records stay byte-identical");
+});
+
+check("summary and report gain a concurrent-incidents line only when a run had one", () => {
+  const withSecond = { ...incident, label: { ...incident.label, secondaryLines: [10] } };
+  const mixed = [scoreIncident(withSecond, result([hyp("config_error", [10])])), scoreIncident(incident, result([hyp("config_error", [3])]))];
+  const s = summarize(mixed);
+  assert.deepEqual(s.secondary, { incidents: 1, meanCited: 1, incidentsCitingAny: 1 });
+  const plain = summarize([scoreIncident(incident, result([hyp("config_error", [3])]))]);
+  assert.equal(plain.secondary, undefined);
+  assert.ok(!("secondary" in JSON.parse(JSON.stringify(plain))));
+  const cfg: RunConfig = { runId: "r", model: "m", effort: null, dataset: { dir: "d", generatorVersion: 2, seed: "s", incidents: 2 }, budget: null, concurrency: 1, git: { commit: "c", dirty: false }, startedAt: "", finishedAt: "" };
+  assert.match(renderRunReport(cfg, s, mixed), /Concurrent incidents: 1 incidents/);
+  assert.doesNotMatch(renderRunReport(cfg, plain, []), /Concurrent incidents/);
+});
+
 check("summary cost is null when any run is unpriced", () => {
   const s = summarize([scoreIncident(incident, result([hyp("config_error", [3])], { model: "baseline:keywords" }))]);
   assert.equal(s.cost.totalUsd, null);

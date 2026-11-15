@@ -380,4 +380,47 @@ check("'the first ERROR line is evidence' is now rarely true", () => {
   assert.ok(firstErrorIsEvidence <= v2All.length * 0.1, `${firstErrorIsEvidence}/${v2All.length}`);
 });
 
+console.log("\nGenerator v2: concurrent incidents (T4)");
+
+const v2Hard = v2All.filter((g) => g.incident.label.difficulty === "hard");
+
+check("every v2 hard incident has a second fault; nothing else does (v1 labels don't even have the field)", () => {
+  for (const g of v2All) {
+    const has = !!g.incident.label.secondaryLines?.length;
+    assert.equal(has, g.incident.label.difficulty === "hard", g.incident.id);
+    assert.equal(g.info.onsets.secondary !== undefined, has, g.incident.id);
+  }
+  for (const g of [...dataset, ...generateDataset(TEST_SET.seed, TEST_SET)]) {
+    assert.ok(!("secondaryLines" in g.incident.label) && !("secondaryScenario" in g.incident.label), g.incident.id);
+  }
+});
+
+check("a fair pairing: different category, not an acceptable answer, onset within 5 minutes", () => {
+  for (const g of v2Hard) {
+    const { label } = g.incident;
+    const second = scenarioByKey.get(label.secondaryScenario!)!;
+    assert.notEqual(second.rootCause, label.rootCause, g.incident.id);
+    assert.ok(!label.acceptableCauses.includes(second.rootCause), `${g.incident.id}: ${second.rootCause} is an acceptable answer`);
+    assert.ok(Math.abs(g.info.onsets.secondary! - g.info.onsets.primary) <= 300, `${g.incident.id}: onsets ${JSON.stringify(g.info.onsets)}`);
+  }
+});
+
+check("it can't explain the alert: other services only, never named in the alert, never evidence", () => {
+  for (const g of v2Hard) {
+    const { logs, label, alert } = g.incident;
+    const primary = new Set(servicesOf(TOPOLOGIES.find((t) => t.key === g.meta.topology)!));
+    const secondServices = new Set(label.secondaryLines!.map((n) => logs[n - 1].service));
+    for (const svc of secondServices) {
+      assert.ok(!primary.has(svc), `${g.incident.id}: second fault on ${svc}, a primary service`);
+      assert.ok(!alert.includes(svc), `${g.incident.id}: alert names ${svc}`);
+      assert.ok(g.incident.services.includes(svc), `${g.incident.id}: ${svc} missing from the services list`);
+    }
+    const evidence = new Set(label.evidenceLines);
+    for (const n of label.secondaryLines!) assert.ok(!evidence.has(n) && !label.herringLines.includes(n), `${g.incident.id}: line ${n}`);
+    // Its first signs don't count as the incident's own origin lines.
+    for (const n of g.info.origins) assert.ok(evidence.has(n));
+    assert.match(label.explanation, /unrelated incident at about the same time/);
+  }
+});
+
 console.log(`\n${passed} checks passed.`);
