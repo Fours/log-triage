@@ -118,8 +118,8 @@ Do these in order. Each one ends with `npm test` and `npm run typecheck` passing
 | T1. Dataset plumbing for generator v2 | Done | 53ca8b7 |
 | T2. Quiet causes and paraphrased evidence | Done | 60e1f8a |
 | T3. Loud decoys | Done | c3e7876 |
-| T4. Concurrent incidents and the `secondary` role | Done | |
-| T5. Long haystacks, fairness checks, baseline ceiling | Not started | |
+| T4. Concurrent incidents and the `secondary` role | Done | 91630ba |
+| T5. Long haystacks, fairness checks, baseline ceiling | Done | |
 | T6. Pilot and calibrate on the v2 dev set | Not started | |
 | T7. Model matrix and repeats on the v2 test set | Not started | |
 | T8. Write-up, site update, deploy | Not started | |
@@ -186,6 +186,16 @@ Sizes now: v2 easy 148–266 lines, medium 211–356, hard 425–712 (the second
 - Tool-output and budget behavior checked with the fake client on the largest v2 incident (the 12k-char cap truncates cleanly; the overview stays small).
 
 **Done when:** all of the above are tests that pass; `npm run eval -- --baseline --dataset incidents/v2/dev` runs, and its result is recorded.
+
+Done. Sizes are easy ~1,500, medium ~2,500 and hard ~4,350 lines, from a v2-only density factor (`VOLUME`, 8 / 10 / 7) on background traffic and routine logging, including the auxiliary and second-product services. The time window is unchanged and v1 is byte-identical. Results: the keyword baseline gets **15%** top-1 on v2 dev (`results/runs/2026-11-15_baseline-keywords_v2-dev`; 10% on v2 test), down from 50% on v1, and citing every ERROR line drops from 32% precision on v1 to 13%.
+
+Decisions made while building it:
+
+- **`search_logs` gained `since`/`until` (agreed before building).** It returns the earliest matches only, capped at 200, with no paging, so in a 4,000-line log a quiet cause line could be unreachable except by guessing a search word. That fails this milestone's own fairness rule. Real log tools have time ranges. The time filters take an ISO timestamp or HH:MM[:SS], are inclusive, and roll a bare clock time past midnight. The tool set is now versioned: `TOOLS_VERSION = 2` in `src/agent.ts`, recorded as `tools` in each run's config (absent = 1, as for every Phase 0–6 run), shown in the report header, and `--resume` refuses to mix versions. **Comparisons between v1 and v2 runs carry this caveat**; comparisons between models on v2 don't, since all v2 runs use tools v2.
+- **Reachability is tested with label-free queries:** WARN+ and ERROR+ overall and per service; per service, 2-minute windows around anything found that way; traces seen there; plus `get_context` (±50 lines). Each query takes the first 200 results. Every evidence line in both v2 sets is reachable.
+- **The alert check covers phrases, not services:** in queue incidents the paged consumer is the faulty service, so "no cause service in the alert" can't hold. The check instead finds no distinctive evidence word (6+ letters) in the alert. Topology names and the alert templates' threshold words ("exceeded", "minutes", …) are allowed.
+- **Decoys now speak their category's vocabulary.** The volume change shifted v2's random draws and the baseline rose to 38%. As agreed, the fix went into the decoys, not the baseline: each decoy is reworded the way that category usually reads ("at capacity", "parse error", "retrying", "since the deploy of …", "violates … constraint", "returned 502"), which makes them convincing mimics. Baseline: 38% → 15%.
+- **Budgets unchanged** (open question 2 stays open until the T6 pilot shows whether they bind).
 
 ### T6. Pilot and calibrate on the v2 dev set
 

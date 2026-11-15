@@ -7,6 +7,8 @@ export interface RunConfig {
   model: string;
   /** Prompt version; absent on runs from before versioning (= v1), null for the baseline. */
   prompt?: string | null;
+  /** Agent tool-set version (src/agent.ts TOOLS_VERSION); absent on runs from before Phase 7 (= 1). */
+  tools?: number;
   effort: string | null;
   dataset: { dir: string; generatorVersion: number | null; seed: string | null; incidents: number };
   budget: Record<string, number> | null;
@@ -62,7 +64,7 @@ export function renderRunReport(config: RunConfig, summary: Summary, scores: Inc
     lines.push("");
   }
   lines.push(
-    `Model **${config.model}** · prompt **${promptOf(config)}**${config.effort ? ` · effort **${config.effort}**` : ""} · ${s.n} incidents from \`${config.dataset.dir}\` · ` +
+    `Model **${config.model}** · prompt **${promptOf(config)}**${config.tools && config.tools > 1 ? ` · tools v${config.tools}` : ""}${config.effort ? ` · effort **${config.effort}**` : ""} · ${s.n} incidents from \`${config.dataset.dir}\` · ` +
       `generator v${config.dataset.generatorVersion ?? "?"} seed \`${config.dataset.seed ?? "?"}\` · commit \`${config.git.commit}\`${config.git.dirty ? " (dirty)" : ""}`,
   );
   lines.push("");

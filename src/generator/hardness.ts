@@ -23,6 +23,8 @@ export interface Hardness {
   quietCauses: boolean;
   /** How many of a family's message variants are in play (1 = always the original wording). */
   phrasings: number;
+  /** Background log density multiplier (1 for v1): long haystacks, so search caps bite. */
+  volume: number;
   /** v2-only randomness. Never use it in a v1 code path. */
   rng: Rng;
   /** Size of a group of originating cause lines: 1–2 when quiet, unchanged otherwise. */
@@ -34,6 +36,9 @@ export interface Hardness {
    */
   phrases<A extends unknown[]>(family: string, variants: ReadonlyArray<(...args: A) => string>): (...args: A) => Phrased;
 }
+
+/** Background density per difficulty, tuned so v2 incidents land near ~1,500 / ~2,500 / ~4,000 lines (spec, T5). */
+export const VOLUME: Record<Difficulty, number> = { easy: 8, medium: 10, hard: 7 };
 
 /** Number of message variants in play per difficulty (spec: 2 / 3 / 4). */
 const PHRASINGS: Record<Difficulty, number> = { easy: 2, medium: 3, hard: 4 };
@@ -67,6 +72,7 @@ export function createHardness(opts: {
     version,
     quietCauses,
     phrasings,
+    volume: v2 ? VOLUME[difficulty] : 1,
     rng,
     count: (normal) => (quietCauses ? Math.min(normal, rng.int(1, 2)) : normal),
     phrases<A extends unknown[]>(family: string, variants: ReadonlyArray<(...args: A) => string>) {

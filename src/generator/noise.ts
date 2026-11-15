@@ -16,7 +16,8 @@ export interface TrafficOpts {
 /** Healthy requests through edge → app (→ dep) plus routine housekeeping on every service. */
 export function backgroundTraffic(c: Ctx, opts: TrafficOpts): void {
   const { b, t, rng } = c;
-  const interval = byDifficulty(c, 35, 20, 13);
+  // v2 divides by its volume factor; v1's is 1, which leaves every number unchanged.
+  const interval = byDifficulty(c, 35, 20, 13) / c.hard.volume;
 
   // Healthy requests: full rate before onset, a fraction after.
   for (let at = rng.float(0, interval); at < c.end; at += rng.float(interval * 0.5, interval * 1.5)) {
@@ -39,7 +40,8 @@ export function backgroundTraffic(c: Ctx, opts: TrafficOpts): void {
     make: () => { level: "DEBUG" | "INFO"; msg: string },
     preOnsetOnly = false,
   ) => {
-    for (let at = rng.float(0, every[1]); at < c.end; at += rng.float(every[0], every[1])) {
+    const [lo, hi] = [every[0] / c.hard.volume, every[1] / c.hard.volume];
+    for (let at = rng.float(0, hi); at < c.end; at += rng.float(lo, hi)) {
       if (at >= c.onset && (preOnsetOnly || opts.quietAfterOnset.has(service))) break;
       const { level, msg } = make();
       b.log(at, service, level, msg);

@@ -54,6 +54,12 @@ const MAX_TOOL_OUTPUT_CHARS = 12_000;
 /** SDK-level retries (with backoff, honoring retry-after) on 408/409/429/5xx/connection errors. */
 export const API_MAX_RETRIES = 4;
 
+/**
+ * Version of the tool set the agent sees, recorded with every run like the
+ * prompt version. 1: Phase 0–5 tools. 2: search_logs gains since/until (Phase 7, T5).
+ */
+export const TOOLS_VERSION = 2;
+
 /** One investigation step the agent took — the record the eval scores and the UI can replay. */
 export interface TraceStep {
   tool: string;
@@ -140,7 +146,7 @@ const tools = [
   {
     name: "search_logs",
     description:
-      "Search log lines. Combine filters: query (case-insensitive substring of the message), service, level (returns that level and above: DEBUG<INFO<WARN<ERROR<FATAL), traceId. Output is capped by limit (default 25).",
+      "Search log lines. Combine filters: query (case-insensitive substring of the message), service, level (returns that level and above: DEBUG<INFO<WARN<ERROR<FATAL), traceId, and a time range (since/until, inclusive: an ISO timestamp or HH:MM:SS). Returns the earliest matches first, capped by limit (default 25); narrow the time range to see later lines.",
     input_schema: {
       type: "object",
       properties: {
@@ -148,6 +154,8 @@ const tools = [
         service: { type: "string" },
         level: { type: "string", enum: ["DEBUG", "INFO", "WARN", "ERROR", "FATAL"] },
         traceId: { type: "string" },
+        since: { type: "string", description: "Only lines at or after this time (ISO timestamp or HH:MM:SS)." },
+        until: { type: "string", description: "Only lines at or before this time (ISO timestamp or HH:MM:SS)." },
         limit: { type: "integer", minimum: 1, maximum: 200 },
       },
       required: [],
@@ -215,6 +223,8 @@ const SearchArgsSchema = z.object({
   service: z.string().optional(),
   level: z.enum(["DEBUG", "INFO", "WARN", "ERROR", "FATAL"]).optional(),
   traceId: z.string().optional(),
+  since: z.string().optional(),
+  until: z.string().optional(),
   limit: z.number().int().min(1).max(200).optional(),
 });
 const ContextArgsSchema = z.object({

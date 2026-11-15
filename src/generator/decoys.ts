@@ -10,6 +10,10 @@ import { spread, type Rng } from "./rng.js";
  * "start from the service with the most errors" picks the wrong service. The
  * timing is the fair clue: these errors predate the incident.
  *
+ * Each decoy speaks its category's usual vocabulary ("at capacity", "parse
+ * error", "retrying", a deploy), so it reads like that category to anyone
+ * matching on keywords.
+ *
  * Every v2 incident also gets one healthy auxiliary service, so an extra
  * service isn't a giveaway, and the services list is shuffled. All randomness
  * comes from `c.hard.rng`; v1 never calls this.
@@ -44,7 +48,7 @@ export const DECOYS: readonly Decoy[] = [
     key: "metrics-buffer-full",
     mimics: "resource_exhaustion",
     service: "metrics-agent",
-    error: (r) => `exporter queue full (capacity 10000): dropped ${r.int(200, 2400)} samples for remote-write`,
+    error: (r) => `remote-write exporter at capacity (queue 10000/10000), dropped ${r.int(200, 2400)} samples`,
     routine: (r) => `flushed ${r.int(4000, 9000)} series to remote-write in ${r.int(40, 180)}ms`,
     why: "the metrics agent's own export buffer overflowing, which affects dashboards, not requests",
   },
@@ -52,7 +56,7 @@ export const DECOYS: readonly Decoy[] = [
     key: "cron-missing-module",
     mimics: "bad_deploy",
     service: "report-cron",
-    error: () => `job nightly-revenue-report exited with code 1: ModuleNotFoundError: No module named 'pandas' (image report-cron:2026.10.2)`,
+    error: () => `job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'`,
     routine: (r) => `scheduler heartbeat: ${r.int(6, 14)} jobs registered, next run in ${r.int(20, 300)}s`,
     why: "a reporting cron job broken by an old image change, retrying on schedule and unrelated to the request path",
   },
@@ -60,7 +64,7 @@ export const DECOYS: readonly Decoy[] = [
     key: "unknown-feature-flag",
     mimics: "config_error",
     service: "flag-sync",
-    error: (r) => `sync failed for flag "${r.pick(["checkout_v3_ui", "search_rerank_beta", "dark_mode_emails", "new_pricing_banner"])}": unknown in environment staging-2, keeping cached value`,
+    error: (r) => `config reloaded from flag service with 1 invalid key: flag "${r.pick(["checkout_v3_ui", "search_rerank_beta", "dark_mode_emails", "new_pricing_banner"])}" is unknown in environment staging-2, keeping cached value`,
     routine: (r) => `synced ${r.int(60, 140)} feature flags from flag service (etag ${hex(r)})`,
     why: "a flag-sync job complaining about another environment's flags, while serving cached values",
   },
@@ -68,7 +72,7 @@ export const DECOYS: readonly Decoy[] = [
     key: "malformed-audit-events",
     mimics: "poison_message",
     service: "audit-archiver",
-    error: (r) => `skipping malformed audit event evt-${r.int(100000, 999999)}: invalid UTF-8 at byte ${r.int(10, 900)}`,
+    error: (r) => `parse error on audit event evt-${r.int(100000, 999999)}: invalid UTF-8 at byte ${r.int(10, 900)}, skipping`,
     routine: (r) => `archived audit batch of ${r.int(200, 900)} events`,
     why: "an archiver skipping a trickle of bad audit events, as designed, without blocking anything",
   },
@@ -76,7 +80,7 @@ export const DECOYS: readonly Decoy[] = [
     key: "archive-checksums",
     mimics: "data_integrity",
     service: "billing-reconciler",
-    error: (r) => `invoice_archive row inv-${r.int(100000, 999999)} failed checksum validation, skipping (archive partition 2019-Q${r.int(1, 4)})`,
+    error: (r) => `invoice_archive row inv-${r.int(100000, 999999)} violates checksum constraint, skipping (archive partition 2019-Q${r.int(1, 4)})`,
     routine: (r) => `reconciled ${r.int(300, 1200)} current-period invoices, 0 discrepancies`,
     why: "a reconciler flagging old archived invoices, which no live request reads",
   },
@@ -84,7 +88,7 @@ export const DECOYS: readonly Decoy[] = [
     key: "analytics-429s",
     mimics: "cascading_failure",
     service: "analytics-forwarder",
-    error: (r) => `analytics-ingest returned 429, SDK retry budget exhausted, dropping batch of ${r.int(50, 400)} events`,
+    error: (r, i) => `analytics-ingest returned 429, retrying batch of ${r.int(50, 400)} events (attempt ${1 + (i % 5)}/5, then dropped)`,
     routine: (r) => `forwarded ${r.int(500, 3000)} events to analytics-ingest`,
     why: "an analytics forwarder being rate-limited by its vendor, off the request path",
   },
@@ -92,7 +96,7 @@ export const DECOYS: readonly Decoy[] = [
     key: "customer-webhook-502",
     mimics: "external_outage",
     service: "webhook-dispatcher",
-    error: (r, i) => `delivery to https://hooks.acme-${r.int(10, 99)}.example/ingest failed: 502 Bad Gateway (attempt ${1 + (i % 10)}/10, customer endpoint)`,
+    error: (r, i) => `customer webhook https://hooks.acme-${r.int(10, 99)}.example/ingest returned 502 Bad Gateway (attempt ${1 + (i % 10)}/10)`,
     routine: (r) => `delivered ${r.int(40, 200)} webhooks (p95 ${r.int(120, 600)}ms)`,
     why: "one customer's webhook endpoint returning 502s, which only affects deliveries to that customer",
   },
@@ -120,7 +124,7 @@ export function plantDecoys(c: Ctx, rootCause: RootCauseCategory, confusableWith
   const healthy = pool[count];
 
   const routine = (d: Decoy) => {
-    for (let at = r.float(0, 120); at < c.end; at += r.float(60, 150)) c.b.log(at, d.service, "INFO", d.routine(r));
+    for (let at = r.float(0, 120 / c.hard.volume); at < c.end; at += r.float(60 / c.hard.volume, 150 / c.hard.volume)) c.b.log(at, d.service, "INFO", d.routine(r));
   };
 
   const applied = chosen.map((d) => {

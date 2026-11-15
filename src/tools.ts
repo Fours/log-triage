@@ -65,16 +65,49 @@ export interface SearchArgs {
   service?: string;
   level?: LogLevel;
   traceId?: string;
+  /** Only lines at or after this time: an ISO timestamp, or HH:MM / HH:MM:SS within the log window. */
+  since?: string;
+  /** Only lines at or before this time (same formats). */
+  until?: string;
   limit?: number;
 }
 
-/** Filter logs by substring, service, minimum level, and/or trace id. Capped output. */
+/**
+ * Resolve a time filter to epoch ms. Accepts a full ISO timestamp, or a bare
+ * HH:MM[:SS] read on the log window's date (rolled to the next day if that puts
+ * it before the window, for windows that cross midnight). Throws a message the
+ * agent can act on.
+ */
+export function resolveTime(value: string, logs: LogLine[]): number {
+  const v = value.trim();
+  const clock = v.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (clock && logs.length) {
+    const day = logs[0].ts.slice(0, 10);
+    const [, h, m, sec] = clock;
+    let ms = Date.parse(`${day}T${h.padStart(2, "0")}:${m}:${sec ?? "00"}Z`);
+    if (ms < Date.parse(logs[0].ts)) ms += 86_400_000;
+    if (!Number.isNaN(ms)) return ms;
+  }
+  const ms = Date.parse(v);
+  if (Number.isNaN(ms)) throw new Error(`can't read time "${value}": use an ISO timestamp like ${logs[0]?.ts ?? "2026-01-01T12:00:00Z"} or HH:MM:SS`);
+  return ms;
+}
+
+/** Filter logs by substring, service, minimum level, trace id and/or time range. Capped output. */
 export function searchLogs(logs: LogLine[], args: SearchArgs): string {
   const limit = args.limit ?? 25;
   const q = args.query?.toLowerCase();
   const minRank = args.level ? LEVEL_RANK[args.level] : undefined;
+  const since = args.since !== undefined ? resolveTime(args.since, logs) : undefined;
+  const until = args.until !== undefined ? resolveTime(args.until, logs) : undefined;
+  if (since !== undefined && until !== undefined && since > until) throw new Error(`since (${args.since}) is after until (${args.until})`);
 
   const matches = logs.filter((l) => {
+    if (since !== undefined || until !== undefined) {
+      const at = Date.parse(l.ts);
+      if (since !== undefined && at < since) return false;
+      if (until !== undefined && at > until) return false;
+    }
     if (q && !l.msg.toLowerCase().includes(q)) return false;
     if (args.service && l.service !== args.service) return false;
     if (minRank !== undefined && LEVEL_RANK[l.level] < minRank) return false;

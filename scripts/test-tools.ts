@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { strict as assert } from "node:assert";
-import { loadIncident, listServices, searchLogs, getContext, correlateTrace } from "../src/tools.js";
+import { loadIncident, listServices, searchLogs, getContext, correlateTrace, resolveTime } from "../src/tools.js";
 
 /**
  * Exercises the deterministic log layer with no API key. This is the layer the
@@ -63,6 +63,38 @@ check("correlateTrace follows one request across services", () => {
 
 check("correlateTrace reports empty for an unknown trace", () => {
   assert.ok(correlateTrace(incident.logs, "t-9999").includes("no log lines"));
+});
+
+const nums = (out: string) => [...out.matchAll(/^#(\d+) /gm)].map((m) => Number(m[1]));
+
+check("searchLogs time range: since/until are inclusive, take ISO or HH:MM[:SS], and combine with other filters", () => {
+  const logs = incident.logs;
+  const mid = logs[Math.floor(logs.length / 2)];
+  const after = nums(searchLogs(logs, { since: mid.ts, limit: 200 }));
+  assert.ok(after.length > 0 && after.every((n) => logs[n - 1].ts >= mid.ts));
+  assert.ok(after.includes(mid.n), "since is inclusive");
+  const before = nums(searchLogs(logs, { until: mid.ts, limit: 200 }));
+  assert.ok(before.every((n) => logs[n - 1].ts <= mid.ts) && before.includes(mid.n), "until is inclusive");
+  const clock = mid.ts.slice(11, 19);
+  assert.deepEqual(nums(searchLogs(logs, { since: clock, limit: 200 })), after, "HH:MM:SS reads on the window's date");
+  assert.deepEqual(nums(searchLogs(logs, { since: clock.slice(0, 5), limit: 200 })), nums(searchLogs(logs, { since: `${mid.ts.slice(0, 16)}:00Z`, limit: 200 })));
+  const errorsAfter = nums(searchLogs(logs, { since: mid.ts, level: "ERROR", limit: 200 }));
+  assert.ok(errorsAfter.every((n) => after.includes(n) && logs[n - 1].level === "ERROR"));
+});
+
+check("searchLogs time range: bad input is an error the agent can act on", () => {
+  assert.throws(() => searchLogs(incident.logs, { since: "yesterday-ish" }), /can't read time "yesterday-ish"/);
+  const [first, last] = [incident.logs[0].ts, incident.logs.at(-1)!.ts];
+  assert.throws(() => searchLogs(incident.logs, { since: last, until: first }), /is after until/);
+});
+
+check("a bare clock time rolls to the next day when the window crosses midnight", () => {
+  const logs = [
+    { n: 1, ts: "2026-11-08T23:58:00Z", service: "a", level: "INFO" as const, msg: "x" },
+    { n: 2, ts: "2026-11-09T00:01:00Z", service: "a", level: "INFO" as const, msg: "y" },
+  ];
+  assert.equal(new Date(resolveTime("00:00:30", logs)).toISOString(), "2026-11-09T00:00:30.000Z");
+  assert.equal(new Date(resolveTime("23:59", logs)).toISOString(), "2026-11-08T23:59:00.000Z");
 });
 
 console.log(`\n${passed} checks passed.`);

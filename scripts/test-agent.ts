@@ -2,7 +2,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { strict as assert } from "node:assert";
 import Anthropic from "@anthropic-ai/sdk";
-import { triage, type MessagesClient, type TriageResult } from "../src/agent.js";
+import { TOOLS_VERSION, triage, type MessagesClient, type TriageResult } from "../src/agent.js";
+import { DATASETS, generateDatasetFor } from "../src/generator/index.js";
 import { PROMPTS } from "../src/prompts.js";
 import { loadIncident } from "../src/tools.js";
 import { toIncidentView } from "../src/types.js";
@@ -269,6 +270,33 @@ await check("history is append-only: every request extends the previous one unch
   // Thinking blocks are replayed exactly as returned.
   const replayed = fake.requests[1].messages[1].content as Block[];
   assert.deepEqual(replayed[0], thinking());
+});
+
+await check("long v2 haystack: a 200-line search is cut at the output cap with a hint; the overview stays small; time ranges work", async () => {
+  const largest = generateDatasetFor(DATASETS.v2Dev).reduce((a, g) => (g.incident.logs.length > a.incident.logs.length ? g : a)).incident;
+  const big = toIncidentView(largest);
+  const mid = big.logs[Math.floor(big.logs.length / 2)].ts;
+  const fake = fakeClient([
+    { content: [tool("search_logs", { limit: 200 }), tool("search_logs", { since: mid, until: mid, limit: 200 })] },
+    { content: [tool("submit_triage", verdict([1]))] },
+  ]);
+  const r = await triage(big, { client: fake.client });
+  assert.equal(r.outcome, "submitted");
+  const [full, window] = r.trace;
+  assert.ok(full.output.length < 12_200 && /output truncated at 12000 chars — narrow the query/.test(full.output), "capped with a hint");
+  assert.ok(!full.isError);
+  const windowLines = [...window.output.matchAll(/^#\d+ (\S+) /gm)].map((m) => m[1]);
+  assert.ok(windowLines.length > 0 && windowLines.every((ts) => ts === mid), "since/until reach the middle of the log");
+  const opening = String(fake.requests[0].messages[0].content);
+  assert.ok(opening.length < 4000, `opening message is ${opening.length} chars for ${big.logs.length} lines`);
+});
+
+await check("tools are versioned: search_logs offers since/until", async () => {
+  const { fake } = await run([{ content: [submit()] }]);
+  const search = (fake.requests[0].tools as Anthropic.Tool[]).find((t) => t.name === "search_logs")!;
+  const props = (search.input_schema as { properties: Record<string, unknown> }).properties;
+  assert.ok("since" in props && "until" in props);
+  assert.equal(TOOLS_VERSION, 2);
 });
 
 await check("requests carry prompt caching and a stable system prompt + tool list", async () => {

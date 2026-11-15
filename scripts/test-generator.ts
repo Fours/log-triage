@@ -9,6 +9,9 @@ import { TOPOLOGIES, servicesOf } from "../src/generator/topologies.js";
 import { buildManifest } from "../src/generator/manifest.js";
 import { ROOT_CAUSE_CATEGORIES } from "../src/types.js";
 import { loadIncident } from "../src/tools.js";
+import { baselineTriage } from "../src/eval/baseline.js";
+import { scoreIncident } from "../src/eval/score.js";
+import { toIncidentView } from "../src/types.js";
 
 /**
  * Checks the generated dataset is a fair test: balanced, reproducible, labels
@@ -421,6 +424,89 @@ check("it can't explain the alert: other services only, never named in the alert
     for (const n of g.info.origins) assert.ok(evidence.has(n));
     assert.match(label.explanation, /unrelated incident at about the same time/);
   }
+});
+
+console.log("\nGenerator v2: long haystacks and fairness (T5)");
+
+check("sizes land near ~1,500 / ~2,500 / ~4,000 lines (easy / medium / hard)", () => {
+  const range = { easy: [1000, 2200], medium: [1700, 3600], hard: [3000, 6000] } as const;
+  for (const g of v2All) {
+    const [lo, hi] = range[g.incident.label.difficulty];
+    assert.ok(g.incident.logs.length >= lo && g.incident.logs.length <= hi, `${g.incident.id} (${g.incident.label.difficulty}): ${g.incident.logs.length} lines`);
+  }
+});
+
+/**
+ * Lines an agent can reach without knowing the answer, using only label-free
+ * queries (first 200 results each, as search_logs allows):
+ *   WARN+ and ERROR+, overall and per service;
+ *   per service, a 2-minute window around any line found that way (since/until);
+ *   correlate_trace on any trace those lines carry;
+ * and anything within get_context range (±50 lines) of all of the above.
+ */
+function reachable(g: GeneratedIncident): Set<number> {
+  const { logs, services } = g.incident;
+  const RANK: Record<string, number> = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3, FATAL: 4 };
+  const found = new Set<number>();
+  const take = (lines: typeof logs) => lines.slice(0, 200).forEach((l) => found.add(l.n));
+  for (const min of [2, 3]) {
+    take(logs.filter((l) => RANK[l.level] >= min));
+    for (const svc of services) take(logs.filter((l) => l.service === svc && RANK[l.level] >= min));
+  }
+  const anchors = [...found].map((n) => logs[n - 1]);
+  const time = (ts: string) => Date.parse(ts);
+  const windows = [...new Set(anchors.map((l) => Math.floor(time(l.ts) / 60_000)))];
+  const byService = new Map(services.map((svc) => [svc, logs.filter((l) => l.service === svc)]));
+  for (const minute of windows) {
+    const [from, to] = [(minute - 1) * 60_000, (minute + 2) * 60_000];
+    for (const lines of byService.values()) take(lines.filter((l) => time(l.ts) >= from && time(l.ts) < to));
+  }
+  for (const trace of new Set(anchors.map((l) => l.traceId).filter(Boolean))) take(logs.filter((l) => l.traceId === trace));
+  const near = new Set<number>();
+  for (const n of found) for (let k = Math.max(1, n - 50); k <= Math.min(logs.length, n + 50); k++) near.add(k);
+  return near;
+}
+
+check("every evidence line is reachable with label-free queries and get_context", () => {
+  for (const g of v2All) {
+    const can = reachable(g);
+    const missed = g.incident.label.evidenceLines.filter((n) => !can.has(n));
+    assert.deepEqual(missed, [], `${g.incident.id}: unreachable evidence ${missed.map((n) => `#${n} ${g.incident.logs[n - 1].msg.slice(0, 60)}`)}`);
+  }
+});
+
+check("the alert gives nothing away: no distinctive word from the evidence lines", () => {
+  for (const g of v2All) {
+    const t = TOPOLOGIES.find((x) => x.key === g.meta.topology)!;
+    // Names the alert legitimately shares with the logs (services, the queue, the route, the entity and table),
+    // plus the alert templates' generic threshold vocabulary ("error rate exceeded 25%").
+    const allowed = new Set([
+      ...[...g.incident.services, t.queue, t.route, t.depCall, t.entity.noun, t.table].flatMap((x) => x.toLowerCase().split(/[^a-z0-9]+/)),
+      ...["exceeded", "minutes", "latency", "customers", "report", "failures", "rising"],
+    ]);
+    const alertWords = new Set(g.incident.alert.toLowerCase().split(/[^a-z0-9]+/));
+    for (const n of g.incident.label.evidenceLines) {
+      const words = g.incident.logs[n - 1].msg.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 6 && !/^\d+$/.test(w) && !allowed.has(w));
+      const leaked = words.filter((w) => alertWords.has(w));
+      assert.deepEqual(leaked, [], `${g.incident.id}: alert shares "${leaked}" with evidence line ${n}`);
+    }
+  }
+});
+
+check("no cheap heuristic wins: keyword baseline ≤ 35% top-1 on v2 dev, and 'cite every ERROR' is less precise than on v1", () => {
+  const top1 = (set: GeneratedIncident[]) => set.filter((g) => scoreIncident(g.incident, baselineTriage(toIncidentView(g.incident))).top1).length / set.length;
+  const errPrecision = (set: GeneratedIncident[]) =>
+    set.reduce((acc, g) => {
+      const evidence = new Set(g.incident.label.evidenceLines);
+      const errs = g.incident.logs.filter((l) => l.level === "ERROR" || l.level === "FATAL");
+      return acc + errs.filter((l) => evidence.has(l.n)).length / errs.length;
+    }, 0) / set.length;
+  const v2Dev = v2Sets[0].set;
+  const base = top1(v2Dev);
+  assert.ok(base <= 0.35, `keyword baseline top-1 on v2 dev is ${(base * 100).toFixed(0)}%`);
+  const [v1p, v2p] = [errPrecision(dataset), errPrecision(v2Dev)];
+  assert.ok(v2p < v1p, `cite-every-ERROR precision v2 ${(v2p * 100).toFixed(0)}% vs v1 ${(v1p * 100).toFixed(0)}%`);
+  console.log(`      (baseline top-1 on v2 dev ${(base * 100).toFixed(0)}%; cite-every-ERROR precision v1 ${(v1p * 100).toFixed(0)}% → v2 ${(v2p * 100).toFixed(0)}%)`);
 });
 
 console.log(`\n${passed} checks passed.`);

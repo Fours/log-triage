@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
-import { DEFAULT_BUDGET, FATAL_API_ERRORS, triage, type ApiErrorKind, type Effort, type TriageOptions, type TriageResult } from "../agent.js";
+import { DEFAULT_BUDGET, FATAL_API_ERRORS, TOOLS_VERSION, triage, type ApiErrorKind, type Effort, type TriageOptions, type TriageResult } from "../agent.js";
 import { sha256 } from "../generator/manifest.js";
 import { getPrompt } from "../prompts.js";
 import { loadIncident } from "../tools.js";
@@ -157,6 +157,7 @@ export async function runEval(opts: EvalOptions): Promise<EvalOutcome> {
         runId,
         model,
         prompt,
+        ...(opts.baseline ? {} : { tools: TOOLS_VERSION }),
         effort,
         dataset: {
           dir: datasetDir,
@@ -173,6 +174,9 @@ export async function runEval(opts: EvalOptions): Promise<EvalOutcome> {
   if (config.model !== model) throw new Error(`Run ${runId} was made with ${config.model}, not ${model}.`);
   if (runPrompt(config) !== prompt) throw new Error(`Run ${runId} was made with prompt ${runPrompt(config)}, not ${prompt}.`);
   if (config.dataset.dir !== datasetDir) throw new Error(`Run ${runId} was made on ${config.dataset.dir}, not ${datasetDir}.`);
+  if (!opts.baseline && (config.tools ?? 1) !== TOOLS_VERSION) {
+    throw new Error(`Run ${runId} was made with tools v${config.tools ?? 1}; this code has tools v${TOOLS_VERSION}. Start a new run.`);
+  }
   config.status = "incomplete";
   config.finishedAt = null;
   delete config.stoppedBy;
