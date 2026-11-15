@@ -116,7 +116,7 @@ Do these in order. Each one ends with `npm test` and `npm run typecheck` passing
 | Task | Status | Commit |
 | --- | --- | --- |
 | T1. Dataset plumbing for generator v2 | Done | 53ca8b7 |
-| T2. Quiet causes and paraphrased evidence | Not started | |
+| T2. Quiet causes and paraphrased evidence | Done | |
 | T3. Loud decoys | Not started | |
 | T4. Concurrent incidents and the `secondary` role | Not started | |
 | T5. Long haystacks, fairness checks, baseline ceiling | Not started | |
@@ -141,6 +141,13 @@ Done: `DATASETS` registry and `version` option in `src/generator/index.ts`, `Ctx
 - Applied per the feature table by difficulty.
 
 **Done when:** on v2 hard incidents, no evidence line from a quieted cause is WARN or above; every scenario has at least 2 phrasings for its evidence messages, and no single message substring covers all of an incident's evidence lines on medium and hard; v1 is unchanged.
+
+Done: `src/generator/hardness.ts` (`c.hard`: quiet-cause switch, origin-line count, message families cycling through 2/3/4 variants from a random start, all v2 randomness on its own forked stream so v1 never draws). Scenarios mark originating cause lines with `origin: true`, and the builder logs them at INFO when quiet. 9 of 16 scenarios are quietable; the other 7 start quietly already or are inherently loud. At medium, 5 of the 9 are quiet (every other one in sorted key order, the same in both sets). 22 message families, each with 4 variants whose variant 0 is the v1 message. Tests in `test:generator`: v1 wording and levels unchanged; quietable scenarios and origin lines consistent; hard origins below WARN and at most 3; medium/easy quiet exactly as chosen; families mix wordings; and no 20-character phrase is shared by every line of a family.
+
+Decisions made while building it:
+
+- **The shared-phrase check masks service names as well as numbers.** Real Kubernetes and client messages include the pod or service name, and the `service` filter already finds those lines, so a shared service name gives a phrase search nothing extra. Hosts, URLs, buckets and file paths are not masked: variants were reworded so only non-neighboring variants name them.
+- **Side effect for T3/T5:** quieting the first signs of the fault makes the first ERROR line more often real evidence (33–35 of 48 on v2 vs. 31 on v1), because it's now usually the direct failure. The loud decoys in T3 should push that back down; T5's "cite every ERROR" check will measure it.
 
 ### T3. Loud decoys
 

@@ -1,5 +1,6 @@
 import { ROOT_CAUSE_CATEGORIES, Incident, type RootCauseCategory } from "../types.js";
-import { IncidentBuilder } from "./builder.js";
+import { IncidentBuilder, type BuildInfo } from "./builder.js";
+import { createHardness } from "./hardness.js";
 import type { Ctx, Difficulty, GeneratorVersion, Scenario } from "./context.js";
 import { backgroundTraffic, plantHerrings } from "./noise.js";
 import { createRng } from "./rng.js";
@@ -34,6 +35,12 @@ export const SCENARIOS: Record<RootCauseCategory, readonly [Scenario, Scenario]>
   external_outage: [provider5xx, cloudStorage],
 };
 
+/** Keys of the scenarios whose originating cause lines v2 can quiet. */
+export const QUIETABLE: readonly string[] = Object.values(SCENARIOS)
+  .flat()
+  .filter((s) => s.quietable)
+  .map((s) => s.key);
+
 export interface IncidentSpec {
   id: string;
   scenario: Scenario;
@@ -45,6 +52,8 @@ export interface IncidentSpec {
 
 export interface GeneratedIncident {
   incident: Incident;
+  /** Generator bookkeeping for tests (origin lines, message families). Not written to the manifest. */
+  info: BuildInfo;
   /** Bookkeeping the eval can slice on but the agent never sees. */
   meta: {
     topology: string;
@@ -61,6 +70,15 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
   const rng = createRng(spec.seed);
   const startMs = Date.UTC(2026, 9, 1) + rng.int(0, 60) * 86_400_000 + rng.int(0, 23) * 3_600_000 + rng.int(0, 59) * 60_000;
   const b = new IncidentBuilder(rng.fork("ids"), startMs);
+  const hard = createHardness({
+    version: spec.version,
+    difficulty: spec.difficulty,
+    scenarioKey: spec.scenario.key,
+    quietable: spec.scenario.quietable,
+    allQuietable: QUIETABLE,
+    rng: rng.fork("hardness"),
+  });
+  b.quietOrigins = hard.quietCauses;
   const end = rng.int(18, 30) * 60;
   const c: Ctx = {
     b,
@@ -68,6 +86,7 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
     rng: rng.fork("scenario"),
     difficulty: spec.difficulty,
     version: spec.version,
+    hard,
     onset: Math.round(end * rng.float(0.45, 0.6)),
     end,
   };
@@ -82,7 +101,7 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
     },
   );
 
-  const { logs, evidence, roles } = b.build();
+  const { logs, evidence, roles, info } = b.build();
   const errorIdx = logs.findIndex((l) => l.level === "ERROR" || l.level === "FATAL");
 
   const incident = Incident.parse({
@@ -104,6 +123,7 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
 
   return {
     incident,
+    info,
     meta: {
       topology: spec.topology.key,
       lines: logs.length,

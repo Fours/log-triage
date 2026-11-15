@@ -1,5 +1,6 @@
 import type { RootCauseCategory } from "../types.js";
 import type { IncidentBuilder } from "./builder.js";
+import type { Hardness } from "./hardness.js";
 import type { Rng } from "./rng.js";
 import type { Topology } from "./topologies.js";
 
@@ -16,6 +17,8 @@ export interface Ctx {
   difficulty: Difficulty;
   /** Which generator's behavior to use. Hardness features check this; v1 output must never change. */
   version: GeneratorVersion;
+  /** Generator v2's difficulty features; identity for v1. */
+  hard: Hardness;
   /** Seconds from window start when the fault begins. */
   onset: number;
   /** Window length in seconds. */
@@ -44,6 +47,12 @@ export interface Scenario {
   rootCause: RootCauseCategory;
   /** Categories this incident is easy to misread as — hard mode picks herrings that mimic these. */
   confusableWith: RootCauseCategory[];
+  /**
+   * Whether this scenario's originating cause lines can be logged quietly in v2.
+   * False when the fault is inherently loud (a provider's 5xx, S3 errors) or
+   * already starts quietly (a release, a config reload, a secret rotation).
+   */
+  quietable: boolean;
   run(c: Ctx): ScenarioResult;
 }
 

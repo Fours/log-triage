@@ -11,6 +11,7 @@ export const deserializeLoop: Scenario = {
   key: "poison_message/redelivery-loop",
   rootCause: "poison_message",
   confusableWith: ["resource_exhaustion", "data_integrity", "dependency_timeout"],
+  quietable: true,
   run(c) {
     const { b, t, rng } = c;
     const msg = `msg-${rng.int(100000, 999999)}`;
@@ -18,17 +19,26 @@ export const deserializeLoop: Scenario = {
     const offset = rng.int(100000, 900000);
     const pos = rng.int(200, 2000);
 
+    const parseFailed = c.hard.phrases("parse-failed", [
+      () => `failed to process ${msg} (partition ${partition}, offset ${offset}): JSON parse error: unexpected token '\\u0000' at position ${pos}`,
+      () => `SyntaxError: Unexpected token \\u0000 in JSON at position ${pos} (message ${msg}, ${t.queue}[${partition}]@${offset})`,
+      () => `handler error for ${msg} at offset ${offset}: invalid JSON payload (byte ${pos} is NUL)`,
+      () => `cannot deserialize ${msg} from partition ${partition}: malformed body near position ${pos}`,
+    ]);
     const failures: LineRef[] = [];
     let attempt = 1;
-    for (const at of spread(rng, c.onset, c.onset + 300, byDifficulty(c, 3, 4, 5))) {
-      failures.push(
-        b.log(at, t.consumer, "ERROR", `failed to process ${msg} (partition ${partition}, offset ${offset}): JSON parse error: unexpected token '\\u0000' at position ${pos}`, {
-          role: "cause",
-        }),
-      );
+    const times = spread(rng, c.onset, c.onset + 300, byDifficulty(c, 3, 4, 5));
+    // The redelivery lines show there's no retry limit: the originating signal. Quiet v2 keeps only the first one or two.
+    const nacks = c.hard.count(times.length);
+    times.forEach((at, i) => {
+      failures.push(b.log(at, t.consumer, "ERROR", parseFailed(), { role: "cause" }));
       attempt += rng.int(3, 9);
-      failures.push(b.log(at + 0.5, t.consumer, "WARN", `nack ${msg}, redelivering (attempt ${attempt}, no max-retries configured)`, { role: "cause" }));
-    }
+      if (i < nacks) {
+        failures.push(
+          b.log(at + 0.5, t.consumer, "WARN", `nack ${msg}, redelivering (attempt ${attempt}, no max-retries configured)`, { role: "cause", origin: true }),
+        );
+      }
+    });
 
     const lag: LineRef[] = spread(rng, c.onset + 120, c.end, symptomCount(c)).map((at, i) =>
       b.log(at, t.consumer, "WARN", `consumer lag on ${t.queue} partition ${partition}: ${(i + 1) * rng.int(600, 1400)} messages behind (${(i + 1) * rng.int(40, 90)}s)`, {
@@ -59,21 +69,24 @@ export const crashLoop: Scenario = {
   key: "poison_message/consumer-crash-loop",
   rootCause: "poison_message",
   confusableWith: ["resource_exhaustion", "bad_deploy"],
+  quietable: false, // a crash is inherently loud (FATAL)
   run(c) {
     const { b, t, rng } = c;
     const msg = `msg-${rng.int(100000, 999999)}`;
     const offset = rng.int(100000, 900000);
     const v = version(c).prev;
 
+    const crashed = c.hard.phrases("consumer-crash", [
+      () => `unhandled exception processing ${msg} (offset ${offset}): RangeError: Maximum call stack size exceeded at expandReferences`,
+      () => `process crashed on ${msg}@${offset}: RangeError: call stack overflow in expandReferences`,
+      () => `uncaught RangeError (stack size exceeded) while handling offset ${offset} (${msg})`,
+      () => `consumer aborted: recursion limit hit in expandReferences for ${msg} at offset ${offset}`,
+    ]);
     const crashes: LineRef[] = [];
     const restarts: LineRef[] = [];
     let at = c.onset;
     for (let i = 0; i < byDifficulty(c, 3, 3, 4); i++) {
-      crashes.push(
-        b.log(at, t.consumer, "FATAL", `unhandled exception processing ${msg} (offset ${offset}): RangeError: Maximum call stack size exceeded at expandReferences`, {
-          role: "cause",
-        }),
-      );
+      crashes.push(b.log(at, t.consumer, "FATAL", crashed(), { role: "cause" }));
       restarts.push(b.log(at + 0.3, t.consumer, "ERROR", `process exited with code 1, restarting (restart ${i + 1}, backoff ${10 * 2 ** i}s)`, { role: "symptom" }));
       restarts.push(b.log(at + 10 * 2 ** i, t.consumer, "INFO", `started ${t.consumer} ${v}, pid 1`, { role: "symptom" }));
       crashes.push(b.log(at + 10 * 2 ** i + 1, t.consumer, "INFO", `resuming ${t.queue} at committed offset ${offset}`, { role: "cause" }));
@@ -104,6 +117,7 @@ export const failedMigration: Scenario = {
   key: "data_integrity/partial-migration",
   rootCause: "data_integrity",
   confusableWith: ["bad_deploy", "config_error"],
+  quietable: true,
   run(c) {
     const { b, t, rng } = c;
     const num = String(rng.int(30, 140)).padStart(4, "0");
@@ -120,18 +134,18 @@ export const failedMigration: Scenario = {
         t.app,
         isHard(c) ? "WARN" : "ERROR",
         `migrate: ${name} step 2/3 failed: lock timeout on ${t.table}; step 1 already committed (non-transactional DDL), not rolled back`,
-        { role: "cause" },
+        { role: "cause", origin: true },
       ),
     ];
 
+    const noColumn = c.hard.phrases("missing-column", [
+      (ch: number) => (pg ? `column "${col}" of relation "${t.table}" does not exist at character ${ch}` : `Unknown column '${col}' in 'field list'`),
+      () => (pg ? `ERROR:  column ${t.table}.${col} does not exist (SQLSTATE 42703)` : `Unknown column '${t.table}.${col}' in 'where clause'`),
+      () => (pg ? `statement failed: undefined_column, no attribute ${col} on ${t.table}` : `ER_BAD_FIELD_ERROR (1054) for ${col} on ${t.table}`),
+      () => `query referencing ${t.table}.${col} rejected: the column is not in the current schema`,
+    ]);
     const missing: LineRef[] = spread(rng, c.onset, c.onset + 240, byDifficulty(c, 3, 4, 4)).map((at) =>
-      b.log(
-        at,
-        t.db,
-        "ERROR",
-        pg ? `column "${col}" of relation "${t.table}" does not exist at character ${rng.int(30, 140)}` : `Unknown column '${col}' in 'field list'`,
-        { role: "cause" },
-      ),
+      b.log(at, t.db, "ERROR", noColumn(pg ? rng.int(30, 140) : 0), { role: "cause" }),
     );
     const appErrors: LineRef[] = spread(rng, c.onset + 1, c.end, byDifficulty(c, 2, 4, 6)).map((at) =>
       b.log(at, t.app, "ERROR", `query on ${t.table} failed for ${b.entity(t.entity.prefix)}: ${pg ? `column "${col}" does not exist` : `Unknown column '${col}'`}`, {
@@ -159,6 +173,7 @@ export const duplicateKey: Scenario = {
   key: "data_integrity/sequence-collision",
   rootCause: "data_integrity",
   confusableWith: ["bad_deploy", "config_error", "dependency_timeout"],
+  quietable: true,
   run(c) {
     const { b, t, rng } = c;
     const pg = t.dbKind === "postgres";
@@ -168,21 +183,21 @@ export const duplicateKey: Scenario = {
     const restore: LineRef[] = [
       b.log(restoreAt, t.db, isHard(c) ? "INFO" : "WARN", `restore: table ${t.table} reloaded from snapshot (${rows} rows); ${pg ? `sequence ${t.table}_id_seq` : "AUTO_INCREMENT"} left at ${rows - rng.int(5000, 20000)}`, {
         role: "cause",
+        origin: true,
       }),
     ];
 
+    const duplicate = c.hard.phrases("duplicate-key", [
+      (k: number) =>
+        pg ? `duplicate key value violates unique constraint "${t.table}_pkey" DETAIL: Key (id)=(${k}) already exists.` : `Duplicate entry '${k}' for key '${t.table}.PRIMARY'`,
+      (k: number) => (pg ? `ERROR: 23505 unique_violation on ${t.table} (id ${k} is already present)` : `ER_DUP_ENTRY (1062): '${k}' already exists in ${t.table}.PRIMARY`),
+      (k: number) => `insert into ${t.table} rejected: primary key ${k} is taken`,
+      (k: number) => `could not insert row ${k}: it conflicts with an existing ${t.table} primary key`,
+    ]);
     let id = rows - rng.int(3000, 4000);
     const collisions: LineRef[] = spread(rng, c.onset, c.onset + 260, byDifficulty(c, 3, 4, 5)).map((at) => {
       id += rng.int(1, 5);
-      return b.log(
-        at,
-        t.db,
-        "ERROR",
-        pg
-          ? `duplicate key value violates unique constraint "${t.table}_pkey" DETAIL: Key (id)=(${id}) already exists.`
-          : `Duplicate entry '${id}' for key '${t.table}.PRIMARY'`,
-        { role: "cause" },
-      );
+      return b.log(at, t.db, "ERROR", duplicate(id), { role: "cause" });
     });
 
     const appErrors: LineRef[] = spread(rng, c.onset + 1, c.end, byDifficulty(c, 2, 4, 6)).map((at) =>

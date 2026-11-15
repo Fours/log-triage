@@ -13,6 +13,7 @@ export const newVersionException: Scenario = {
   key: "bad_deploy/new-version-exception",
   rootCause: "bad_deploy",
   confusableWith: ["data_integrity", "config_error"],
+  quietable: false, // a release is already logged at INFO
   run(c) {
     const { b, t, rng } = c;
     const v = version(c);
@@ -25,14 +26,14 @@ export const newVersionException: Scenario = {
       b.log(deployAt + rng.float(20, 40), t.app, "INFO", `started ${t.app} ${v.next}, pid 1, ready`, { role: "cause" }),
     ];
 
+    const typeError = c.hard.phrases("type-error", [
+      (id: string) => `unhandled error in ${t.route} (${id}): TypeError: Cannot read properties of undefined (reading '${field}') at format (${file}) [${v.next}]`,
+      (id: string) => `[${v.next}] ${t.route} ${id} -> 500: TypeError: undefined has no property '${field}'`,
+      (id: string) => `request ${id} failed in ${v.next}: cannot access '${field}' of undefined, stack: format @ ${file}`,
+      (id: string) => `exception handler caught a TypeError for ${id}: ${t.entity.noun}.${field} is undefined (release ${v.next})`,
+    ]);
     const errors: LineRef[] = spread(rng, c.onset, c.onset + 240, byDifficulty(c, 3, 4, 4)).map((at) =>
-      b.log(
-        at,
-        t.app,
-        "ERROR",
-        `unhandled error in ${t.route} (${b.entity(t.entity.prefix)}): TypeError: Cannot read properties of undefined (reading '${field}') at format (${file}) [${v.next}]`,
-        { trace: b.trace(), role: "cause" },
-      ),
+      b.log(at, t.app, "ERROR", typeError(b.entity(t.entity.prefix)), { trace: b.trace(), role: "cause" }),
     );
 
     const edge = edgeFailures(c, c.onset + 2, symptomCount(c), 500, `upstream ${t.app} returned 500 Internal Server Error`);
@@ -54,6 +55,7 @@ export const contractChange: Scenario = {
   key: "bad_deploy/dependency-contract-change",
   rootCause: "bad_deploy",
   confusableWith: ["data_integrity", "config_error", "dependency_timeout"],
+  quietable: false, // a release is already logged at INFO
   run(c) {
     const { b, t, rng } = c;
     const v = version(c);
@@ -64,15 +66,15 @@ export const contractChange: Scenario = {
       b.log(deployAt + rng.float(15, 30), t.dep, "INFO", `started ${t.dep} ${v.next}: response serializer v2 enabled`, { role: "cause" }),
     ];
 
+    const decodeFailed = c.hard.phrases("decode-failed", [
+      (id: string) => `failed to decode ${t.dep} ${t.depCall} response for ${id}: missing required field "status" (got keys: id, state, updatedAt)`,
+      (id: string) => `schema validation error on ${t.dep} reply (${id}): required property 'status' not found`,
+      (id: string) => `${t.depClient}: unexpected payload for ${id}, cannot map status (present: id, state, updatedAt)`,
+      (id: string) => `deserializing ${t.dep} response for ${id} failed: KeyError 'status'`,
+    ]);
     const decode: LineRef[] = spread(rng, c.onset, c.onset + 240, byDifficulty(c, 3, 4, 4)).map((at) => {
       const id = b.entity(t.entity.prefix);
-      return b.log(
-        at,
-        t.app,
-        "ERROR",
-        `failed to decode ${t.dep} ${t.depCall} response for ${id}: missing required field "status" (got keys: id, state, updatedAt)`,
-        { trace: b.trace(), role: "cause" },
-      );
+      return b.log(at, t.app, "ERROR", decodeFailed(id), { trace: b.trace(), role: "cause" });
     });
 
     const edge = edgeFailures(c, c.onset + 2, symptomCount(c), 502, `upstream ${t.app} returned 502 Bad Gateway`);
@@ -97,6 +99,7 @@ export const wrongEndpoint: Scenario = {
   key: "config_error/wrong-endpoint",
   rootCause: "config_error",
   confusableWith: ["dependency_timeout", "external_outage", "bad_deploy"],
+  quietable: false, // a config reload is already logged at INFO
   run(c) {
     const { b, t, rng } = c;
     const rev = rng.int(300, 900);
@@ -115,8 +118,14 @@ export const wrongEndpoint: Scenario = {
       b.log(at0, t.app, "INFO", `config reloaded from config-service (revision ${rev}): 1 key changed: ${key}=http://${t.dep}.internal:${port}`, { role: "cause" }),
     );
 
+    const connRefused = c.hard.phrases("connection-refused", [
+      () => `${t.depClient} failed: connect ECONNREFUSED ${ip}:${port} (${t.dep}.internal)`,
+      () => `dial tcp ${ip}:${port}: connect: connection refused (calling ${t.dep})`,
+      () => `${t.depCall} to ${t.dep}.internal:${port} failed: Connection refused`,
+      () => `could not reach ${t.dep} at ${ip}:${port} (ECONNREFUSED after 1ms)`,
+    ]);
     const refused: LineRef[] = spread(rng, c.onset, c.onset + 240, byDifficulty(c, 3, 4, 4)).map((at) =>
-      b.log(at, t.app, "ERROR", `${t.depClient} failed: connect ECONNREFUSED ${ip}:${port} (${t.dep}.internal)`, { trace: b.trace(), role: "cause" }),
+      b.log(at, t.app, "ERROR", connRefused(), { trace: b.trace(), role: "cause" }),
     );
 
     const edge = edgeFailures(c, c.onset + 1, symptomCount(c), 503, `upstream ${t.app} returned 503 Service Unavailable`);
@@ -140,6 +149,7 @@ export const rotatedCredential: Scenario = {
   key: "config_error/rotated-credential",
   rootCause: "config_error",
   confusableWith: ["external_outage", "dependency_timeout"],
+  quietable: false, // a secret reload is already logged at INFO/DEBUG
   run(c) {
     const { b, t, rng } = c;
     const x = t.external;
@@ -153,8 +163,15 @@ export const rotatedCredential: Scenario = {
       }),
     ];
 
+    const unauthorized = c.hard.phrases("unauthorized", [
+      () => `${x.label} rejected request: 401 Unauthorized (invalid API key) POST https://${x.host}${x.path}`,
+      // Only variants 0 and 2 name the host, so neither cycling pair shares a host-name search.
+      () => `POST ${x.path} -> 401 {"error":"invalid_api_key"}`,
+      () => `${x.label} auth failed: HTTP 401, credentials not accepted by ${x.host}`,
+      () => `the ${x.label} denied the request with status 401: API key invalid or revoked`,
+    ]);
     const rejected: LineRef[] = spread(rng, c.onset, c.onset + 240, byDifficulty(c, 3, 4, 4)).map((at) =>
-      b.log(at, t.dep, "ERROR", `${x.label} rejected request: 401 Unauthorized (invalid API key) POST https://${x.host}${x.path}`, {
+      b.log(at, t.dep, "ERROR", unauthorized(), {
         trace: b.trace(),
         role: "cause",
       }),

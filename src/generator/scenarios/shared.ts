@@ -1,5 +1,6 @@
 import type { LineRef } from "../builder.js";
 import { byDifficulty, type Ctx } from "../context.js";
+import type { Phrased } from "../hardness.js";
 import { spread } from "../rng.js";
 
 /** How many symptom lines to emit: harder incidents bury the cause under more of them. */
@@ -30,6 +31,33 @@ export function poolSaturation(c: Ctx, from: number, count: number): LineRef[] {
       ? b.log(at, t.app, "ERROR", `pool checkout timeout: no connection to ${t.dep} available after 5000ms`, { role: "symptom" })
       : b.log(at, t.app, "WARN", `HTTP connection pool to ${t.dep} at capacity (50/50 in use), ${queued} requests queued`, { role: "symptom" });
   });
+}
+
+/**
+ * The app's call to the dependency timing out, worded the way different HTTP
+ * clients log it. Variant 0 is the v1 message.
+ */
+export function appTimeout(c: Ctx, ms: number): (id: string) => Phrased {
+  const { t } = c;
+  return c.hard.phrases("app-timeout", [
+    (id: string) => `${t.depClient} timed out after ${ms}ms calling ${t.dep} ${t.depCall} (${id})`,
+    (id: string) => `upstream request to ${t.dep} failed: ReadTimeout (read timeout=${ms / 1000}s) [${id}]`,
+    (id: string) => `${t.depCall} -> ${t.dep}: context deadline exceeded after ${(ms / 1000).toFixed(1)}s (${id})`,
+    (id: string) => `gave up waiting on ${t.dep} for ${id}: no response in ${ms} ms`,
+  ]);
+}
+
+/** The dependency's call to the third party hanging until its timeout. Variant 0 is the v1 message. */
+export function externalTimeout(c: Ctx, ms: number): () => Phrased {
+  const x = c.t.external;
+  const url = `POST https://${x.host}${x.path}`;
+  return c.hard.phrases("external-timeout", [
+    () => `${x.label} call FAILED: upstream timeout after ${ms}ms ${url}`,
+    // Only variants 0 and 2 name the host, so neither cycling pair shares a host-name search.
+    () => `call to the ${x.label} aborted: no response within ${ms / 1000}s`,
+    () => `HTTP client: read timed out after ${ms} ms waiting for ${x.host}`,
+    () => `${x.label} request abandoned, socket idle ${(ms / 1000).toFixed(1)}s`,
+  ]);
 }
 
 export function version(c: Ctx): { prev: string; next: string } {

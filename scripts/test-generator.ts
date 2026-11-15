@@ -2,7 +2,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { strict as assert } from "node:assert";
-import { DATASETS, DEFAULT_SEED, TEST_SET, generateDataset, generateDatasetFor } from "../src/generator/index.js";
+import { DATASETS, DEFAULT_SEED, QUIETABLE, SCENARIOS, TEST_SET, generateDataset, generateDatasetFor, type GeneratedIncident } from "../src/generator/index.js";
+import { quietAtMedium } from "../src/generator/hardness.js";
 import { buildManifest } from "../src/generator/manifest.js";
 import { ROOT_CAUSE_CATEGORIES } from "../src/types.js";
 import { loadIncident } from "../src/tools.js";
@@ -209,5 +210,96 @@ for (const key of ["v2Dev", "v2Test"] as const) {
     assert.deepEqual(committed, JSON.parse(JSON.stringify(fresh)), `stale: run \`npm run generate -- --v2${key === "v2Test" ? " --test" : ""}\``);
   });
 }
+
+console.log("\nGenerator v2: quiet causes and paraphrased evidence (T2)");
+
+const LOUD = new Set(["WARN", "ERROR", "FATAL"]);
+const scenarioByKey = new Map(Object.values(SCENARIOS).flat().map((sc) => [sc.key, sc]));
+const v2Sets = (["v2Dev", "v2Test"] as const).map((k) => ({ def: DATASETS[k], set: generateDatasetFor(DATASETS[k]) }));
+const v2All: GeneratedIncident[] = v2Sets.flatMap((x) => x.set);
+const originLevels = (g: GeneratedIncident) => g.info.origins.map((n) => g.incident.logs[n - 1].level);
+
+/**
+ * A run of `min` characters shared by every line, after masking numbers (ids,
+ * timings, counts) and service names (the `service` filter already finds those,
+ * so a shared service name gives a phrase search no extra reach).
+ */
+function sharedRun(lines: string[], min: number, services: string[]): string | null {
+  const byLength = [...services].sort((x, y) => y.length - x.length);
+  const masked = lines.map((l) => byLength.reduce((acc, svc) => acc.split(svc).join("<svc>"), l).replace(/\d+/g, "#"));
+  const shortest = [...masked].sort((x, y) => x.length - y.length)[0];
+  for (let i = 0; i + min <= shortest.length; i++) {
+    const w = shortest.slice(i, i + min);
+    if (masked.every((m) => m.includes(w))) return w;
+  }
+  return null;
+}
+
+check("v1 is untouched by the new features: original wording everywhere, origin lines at their v1 levels", () => {
+  for (const g of [...dataset, ...generateDataset(TEST_SET.seed, TEST_SET)]) {
+    for (const lines of Object.values(g.info.families)) for (const l of lines) assert.equal(l.variant, 0, g.incident.id);
+  }
+});
+
+check("every scenario says whether it can be quiet, and only quietable ones mark origin lines", () => {
+  assert.equal(QUIETABLE.length, 9);
+  for (const g of v2All) {
+    const sc = scenarioByKey.get(g.incident.label.scenario!)!;
+    if (sc.quietable) assert.ok(g.info.origins.length >= 1, `${g.incident.id} (${sc.key}) has no origin lines`);
+    else assert.equal(g.info.origins.length, 0, `${g.incident.id} (${sc.key}) isn't quietable but marks origin lines`);
+    for (const n of g.info.origins) assert.ok(g.incident.label.evidenceLines.includes(n), `${g.incident.id}: origin line ${n} isn't evidence`);
+  }
+});
+
+check("hard: every quietable scenario's origin lines are below WARN, and there are at most 3", () => {
+  for (const g of v2All.filter((x) => x.incident.label.difficulty === "hard" && x.info.origins.length)) {
+    const levels = originLevels(g);
+    assert.ok(levels.every((l) => !LOUD.has(l)), `${g.incident.id}: origin levels ${levels}`);
+    assert.ok(g.info.origins.length <= 3, `${g.incident.id}: ${g.info.origins.length} origin lines`);
+  }
+});
+
+check("medium: exactly the chosen half of the quietable scenarios is quiet, the same in both sets; easy: none", () => {
+  const quietKeys = QUIETABLE.filter((k) => quietAtMedium(k, QUIETABLE));
+  assert.equal(quietKeys.length, 5);
+  for (const g of v2All.filter((x) => x.info.origins.length && x.incident.label.difficulty !== "hard")) {
+    const key = g.incident.label.scenario!;
+    const quiet = g.incident.label.difficulty === "medium" && quietKeys.includes(key);
+    const loud = originLevels(g).some((l) => LOUD.has(l));
+    assert.equal(loud, !quiet, `${g.incident.id} (${key}, ${g.incident.label.difficulty}): expected ${quiet ? "quiet" : "loud"} origin lines`);
+  }
+});
+
+check("every incident has paraphrased evidence; on medium and hard each family mixes wordings", () => {
+  for (const g of v2All) {
+    const families = Object.entries(g.info.families);
+    assert.ok(families.length >= 1, `${g.incident.id} has no paraphrased family`);
+    if (g.incident.label.difficulty === "easy") continue;
+    for (const [family, lines] of families) {
+      if (lines.length < 2) continue;
+      assert.ok(new Set(lines.map((l) => l.variant)).size >= 2, `${g.incident.id}: family ${family} uses one wording`);
+    }
+  }
+});
+
+check("medium and hard: no single phrase (20+ characters, numbers and service names masked) matches every line of a family", () => {
+  for (const g of v2All.filter((x) => x.incident.label.difficulty !== "easy")) {
+    for (const [family, lines] of Object.entries(g.info.families)) {
+      if (lines.length < 2) continue;
+      const shared = sharedRun(lines.map((l) => g.incident.logs[l.n - 1].msg), 20, g.incident.services);
+      assert.equal(shared, null, `${g.incident.id}: every "${family}" line contains "${shared}"`);
+    }
+  }
+});
+
+check("v2 incidents stay valid: evidence present, explanations cite real lines", () => {
+  for (const g of v2All) {
+    const { logs, label } = g.incident;
+    assert.ok(label.evidenceLines.length >= 2, g.incident.id);
+    const cited = [...label.explanation.matchAll(/lines? ([\d, ]+)/g)].flatMap((m) => m[1].split(",").map((x) => Number(x.trim())).filter(Boolean));
+    assert.ok(cited.length > 0, `${g.incident.id}: explanation cites nothing`);
+    for (const n of cited) assert.ok(n >= 1 && n <= logs.length, `${g.incident.id}: cites line ${n} of ${logs.length}`);
+  }
+});
 
 console.log(`\n${passed} checks passed.`);

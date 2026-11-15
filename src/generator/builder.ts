@@ -1,4 +1,5 @@
 import type { LogLevel, LogLine } from "../types.js";
+import type { Phrased } from "./hardness.js";
 import type { Rng } from "./rng.js";
 
 /**
@@ -27,12 +28,30 @@ interface Draft extends LineRef {
   level: LogLevel;
   traceId?: string;
   msg: string;
+  origin: boolean;
+  family?: string;
+  variant?: number;
 }
 
 export interface LogOpts {
   trace?: string;
   role?: Role;
+  /**
+   * An originating cause line: the first sign of the fault (the lock holder,
+   * the slow calls, the heap warnings). Generator v2 can log these quietly.
+   */
+  origin?: boolean;
 }
+
+/** Bookkeeping about the generated log that the agent never sees. */
+export interface BuildInfo {
+  /** Line numbers of originating cause lines. */
+  origins: number[];
+  /** Paraphrased message families: line number and variant of each line. */
+  families: Record<string, { n: number; variant: number }[]>;
+}
+
+const QUIET: Partial<Record<LogLevel, LogLevel>> = { WARN: "INFO", ERROR: "INFO", FATAL: "INFO" };
 
 export class IncidentBuilder {
   private drafts: Draft[] = [];
@@ -42,6 +61,8 @@ export class IncidentBuilder {
   private entitySeq: number;
   /** Placeholder token → final id, filled during `build()`. */
   private ids = new Map<string, string>();
+  /** Generator v2: log originating cause lines at INFO. Off for v1. */
+  quietOrigins = false;
 
   constructor(
     private readonly rng: Rng,
@@ -67,23 +88,28 @@ export class IncidentBuilder {
   }
 
   /** Emit a line `at` seconds after the window start. Role defaults to noise. */
-  log(at: number, service: string, level: LogLevel, msg: string, opts: LogOpts = {}): LineRef {
+  log(at: number, service: string, level: LogLevel, msg: string | Phrased, opts: LogOpts = {}): LineRef {
+    const phrased = typeof msg === "string" ? null : msg;
+    const origin = opts.origin === true;
     const draft: Draft = {
       n: 0,
       at: Math.max(0, at),
       role: opts.role ?? "noise",
       seq: this.seq++,
       service,
-      level,
+      level: origin && this.quietOrigins ? (QUIET[level] ?? level) : level,
       traceId: opts.trace,
-      msg,
+      msg: phrased ? phrased.msg : (msg as string),
+      origin,
+      family: phrased?.family,
+      variant: phrased?.variant,
     };
     this.drafts.push(draft);
     return draft;
   }
 
   /** Sort by time (stable by emission order), assign 1-indexed line numbers. */
-  build(): { logs: LogLine[]; evidence: number[]; roles: Role[] } {
+  build(): { logs: LogLine[]; evidence: number[]; roles: Role[]; info: BuildInfo } {
     const sorted = [...this.drafts].sort((a, b) => {
       const sa = Math.floor(a.at);
       const sb = Math.floor(b.at);
@@ -120,7 +146,10 @@ export class IncidentBuilder {
       return line;
     });
     const evidence = sorted.filter((d) => d.role === "cause").map((d) => d.n);
-    return { logs, evidence, roles: sorted.map((d) => d.role) };
+    const families: BuildInfo["families"] = {};
+    for (const d of sorted) if (d.family !== undefined) (families[d.family] ??= []).push({ n: d.n, variant: d.variant ?? 0 });
+    const info: BuildInfo = { origins: sorted.filter((d) => d.origin).map((d) => d.n), families };
+    return { logs, evidence, roles: sorted.map((d) => d.role), info };
   }
 
   /** Resolve placeholder ids in free text (e.g. an explanation). Call after `build()`. */

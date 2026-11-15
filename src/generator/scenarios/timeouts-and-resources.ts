@@ -1,7 +1,7 @@
 import { cite, type LineRef } from "../builder.js";
 import { byDifficulty, isHard, type Scenario } from "../context.js";
 import { spread } from "../rng.js";
-import { edgeFailures, pid, poolSaturation, symptomCount } from "./shared.js";
+import { appTimeout, edgeFailures, externalTimeout, pid, poolSaturation, symptomCount } from "./shared.js";
 
 // ---------------------------------------------------------------------------
 // dependency_timeout
@@ -11,6 +11,7 @@ export const dbLockWait: Scenario = {
   key: "dependency_timeout/db-lock-wait",
   rootCause: "dependency_timeout",
   confusableWith: ["resource_exhaustion", "data_integrity"],
+  quietable: true,
   run(c) {
     const { b, t, rng } = c;
     const xid = rng.int(80000, 99999);
@@ -24,7 +25,7 @@ export const dbLockWait: Scenario = {
       pg
         ? `transaction ${xid} (application_name=${t.dep}-reconciler) idle in transaction, holding RowExclusiveLock on "${t.table}"`
         : `TRANSACTION ${xid}, ACTIVE ${rng.int(60, 120)} sec, ${t.dep}-reconciler holding 1 row lock(s) on ${t.table}, undo log entries 1`,
-      { role: "cause" },
+      { role: "cause", origin: true },
     );
 
     const waits: LineRef[] = spread(rng, c.onset, c.onset + 120, byDifficulty(c, 2, 2, 3)).map((at) =>
@@ -39,12 +40,19 @@ export const dbLockWait: Scenario = {
       ),
     );
 
+    const canceled = c.hard.phrases("statement-timeout", [
+      (id: string) => `query canceled: statement timeout 10000ms (UPDATE ${t.table} WHERE id = ${id})`,
+      (id: string) => `canceling UPDATE on ${t.table} for ${id} due to statement_timeout`,
+      (id: string) => `db write ${t.table}/${id} aborted: QueryCanceled after 10.0s`,
+      (id: string) => `${t.table} update (${id}) exceeded the 10000 ms limit and was cancelled`,
+    ]);
+    const appTimedOut = appTimeout(c, 15000);
     const timeouts: LineRef[] = [];
     for (const at of spread(rng, c.onset + 15, c.onset + 200, byDifficulty(c, 2, 3, 3))) {
       const tr = b.trace();
       const id = b.entity(t.entity.prefix);
-      timeouts.push(b.log(at, t.dep, "ERROR", `query canceled: statement timeout 10000ms (UPDATE ${t.table} WHERE id = ${id})`, { trace: tr, role: "cause" }));
-      timeouts.push(b.log(at + 5, t.app, "ERROR", `${t.depClient} timed out after 15000ms calling ${t.dep} ${t.depCall} (${id})`, { trace: tr, role: "cause" }));
+      timeouts.push(b.log(at, t.dep, "ERROR", canceled(id), { trace: tr, role: "cause" }));
+      timeouts.push(b.log(at + 5, t.app, "ERROR", appTimedOut(id), { trace: tr, role: "cause" }));
     }
 
     const pool = poolSaturation(c, c.onset + 150, byDifficulty(c, 2, 3, 4));
@@ -68,21 +76,28 @@ export const externalHang: Scenario = {
   key: "dependency_timeout/external-hang",
   rootCause: "dependency_timeout",
   confusableWith: ["resource_exhaustion", "cascading_failure"],
+  quietable: true,
   run(c) {
     const { b, t, rng } = c;
     const x = t.external;
     const url = `POST https://${x.host}${x.path}`;
 
-    const slow: LineRef[] = spread(rng, c.onset, c.onset + 60, byDifficulty(c, 2, 2, 3)).map((at, i) =>
-      b.log(at, t.dep, "WARN", `${x.label} call slow: ${rng.int(3500, 6000) * (i + 1)}ms (soft threshold 2000ms) ${url}`, { trace: b.trace(), role: "cause" }),
+    const slow: LineRef[] = spread(rng, c.onset, c.onset + 60, c.hard.count(byDifficulty(c, 2, 2, 3))).map((at, i) =>
+      b.log(at, t.dep, "WARN", `${x.label} call slow: ${rng.int(3500, 6000) * (i + 1)}ms (soft threshold 2000ms) ${url}`, {
+        trace: b.trace(),
+        role: "cause",
+        origin: true,
+      }),
     );
 
+    const depTimedOut = externalTimeout(c, 30000);
+    const appTimedOut = appTimeout(c, 30000);
     const hung: LineRef[] = [];
     for (const at of spread(rng, c.onset + 60, c.onset + 260, byDifficulty(c, 2, 3, 3))) {
       const tr = b.trace();
       const id = b.entity(t.entity.prefix);
-      hung.push(b.log(at, t.dep, "ERROR", `${x.label} call FAILED: upstream timeout after 30000ms ${url}`, { trace: tr, role: "cause" }));
-      hung.push(b.log(at + 0.3, t.app, "ERROR", `${t.depClient} timed out after 30000ms calling ${t.dep} ${t.depCall} (${id})`, { trace: tr, role: "cause" }));
+      hung.push(b.log(at, t.dep, "ERROR", depTimedOut(), { trace: tr, role: "cause" }));
+      hung.push(b.log(at + 0.3, t.app, "ERROR", appTimedOut(id), { trace: tr, role: "cause" }));
     }
 
     const pool = poolSaturation(c, c.onset + 200, byDifficulty(c, 2, 3, 5));
@@ -109,17 +124,18 @@ export const memoryLeakOom: Scenario = {
   key: "resource_exhaustion/memory-leak-oom",
   rootCause: "resource_exhaustion",
   confusableWith: ["bad_deploy", "cascading_failure", "dependency_timeout"],
+  quietable: true,
   run(c) {
     const { b, t, rng } = c;
     // Heap creeps up well before the crash — the earliest, quietest signal.
     const heapStart = Math.max(30, c.onset - rng.float(300, 500));
-    const heap: LineRef[] = spread(rng, heapStart, c.onset, byDifficulty(c, 2, 3, 3)).map((at, i, all) =>
+    const heap: LineRef[] = spread(rng, heapStart, c.onset, c.hard.count(byDifficulty(c, 2, 3, 3))).map((at, i, all) =>
       b.log(
         at,
         t.app,
         "WARN",
         `heap usage ${78 + Math.round((i / all.length) * 18)}% after full GC (old gen not reclaimed), GC overhead ${20 + i * 15}%`,
-        { role: "cause" },
+        { role: "cause", origin: true },
       ),
     );
 
@@ -127,9 +143,23 @@ export const memoryLeakOom: Scenario = {
     const restarts: LineRef[] = [];
     let at = c.onset;
     const ver = `v${rng.int(1, 4)}.${rng.int(2, 30)}.${rng.int(0, 9)}`;
+    const noun = t.entity.noun;
+    const oom = c.hard.phrases("out-of-memory", [
+      () => `java.lang.OutOfMemoryError: Java heap space (at ${noun}Cache.put)`,
+      () => `Exception in thread "worker-${c.hard.rng.int(1, 16)}" java.lang.OutOfMemoryError: Java heap space`,
+      () => `fatal: heap exhausted while growing ${noun}Cache (requested 64MB, max 1536MB)`,
+      () => `JVM terminating after OutOfMemoryError in ${noun}Cache.put; heap dump written to /tmp/heap.hprof`,
+    ]);
+    const killed = c.hard.phrases("oom-killed", [
+      (pod: string, n: number) => `container ${pod} killed: OOMKilled (memory limit 2Gi), restart count ${n}`,
+      (pod: string, n: number) => `kubelet: ${pod} terminated (reason OOMKilled, exit code 137), restarts=${n}`,
+      (pod: string, n: number) => `pod ${pod} exceeded its 2Gi memory limit and was killed (restart #${n})`,
+      (pod: string, n: number) => `oom-killer: killed process 1 in ${pod}, cgroup memory limit reached (restart ${n})`,
+    ]);
     for (let i = 0; i < byDifficulty(c, 2, 3, 3); i++) {
-      crashes.push(b.log(at, t.app, "FATAL", `java.lang.OutOfMemoryError: Java heap space (at ${t.entity.noun}Cache.put)`, { role: "cause" }));
-      crashes.push(b.log(at + 1, t.app, "ERROR", `container ${t.app}-${rng.int(0, 2)} killed: OOMKilled (memory limit 2Gi), restart count ${i + 1}`, { role: "cause" }));
+      crashes.push(b.log(at, t.app, "FATAL", oom(), { role: "cause" }));
+      const pod = `${t.app}-${rng.int(0, 2)}`;
+      crashes.push(b.log(at + 1, t.app, "ERROR", killed(pod, i + 1), { role: "cause" }));
       restarts.push(b.log(at + rng.float(20, 35), t.app, "INFO", `started ${t.app} ${ver}, pid 1, warming ${t.entity.noun} cache`, { role: "symptom" }));
       at += rng.float(140, 220);
     }
@@ -153,14 +183,16 @@ export const dbDiskFull: Scenario = {
   key: "resource_exhaustion/db-disk-full",
   rootCause: "resource_exhaustion",
   confusableWith: ["data_integrity", "dependency_timeout", "config_error"],
+  quietable: true,
   run(c) {
     const { b, t, rng } = c;
     const pg = t.dbKind === "postgres";
     const vol = pg ? "/var/lib/postgresql/data" : "/var/lib/mysql";
 
-    const usage: LineRef[] = spread(rng, c.onset - 400, c.onset - 20, byDifficulty(c, 2, 2, 3)).map((at, i, all) =>
+    const usage: LineRef[] = spread(rng, c.onset - 400, c.onset - 20, c.hard.count(byDifficulty(c, 2, 2, 3))).map((at, i, all) =>
       b.log(at, t.db, "WARN", `disk usage ${90 + Math.round(((i + 1) / all.length) * 9)}% on ${vol} (WAL/binlog growth ${rng.int(400, 900)}MB/h)`, {
         role: "cause",
+        origin: true,
       }),
     );
 
@@ -176,8 +208,14 @@ export const dbDiskFull: Scenario = {
       ),
     );
 
+    const insertFailed = c.hard.phrases("insert-failed", [
+      (id: string) => `insert into ${t.table} failed for ${id}: ${pg ? "could not extend file" : "error 1114: The table is full"}`,
+      (id: string) => `could not save ${t.entity.noun} ${id}: database rejected the write (${pg ? "disk full" : "table full"})`,
+      (id: string) => `${t.table}.insert(${id}) -> ${pg ? "DiskFullError" : "ER_RECORD_FILE_FULL"}`,
+      (id: string) => `write path failed for ${id}: ${t.db} returned ${pg ? "SQLSTATE 53100" : "errno 1114"}`,
+    ]);
     const writes: LineRef[] = spread(rng, c.onset + 1, c.onset + 220, byDifficulty(c, 2, 3, 3)).map((at) =>
-      b.log(at, t.app, "ERROR", `insert into ${t.table} failed for ${b.entity(t.entity.prefix)}: ${pg ? "could not extend file" : "error 1114: The table is full"}`, {
+      b.log(at, t.app, "ERROR", insertFailed(b.entity(t.entity.prefix)), {
         trace: b.trace(),
         role: "cause",
       }),
