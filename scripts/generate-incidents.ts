@@ -1,49 +1,55 @@
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_SEED, GENERATOR_VERSION, TEST_SET, generateDataset, type DatasetOptions } from "../src/generator/index.js";
+import { DATASETS, generateDataset, generateDatasetFor, incidentFileContents, type DatasetDef } from "../src/generator/index.js";
+import { buildManifest } from "../src/generator/manifest.js";
 
 /**
  * Regenerate a labeled incident set. Deterministic: the same seed produces
- * byte-identical files, so the datasets are committed and diffs show exactly
- * what a generator change did.
+ * byte-identical files.
  *
- *   npm run generate              # dev set (default seed) → incidents/generated/
- *   npm run generate -- --test    # held-out test set      → incidents/test/
- *   npm run generate -- my-seed   # a different (but still reproducible) dev-style set
+ *   npm run generate                  # v1 dev set      → incidents/generated/
+ *   npm run generate -- --test        # v1 test set     → incidents/test/
+ *   npm run generate -- --v2          # v2 dev set      → incidents/v2/dev/
+ *   npm run generate -- --v2 --test   # v2 test set     → incidents/v2/test/
+ *   npm run generate -- my-seed       # a different (but still reproducible) v1 dev-style set
+ *
+ * v1 sets are committed. v2 sets are too large to commit: only their
+ * manifest.json is, with a SHA-256 per incident, and `npm run test:generator`
+ * checks a fresh generation against it.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
-const isTest = process.argv.includes("--test");
-const outDir = resolve(here, isTest ? "../incidents/test" : "../incidents/generated");
-const seed = isTest ? TEST_SET.seed : (process.argv.slice(2).find((a) => !a.startsWith("--")) ?? DEFAULT_SEED);
-const options: DatasetOptions = isTest ? { idPrefix: TEST_SET.idPrefix, topologyShift: TEST_SET.topologyShift } : {};
+const args = process.argv.slice(2);
+const isTest = args.includes("--test");
+const isV2 = args.includes("--v2");
+const customSeed = args.find((a) => !a.startsWith("--"));
+
+const def: DatasetDef = isV2 ? (isTest ? DATASETS.v2Test : DATASETS.v2Dev) : isTest ? DATASETS.test : DATASETS.dev;
+if (customSeed && (isV2 || isTest)) {
+  console.error("A custom seed only applies to the v1 dev set; the other sets have fixed seeds.");
+  process.exit(1);
+}
+const seed = customSeed ?? def.seed;
+const outDir = resolve(here, "..", def.dir);
 
 mkdirSync(outDir, { recursive: true });
 for (const f of readdirSync(outDir)) {
   if (f.endsWith(".json")) rmSync(resolve(outDir, f));
 }
 
-const dataset = generateDataset(seed, options);
+const dataset = customSeed ? generateDataset(seed) : generateDatasetFor(def);
 for (const { incident } of dataset) {
-  writeFileSync(resolve(outDir, `${incident.id}.json`), JSON.stringify(incident, null, 2) + "\n");
+  writeFileSync(resolve(outDir, `${incident.id}.json`), incidentFileContents(incident));
 }
 
-const manifest = {
-  generatorVersion: GENERATOR_VERSION,
+// The v1 dev manifest predates idPrefix/topologyShift and must stay byte-identical, so it omits them.
+const manifest = buildManifest(dataset, {
+  version: def.version,
   seed,
-  ...options,
-  count: dataset.length,
-  incidents: dataset.map(({ incident, meta }) => ({
-    id: incident.id,
-    file: `${incident.id}.json`,
-    rootCause: incident.label.rootCause,
-    acceptableCauses: incident.label.acceptableCauses,
-    scenario: incident.label.scenario,
-    difficulty: incident.label.difficulty,
-    ...meta,
-  })),
-};
+  ...(def === DATASETS.dev ? {} : { idPrefix: def.idPrefix, topologyShift: def.topologyShift }),
+  hashes: !def.committed,
+});
 writeFileSync(resolve(outDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 
 // Summary
@@ -55,7 +61,7 @@ for (const m of manifest.incidents) {
   if (m.acceptableCauses.length) r.ambiguous++;
   rows.set(m.rootCause, r);
 }
-console.log(`Generated ${dataset.length} incidents (seed "${seed}") → ${outDir}\n`);
+console.log(`Generated ${dataset.length} incidents (generator v${def.version}, seed "${seed}") → ${outDir}\n`);
 console.table(Object.fromEntries(rows));
 const lines = manifest.incidents.map((m) => m.lines);
 const adversarial = manifest.incidents.filter((m) => !m.firstErrorIsEvidence).length;

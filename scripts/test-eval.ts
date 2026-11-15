@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,10 +7,11 @@ import type { ApiErrorKind, TriageResult } from "../src/agent.js";
 import { baselineTriage } from "../src/eval/baseline.js";
 import { costUsd } from "../src/eval/pricing.js";
 import { renderLeaderboard, renderRunReport, type RunConfig } from "../src/eval/report.js";
-import { runEval, writeLeaderboard, type TriageFn } from "../src/eval/runner.js";
+import { datasetTagFor, loadDataset, runEval, writeLeaderboard, type TriageFn } from "../src/eval/runner.js";
+import { DATASETS, generateDatasetFor, incidentFileContents } from "../src/generator/index.js";
+import { buildManifest } from "../src/generator/manifest.js";
 import { calibration, percentile, scoreIncident, summarize, type IncidentScore } from "../src/eval/score.js";
 import { bootstrapMean, pairedDiff } from "../src/eval/stats.js";
-import { generateDataset } from "../src/generator/index.js";
 import { loadIncident } from "../src/tools.js";
 import { Incident, toIncidentView, type Hypothesis, type RootCauseCategory } from "../src/types.js";
 
@@ -217,7 +218,7 @@ check("run report and leaderboard render every section", () => {
 });
 
 check("baseline produces a scoreable verdict for every generated incident from the view alone", () => {
-  for (const { incident: inc } of generateDataset()) {
+  for (const { incident: inc } of generateDatasetFor(DATASETS.dev)) {
     const r = baselineTriage(toIncidentView(inc));
     assert.equal(r.outcome, "submitted", inc.id);
     for (const h of r.verdict!.hypotheses) for (const n of h.evidenceLines) assert.ok(n >= 1 && n <= inc.logs.length);
@@ -345,6 +346,37 @@ try {
     assert.ok(devAt >= 0 && testAt > devAt);
     assert.ok(board.indexOf("[v2-dev]") < testAt && board.indexOf(`[${test.runId}]`) > testAt);
     assert.match(board, /\| \[transient\]\(runs\/transient\/report.md\) \| claude-opus-5-5 \| v1 \|/, "unversioned runs show v1");
+  });
+  await checkAsync("generator v2 sets: run ids tagged v2-test, their own leaderboard table; missing or stale files are caught", async () => {
+    assert.equal(datasetTagFor("incidents/generated"), null);
+    assert.equal(datasetTagFor("incidents/test"), "test");
+    assert.equal(datasetTagFor("incidents/v2/test"), "v2-test");
+    assert.equal(datasetTagFor("incidents/v2/dev"), "v2-dev");
+
+    // v2 sets aren't committed, so build one in a temp repo root the way `npm run generate -- --v2 --test` would.
+    const root2 = join(tmp, "repo");
+    const dir = join(root2, DATASETS.v2Test.dir);
+    mkdirSync(dir, { recursive: true });
+    const set = generateDatasetFor(DATASETS.v2Test).slice(0, 3);
+    for (const { incident: inc } of set) writeFileSync(join(dir, `${inc.id}.json`), incidentFileContents(inc));
+    const manifest = buildManifest(set, { version: 2, seed: DATASETS.v2Test.seed, idPrefix: "ht", topologyShift: 2, hashes: true });
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
+
+    const fn: TriageFn = async (view) => ({ ...baselineTriage(view), model: "claude-opus-5-5" });
+    const out = await runEval({ ...base, root: root2, datasetDir: dir, ids: undefined, concurrency: 1, triageFn: fn });
+    assert.match(out.runId, /_claude-opus-5-5_v3_v2-test$/);
+    assert.equal(readJson(join(out.runDir, "config.json")).dataset.dir, "incidents/v2/test");
+    const board = readFileSync(join(tmp, "README.md"), "utf8");
+    const at = board.indexOf("## Harder held-out test set, generator v2");
+    assert.ok(at > board.indexOf("## Held-out test set"), "v2 table comes after the v1 tables");
+    assert.ok(board.indexOf(`[${out.runId}]`) > at);
+
+    // A stale file (edited after generation) and a missing one both fail loudly, naming the fix.
+    const first = join(dir, `${set[0].incident.id}.json`);
+    writeFileSync(first, incidentFileContents({ ...set[0].incident, title: "edited" }));
+    assert.throws(() => loadDataset(dir), /doesn't match its manifest hash.*--v2 --test/);
+    rmSync(first);
+    assert.throws(() => loadDataset(dir), /missing.*npm run generate -- --v2 --test/);
   });
 } finally {
   if (existsSync(tmp)) rmSync(tmp, { recursive: true, force: true });

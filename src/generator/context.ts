@@ -5,12 +5,17 @@ import type { Topology } from "./topologies.js";
 
 export type Difficulty = "easy" | "medium" | "hard";
 
+/** 1 = the Phase 1 generator; 2 = the harder one (docs/milestone-7.md). */
+export type GeneratorVersion = 1 | 2;
+
 /** Everything a scenario needs to write its incident into the builder. */
 export interface Ctx {
   b: IncidentBuilder;
   t: Topology;
   rng: Rng;
   difficulty: Difficulty;
+  /** Which generator's behavior to use. Hardness features check this; v1 output must never change. */
+  version: GeneratorVersion;
   /** Seconds from window start when the fault begins. */
   onset: number;
   /** Window length in seconds. */

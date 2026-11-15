@@ -2,7 +2,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { strict as assert } from "node:assert";
-import { DEFAULT_SEED, TEST_SET, generateDataset } from "../src/generator/index.js";
+import { DATASETS, DEFAULT_SEED, TEST_SET, generateDataset, generateDatasetFor } from "../src/generator/index.js";
+import { buildManifest } from "../src/generator/manifest.js";
 import { ROOT_CAUSE_CATEGORIES } from "../src/types.js";
 import { loadIncident } from "../src/tools.js";
 
@@ -174,5 +175,39 @@ check("held-out test set: in sync on disk, distinct ids, no incident shared with
   const devPlacements = new Set(incidents.map(placement));
   assert.equal(test.filter((i) => devPlacements.has(placement(i))).length, 0, "a scenario landed on the same services as in the dev set");
 });
+
+console.log("\nGenerator v2 (sets are generated, not committed: only their manifests are)");
+
+check("version 1 is the default, and asking for it explicitly changes nothing", () => {
+  assert.deepEqual(generateDataset(DEFAULT_SEED, { version: 1 }), dataset);
+  assert.deepEqual(generateDatasetFor(DATASETS.dev), dataset);
+});
+
+for (const key of ["v2Dev", "v2Test"] as const) {
+  const def = DATASETS[key];
+  const v2 = generateDatasetFor(def);
+  const prefix = new RegExp(`^${def.idPrefix}-\\d{3}$`);
+
+  check(`${def.dir}: deterministic, balanced, ids its own`, () => {
+    assert.deepEqual(generateDatasetFor(def), v2, "same seed, same set");
+    assert.equal(v2.length, 48);
+    for (const { incident } of v2) assert.match(incident.id, prefix);
+    for (const cat of ROOT_CAUSE_CATEGORIES) {
+      for (const d of ["easy", "medium", "hard"] as const) {
+        assert.equal(v2.filter((g) => g.incident.label.rootCause === cat && g.incident.label.difficulty === d).length, 2, `${cat}/${d}`);
+      }
+    }
+    const v1Ids = new Set([...incidents, ...generateDataset(TEST_SET.seed, TEST_SET).map((g) => g.incident)].map((i) => i.id));
+    assert.ok(v2.every((g) => !v1Ids.has(g.incident.id)), "no id shared with a v1 set");
+  });
+
+  check(`${def.dir}: committed manifest matches a fresh generation, hash for hash`, () => {
+    const committed = JSON.parse(readFileSync(resolve(here, "..", def.dir, "manifest.json"), "utf8"));
+    const fresh = buildManifest(v2, { version: 2, seed: def.seed, idPrefix: def.idPrefix, topologyShift: def.topologyShift, hashes: true });
+    assert.equal(committed.generatorVersion, 2);
+    assert.ok(committed.incidents.every((m: { sha256?: string }) => /^[0-9a-f]{64}$/.test(m.sha256 ?? "")), "every incident hashed");
+    assert.deepEqual(committed, JSON.parse(JSON.stringify(fresh)), `stale: run \`npm run generate -- --v2${key === "v2Test" ? " --test" : ""}\``);
+  });
+}
 
 console.log(`\n${passed} checks passed.`);

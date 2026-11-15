@@ -1,6 +1,6 @@
 import { ROOT_CAUSE_CATEGORIES, Incident, type RootCauseCategory } from "../types.js";
 import { IncidentBuilder } from "./builder.js";
-import type { Ctx, Difficulty, Scenario } from "./context.js";
+import type { Ctx, Difficulty, GeneratorVersion, Scenario } from "./context.js";
 import { backgroundTraffic, plantHerrings } from "./noise.js";
 import { createRng } from "./rng.js";
 import { TOPOLOGIES, servicesOf, type Topology } from "./topologies.js";
@@ -18,7 +18,8 @@ import { cacheStampede, cloudStorage, provider5xx, retryStorm } from "./scenario
  * from one seed, and generating it costs nothing.
  */
 
-export const GENERATOR_VERSION = 1;
+/** The newest generator version. Each dataset records the version that produced it. */
+export const GENERATOR_VERSION: GeneratorVersion = 2;
 export const DEFAULT_SEED = "log-triage-v1";
 
 /** Two variants per category, so each root cause shows up in more than one shape. */
@@ -39,6 +40,7 @@ export interface IncidentSpec {
   topology: Topology;
   difficulty: Difficulty;
   seed: string;
+  version: GeneratorVersion;
 }
 
 export interface GeneratedIncident {
@@ -65,6 +67,7 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
     t: spec.topology,
     rng: rng.fork("scenario"),
     difficulty: spec.difficulty,
+    version: spec.version,
     onset: Math.round(end * rng.float(0.45, 0.6)),
     end,
   };
@@ -122,9 +125,11 @@ export interface DatasetOptions {
   idPrefix?: string;
   /** Rotates which topology each scenario lands on, so a held-out set isn't the same scenarios on the same services. */
   topologyShift?: number;
+  /** Generator version (default 1, which reproduces the committed v1 sets byte for byte). */
+  version?: GeneratorVersion;
 }
 
-export function planDataset(seed = DEFAULT_SEED, { idPrefix = "gen", topologyShift = 0 }: DatasetOptions = {}): IncidentSpec[] {
+export function planDataset(seed = DEFAULT_SEED, { idPrefix = "gen", topologyShift = 0, version = 1 }: DatasetOptions = {}): IncidentSpec[] {
   const difficulties: Difficulty[] = ["easy", "medium", "hard"];
   const specs: Omit<IncidentSpec, "id">[] = [];
   let i = 0;
@@ -136,6 +141,7 @@ export function planDataset(seed = DEFAULT_SEED, { idPrefix = "gen", topologyShi
           difficulty,
           topology: TOPOLOGIES[(i * 3 + Math.floor(i / TOPOLOGIES.length) + topologyShift) % TOPOLOGIES.length],
           seed: `${seed}:${scenario.key}:${difficulty}`,
+          version,
         });
         i++;
       }
@@ -156,3 +162,32 @@ export function generateDataset(seed = DEFAULT_SEED, opts: DatasetOptions = {}):
  * candidate at the end, so its number isn't inflated by tuning.
  */
 export const TEST_SET = { seed: "log-triage-test-v1", idPrefix: "test", topologyShift: 2 } as const;
+
+export interface DatasetDef {
+  /** Folder, relative to the repo root. */
+  dir: string;
+  seed: string;
+  idPrefix: string;
+  topologyShift: number;
+  version: GeneratorVersion;
+  /** Committed to git? v2 sets aren't (too large): only their manifest, with a hash per incident. */
+  committed: boolean;
+}
+
+/**
+ * Every dataset the project uses. Dev sets are for tuning; test sets are held
+ * out and run once per finished candidate.
+ */
+export const DATASETS = {
+  dev: { dir: "incidents/generated", seed: DEFAULT_SEED, idPrefix: "gen", topologyShift: 0, version: 1, committed: true },
+  test: { dir: "incidents/test", ...TEST_SET, version: 1, committed: true },
+  v2Dev: { dir: "incidents/v2/dev", seed: "log-triage-v2", idPrefix: "h", topologyShift: 0, version: 2, committed: false },
+  v2Test: { dir: "incidents/v2/test", seed: "log-triage-v2-test", idPrefix: "ht", topologyShift: 2, version: 2, committed: false },
+} as const satisfies Record<string, DatasetDef>;
+
+export function generateDatasetFor(def: DatasetDef): GeneratedIncident[] {
+  return generateDataset(def.seed, def);
+}
+
+/** The exact bytes an incident is written as; manifests hash these. */
+export const incidentFileContents = (incident: Incident) => JSON.stringify(incident, null, 2) + "\n";

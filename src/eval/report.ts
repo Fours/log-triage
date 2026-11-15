@@ -142,6 +142,8 @@ export interface LeaderboardEntry {
 const DATASET_TITLES: Record<string, string> = {
   "incidents/generated": "Dev set (`incidents/generated`): prompts are tuned against this",
   "incidents/test": "Held-out test set (`incidents/test`): each candidate is run once, after tuning",
+  "incidents/v2/dev": "Harder dev set, generator v2 (`incidents/v2/dev`): calibration pilots",
+  "incidents/v2/test": "Harder held-out test set, generator v2 (`incidents/v2/test`)",
 };
 
 /** One table per dataset, one row per run, best top-1 first — results/README.md. */

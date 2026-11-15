@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { DEFAULT_BUDGET, FATAL_API_ERRORS, triage, type ApiErrorKind, type Effort, type TriageOptions, type TriageResult } from "../agent.js";
+import { sha256 } from "../generator/manifest.js";
 import { getPrompt } from "../prompts.js";
 import { loadIncident } from "../tools.js";
 import { toIncidentView, type Incident, type IncidentView } from "../types.js";
@@ -70,6 +71,21 @@ export function loadDataset(datasetDir: string, filter: Pick<EvalOptions, "ids" 
   const files: string[] = manifest
     ? manifest.incidents.map((m: { file: string }) => m.file)
     : readdirSync(datasetDir).filter((f) => f.endsWith(".json"));
+  // v2 sets aren't committed: their manifest carries a hash per incident, so a
+  // missing or stale file is caught here instead of producing a wrong run.
+  const missing = files.filter((f) => !existsSync(resolve(datasetDir, f)));
+  if (missing.length) {
+    throw new Error(
+      `${missing.length} incident file(s) missing in ${datasetDir} (e.g. ${missing[0]}). Generate the set first: ${generateCommand(datasetDir)}`,
+    );
+  }
+  if (manifest) {
+    for (const m of manifest.incidents as Array<{ file: string; sha256?: string }>) {
+      if (m.sha256 && sha256(readFileSync(resolve(datasetDir, m.file), "utf8")) !== m.sha256) {
+        throw new Error(`${m.file} in ${datasetDir} doesn't match its manifest hash. Regenerate the set: ${generateCommand(datasetDir)}`);
+      }
+    }
+  }
   let incidents: Incident[] = files.map((f) => loadIncident(resolve(datasetDir, f)));
   if (filter.ids) {
     const wanted = new Set(filter.ids);
@@ -91,6 +107,24 @@ function gitInfo(root: string): RunConfig["git"] {
   }
 }
 
+/**
+ * Run-id tag for a dataset: its path under incidents/ with "/" → "-" ("test",
+ * "v2-test"). The v1 dev set is untagged, so run ids from before Phase 7 don't change.
+ */
+export function datasetTagFor(datasetDir: string): string | null {
+  if (datasetDir === "incidents/generated") return null;
+  const under = datasetDir.startsWith("incidents/") ? datasetDir.slice("incidents/".length) : datasetDir.split("/").pop()!;
+  return under.replace(/\//g, "-");
+}
+
+function generateCommand(datasetDir: string): string {
+  const d = datasetDir.replace(/\\/g, "/");
+  if (d.endsWith("incidents/v2/test")) return "npm run generate -- --v2 --test";
+  if (d.endsWith("incidents/v2/dev")) return "npm run generate -- --v2";
+  if (d.endsWith("incidents/test")) return "npm run generate -- --test";
+  return "npm run generate";
+}
+
 /** Runs written before `status` existed are complete. */
 export const isComplete = (c: RunConfig) => (c.status ?? "complete") === "complete";
 
@@ -100,8 +134,7 @@ export async function runEval(opts: EvalOptions): Promise<EvalOutcome> {
   const effort = opts.baseline ? null : opts.effort;
   const prompt = opts.baseline ? null : getPrompt(opts.prompt).id; // throws on an unknown version
   const datasetDir = relative(opts.root, opts.datasetDir);
-  // Runs on anything but the dev set are tagged with the dataset's folder name (e.g. "test").
-  const datasetTag = datasetDir === "incidents/generated" ? null : datasetDir.split("/").pop();
+  const datasetTag = datasetTagFor(datasetDir);
   const triageFn: TriageFn = opts.triageFn ?? ((view, o) => triage(view, o));
   const runsDir = resolve(opts.resultsDir, "runs");
 

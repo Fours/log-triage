@@ -1,6 +1,6 @@
 # Milestone 7: A harder incident set (generator v2)
 
-Status: **Planned, not started.** Phases 0–6 are in the README roadmap; this is the first one tracked as a task spec.
+Status: **In progress.** Phases 0–6 are in the README roadmap; this is the first one tracked as a task spec.
 
 ## Outcome
 
@@ -50,6 +50,7 @@ Out of scope (possible later work):
 - **v1 output must stay byte-identical.** `test:generator` already asserts that the committed `incidents/generated` and `incidents/test` match the generator. That keeps holding with no file changes.
 - New seeds and prefixes, so ids never collide with v1: dev `log-triage-v2` / `h-001`…, test `log-triage-v2-test` / `ht-001`…, with the test set's topology shift kept.
 - `npm run generate -- --v2` and `npm run generate -- --v2 --test` write `incidents/v2/dev` and `incidents/v2/test`. The manifest records `generatorVersion: 2`.
+- **v2 incident files are not committed** (decided at T1): at 1,500–4,000 lines a set is roughly 20–25 MB, and T2–T6 regenerate it several times. Only each set's `manifest.json` is committed, with a SHA-256 per incident. `test:generator` regenerates in memory and checks against those hashes, and the eval refuses to run on a missing or stale file, printing the `npm run generate` command to fix it. Generation is seeded, so the files are exactly reproducible.
 - Run tagging: today the runner tags a run with the last path segment (`test`), which would make `incidents/v2/test` collide with v1's `test`. Change the tag to the path under `incidents/` with `/` → `-` (`v2-test`), keeping the v1 tags (`null` for `generated`, `test`) as they are, so existing run ids don't change.
 - Leaderboard: one table per dataset already. Add titles for the two v2 dirs.
 
@@ -114,7 +115,7 @@ Do these in order. Each one ends with `npm test` and `npm run typecheck` passing
 
 | Task | Status | Commit |
 | --- | --- | --- |
-| T1. Dataset plumbing for generator v2 | Not started | |
+| T1. Dataset plumbing for generator v2 | Done | (next commit) |
 | T2. Quiet causes and paraphrased evidence | Not started | |
 | T3. Loud decoys | Not started | |
 | T4. Concurrent incidents and the `secondary` role | Not started | |
@@ -131,6 +132,8 @@ Do these in order. Each one ends with `npm test` and `npm run typecheck` passing
 - `export:site` and the site still build unchanged.
 
 **Done when:** v1 datasets are byte-identical (existing test), the v2 dirs generate deterministically and are checked in sync by `test:generator`, and a fake-agent runner test shows a `v2-test` run id and its own leaderboard table.
+
+Done: `DATASETS` registry and `version` option in `src/generator/index.ts`, `Ctx.version` for T2–T5 to switch on, manifests with hashes (`src/generator/manifest.ts`), `--v2` in `npm run generate`, run tags from `datasetTagFor`, and missing/stale-file checks in `loadDataset`. Tests: `test:generator` (v1 default unchanged; each v2 set deterministic, balanced, with its own ids, and matching its committed manifest hash for hash) and `test:eval` (tags, a `v2-test` run and its own table, stale and missing files caught).
 
 ### T2. Quiet causes and paraphrased evidence
 
