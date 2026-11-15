@@ -115,7 +115,7 @@ Do these in order. Each one ends with `npm test` and `npm run typecheck` passing
 
 | Task | Status | Commit |
 | --- | --- | --- |
-| T1. Dataset plumbing for generator v2 | Done | (next commit) |
+| T1. Dataset plumbing for generator v2 | Done | 53ca8b7 |
 | T2. Quiet causes and paraphrased evidence | Not started | |
 | T3. Loud decoys | Not started | |
 | T4. Concurrent incidents and the `secondary` role | Not started | |
