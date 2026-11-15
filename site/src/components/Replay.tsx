@@ -58,6 +58,7 @@ function RunPicker({ replay, active, onPick }: { replay: ReplayData; active: num
               {r.modelName}
               <span className="replay-run-meta">
                 {r.effort} effort · prompt {r.prompt}
+                {r.runLabel && ` · ${r.runLabel}`}
               </span>
             </span>
             <span className={`replay-run-verdict tone-${mark.tone}`}>
@@ -179,13 +180,14 @@ export default function Replay() {
       <SectionHeading
         eyebrow="Recorded investigations"
         title="Watch it work"
-        lede="Real runs from the held-out test set, replayed step by step: every tool call the agent made, what came back, and the verdict scored against the label. Nothing here is live or edited."
+        lede="Real runs from the held-out test sets, replayed step by step: every tool call the agent made, what came back, and the verdict scored against the label. Nothing here is live or edited."
       />
 
       <div className="replay-incidents" role="tablist" aria-label="Incidents">
         {replays.map((r, i) => (
           <button key={r.incidentId} role="tab" aria-selected={i === incidentIdx} className={`chip${i === incidentIdx ? ' is-active' : ''}`} onClick={() => pickIncident(i)}>
             {r.title}
+            {r.dataset === 'v2' && <span className="tag">v2</span>}
           </button>
         ))}
       </div>

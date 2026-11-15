@@ -26,6 +26,9 @@ export interface RunSummary {
   ece: number
   confidentlyWrong: number
   herringIncidents: number
+  /** Labeled herring lines cited per incident (any hypothesis). */
+  herringsMean: number
+  hardTop1: number | null
   meanUsd: number | null
   p50Ms: number
   meanToolCalls: number
@@ -45,13 +48,37 @@ export interface PairedDiff {
   significant: boolean
 }
 
+export interface DatasetStats {
+  incidents: number
+  categories: number
+  ambiguous: number
+  minLines: number
+  maxLines: number
+}
+
+export interface PairedRow {
+  label: string
+  a: string
+  b: string
+  diffs: PairedDiff[]
+}
+
 export interface Results {
   runs: Record<string, RunSummary>
   matrix: string[]
   iterations: string[]
   prompts: Record<string, string>
-  paired: { label: string; a: string; b: string; diffs: PairedDiff[] }[]
-  dataset: { incidents: number; categories: number; ambiguous: number; minLines: number; maxLines: number }
+  paired: PairedRow[]
+  dataset: DatasetStats
+  /** Generator v2's held-out test set (Phase 7). */
+  v2: {
+    matrix: string[]
+    /** Identical Haiku low runs: the run-to-run noise floor. */
+    repeats: string[]
+    baseline: string
+    paired: PairedRow[]
+    dataset: DatasetStats
+  }
 }
 
 export interface LogLine {
@@ -75,6 +102,8 @@ export interface ReplayRun {
   modelName: string
   prompt: string | null
   effort: string
+  /** e.g. "run 2 of 3", when the same configuration ran more than once. */
+  runLabel: string | null
   steps: { tool: string; input: unknown; output: string; isError: boolean }[]
   verdict: { hypotheses: Hypothesis[]; recommendedAction: string } | null
   score: {
@@ -93,6 +122,8 @@ export interface ReplayRun {
 
 export interface Replay {
   incidentId: string
+  /** Which generator's test set the incident is from. */
+  dataset: 'v1' | 'v2'
   title: string
   why: string
   incident: { title: string; alert: string; services: string[]; lineCount: number; overview: string }

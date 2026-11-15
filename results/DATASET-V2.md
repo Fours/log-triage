@@ -111,18 +111,18 @@ Prompt v3, `incidents/v2/test` (48 incidents, generated once from the final T6 s
 | Haiku low (run 1) | 0 [0, 0] | −4 [−9, +1] | +8 [+3, +13] | +0.63 [+0.17, +1.19] | **−$0.046** [−0.051, −0.042] | **+5.2s** [+3.9, +6.4] |
 | Haiku low (run 2) | −8 [−17, −2] | −7 [−11, −2] | +5 [−2, +12] | +0.42 [0.00, +0.90] | **−$0.046** | **+6.9s** |
 | Haiku low (run 3) | −2 [−6, 0] | −7 [−13, −2] | +2 [−3, +7] | +0.44 [+0.08, +0.85] | **−$0.046** | **+5.8s** |
-| Haiku medium | −4 [−10, 0] | −6 [−10, −2] | +9 [+3, +14] | +0.52 [+0.02, +1.15] | **−$0.044** | **+10.5s** |
+| Haiku medium | −4 [−10, 0] | −6 [−10, −2] | +8 [+3, +14] | +0.52 [+0.02, +1.15] | **−$0.044** | **+10.5s** |
 | Sonnet low | −6 [−15, 0] | +1 [−1, +3] | **−10** [−14, −6] | −0.27 [−0.44, −0.10] | **−$0.027** | **−1.9s** [−2.7, −1.1] |
 | Sonnet medium | −4 [−10, 0] | +2 [+1, +4] | −6 [−9, −3] | −0.29 [−0.46, −0.15] | **−$0.025** | **−1.3s** [−2.1, −0.7] |
-| Opus medium | −2 [−6, 0] | −1 [−3, +2] | **+9** [+5, +13] | +0.46 [+0.21, +0.71] | **+$0.026** | **+6.7s** |
+| Opus medium | −2 [−6, 0] | −1 [−3, +2] | **+8** [+5, +12] | +0.46 [+0.21, +0.71] | **+$0.026** | **+6.7s** |
 
 ### The bait
 
-Across all eight runs, the T6 bait was almost never taken: a lookalike's category was picked once in 192 chances (Haiku low run 2, ht-012), and no top hypothesis cited a lookalike, a timed or chronic decoy, or the second fault's lines. The herrings models do cite are the older single-line ones near the cause (a slow query, a GC pause, a config reload that changed nothing). Every miss by Sonnet and Opus picked the labeled acceptable answer, except Sonnet low on ht-006 (a cache stampede read as `resource_exhaustion`). Haiku low's misses are scattered and change from run to run: ht-012, ht-014, ht-030 and ht-031 are each missed in one run and right in the others.
+Across all eight runs, the T6 bait was never taken: no top hypothesis cited a lookalike, a timed or chronic decoy, or the second fault's lines. A lookalike's *category* was picked once in 192 chances (Haiku low run 2, ht-012, `bad_deploy`), but not because of the lookalike, which was a deploy of ingest-api. Haiku blamed a deploy of the crashing consumer itself, an older Phase 1 herring whose label is debatable for this scenario (see T8 in the milestone spec). The herrings models do cite are the older single-line ones near the cause (a slow query, a GC pause, a config reload that changed nothing). Every miss by Sonnet and Opus picked the labeled acceptable answer, except Sonnet low on ht-006 (a cache stampede read as `resource_exhaustion`). Haiku low's misses are scattered and change from run to run: ht-012, ht-014, ht-030 and ht-031 are each missed in one run and right in the others.
 
 ### What T7 establishes
 
 - **No two models differ on top-1 beyond run-to-run noise.** Every model is at 92–100%, and the largest model-vs-model gap (Sonnet low, −6 pts) is smaller than the 8-point spread between identical Haiku runs. The milestone's demo goal ("at least two models differ on top-1 by more than the paired 95% interval") is not met in any way that means something. Some paired intervals do exclude 0, but the same test also separates Haiku from itself.
-- **What does separate them, beyond noise:** cost (Haiku is 1/13 of Opus low and 1/20 of Opus medium), latency (Sonnet is fastest; Haiku and Opus medium are slowest), and evidence recall (Sonnet low recalls 10 points less than Opus low, and Opus medium 9 points more, both well beyond Haiku's 5-point spread; Sonnet medium's −6 is at the edge of it). Herrings cited also differ: Sonnet cites fewer than Opus low, and Haiku and Opus medium more, but those intervals sit close to Haiku's own run-to-run spread (0.21 lines).
-- **Effort:** for Opus, medium buys recall (+9 pts) at +52% cost and about twice the latency. For Haiku and Sonnet, medium changes nothing outside noise.
+- **What does separate them, beyond noise:** cost (Haiku is 1/13 of Opus low and 1/20 of Opus medium), latency (Sonnet is fastest; Haiku and Opus medium are slowest), and evidence recall (Sonnet low recalls 10 points less than Opus low, and Opus medium 8 points more, both well beyond Haiku's 5-point spread; Sonnet medium's −6 is at the edge of it). Herrings cited also differ: Sonnet cites fewer than Opus low, and Haiku and Opus medium more, but those intervals sit close to Haiku's own run-to-run spread (0.21 lines).
+- **Effort:** for Opus, medium buys recall (+8 pts) at +52% cost and about twice the latency. For Haiku and Sonnet, medium changes nothing outside noise.
 - **Budgets never bind** (0 of 384 investigations), and Haiku is the only model that does much searching (8 tool calls against Opus low's 2.6).

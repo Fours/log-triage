@@ -1,4 +1,4 @@
-import { results, type PairedDiff } from '../data'
+import type { PairedDiff, PairedRow } from '../data'
 
 /**
  * Paired differences between runs on the same 48 incidents: one row per
@@ -25,17 +25,29 @@ const panelX = (i: number) => LABEL_W + i * (PANEL_W + GAP)
 const sx = (i: number, v: number) => panelX(i) + 8 + ((Math.max(-RANGE, Math.min(RANGE, v)) + RANGE) / (2 * RANGE)) * (PANEL_W - 16)
 const fmt = (v: number) => (Math.round(v * 100) === 0 ? '0' : `${v > 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(0)}`)
 
-export default function DiffChart() {
-  const rows = results.paired
+export default function DiffChart({
+  rows,
+  title = 'What changed, with error bars',
+  subtitle,
+  note,
+  noiseFloor,
+}: {
+  rows: PairedRow[]
+  title?: string
+  subtitle: string
+  note: string
+  /** Label of a row that compares a configuration with itself: drawn as the noise floor. */
+  noiseFloor?: string
+}) {
   const H = HEAD + rows.length * ROW + 24
   return (
     <figure className="chart">
       <figcaption className="chart-title">
-        What changed, with error bars
-        <span className="muted"> · paired over the same 48 held-out incidents · 95% bootstrap intervals, in points</span>
+        {title}
+        <span className="muted"> · {subtitle}</span>
       </figcaption>
       <div className="chart-scroll">
-        <svg viewBox={`0 0 ${W} ${H}`} className="diff-svg" role="img" aria-label="Paired differences with 95% intervals for top-1 accuracy, evidence precision and evidence recall across four comparisons.">
+        <svg viewBox={`0 0 ${W} ${H}`} className="diff-svg" role="img" aria-label={`Paired differences with 95% intervals for top-1 accuracy, evidence precision and evidence recall across ${rows.length} comparisons.`}>
           {METRICS.map((m, i) => (
             <g key={m.key}>
               <text className="diff-panel-title" x={panelX(i) + PANEL_W / 2} y={18} textAnchor="middle">
@@ -52,8 +64,10 @@ export default function DiffChart() {
           ))}
           {rows.map((r, j) => {
             const cy = HEAD + j * ROW + ROW / 2
+            const floor = r.label === noiseFloor
             return (
-              <g key={r.label}>
+              <g key={r.label} className={floor ? 'diff-row is-floor' : 'diff-row'}>
+                {floor && <rect className="diff-floor" x={0} y={cy - ROW / 2 + 2} width={W} height={ROW - 4} rx={6} />}
                 <text className="diff-row-label" x={0} y={cy + 4}>
                   {r.label}
                 </text>
@@ -77,10 +91,7 @@ export default function DiffChart() {
           })}
         </svg>
       </div>
-      <p className="chart-note muted small">
-        A bar that crosses the dashed zero line is consistent with no change. Only intervals that exclude zero are drawn in the accent color, and
-        every within-noise value is also labeled “noise”. Cost and latency differences, all clear, are in the model table below.
-      </p>
+      <p className="chart-note muted small">{note}</p>
     </figure>
   )
 }

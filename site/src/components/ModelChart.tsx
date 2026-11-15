@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { pct, results, run, secs, usd, type RunSummary } from '../data'
+import { pct, run, secs, usd, type RunSummary } from '../data'
 
 /**
  * Cost per incident (log scale) vs. evidence recall, one point per model ×
@@ -29,25 +29,34 @@ const y = (r: number) => M.top + ((Y_MAX - r) / (Y_MAX - Y_MIN)) * (H - M.top - 
 const X_TICKS = [0.002, 0.005, 0.01, 0.02, 0.05, 0.1]
 const Y_TICKS = [0.6, 0.7, 0.8, 0.9, 1]
 
-// Label offsets so the six direct labels don't collide (points are hand-checked).
-const LABEL_POS: Record<string, { dx: number; dy: number; anchor: 'start' | 'end' | 'middle' }> = {
+type LabelPos = { dx: number; dy: number; anchor: 'start' | 'end' | 'middle' }
+
+// Label offsets so the six direct labels don't collide (points are hand-checked, per dataset).
+const LABEL_POS: Record<string, LabelPos> = {
   haikuLowTest: { dx: -12, dy: 4, anchor: 'end' },
   haikuMediumTest: { dx: 12, dy: -10, anchor: 'start' },
   sonnetLowTest: { dx: -12, dy: 4, anchor: 'end' },
   sonnetMediumTest: { dx: 12, dy: 16, anchor: 'start' },
   opusLowTest: { dx: -12, dy: -8, anchor: 'end' },
   opusMediumTest: { dx: 0, dy: -16, anchor: 'middle' },
+  v2HaikuLow: { dx: -12, dy: 4, anchor: 'end' },
+  v2HaikuMedium: { dx: 12, dy: -10, anchor: 'start' },
+  v2SonnetLow: { dx: -12, dy: 4, anchor: 'end' },
+  v2SonnetMedium: { dx: 12, dy: 4, anchor: 'start' },
+  v2OpusLow: { dx: -12, dy: 4, anchor: 'end' },
+  v2OpusMedium: { dx: 0, dy: -16, anchor: 'middle' },
 }
+const DEFAULT_POS: LabelPos = { dx: 12, dy: 4, anchor: 'start' }
 
-export default function ModelChart() {
-  const points = results.matrix.map(run)
+export default function ModelChart({ keys, subtitle, ariaLabel }: { keys: string[]; subtitle: string; ariaLabel: string }) {
+  const points = keys.map(run)
   const [hover, setHover] = useState<RunSummary | null>(null)
 
   return (
     <figure className="chart">
       <figcaption className="chart-title">
         Cost per incident vs. evidence recall
-        <span className="muted"> · held-out test set, prompt v3 · all six reach 98–100% top-1</span>
+        <span className="muted"> · {subtitle}</span>
       </figcaption>
       <div className="chart-legend" aria-hidden="true">
         {['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5'].map((m) => (
@@ -65,7 +74,7 @@ export default function ModelChart() {
       </div>
       <div className="chart-plot-scroll">
       <div className="chart-plot">
-        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Scatter plot of cost per incident against evidence recall for three models at two effort levels. Haiku is cheapest at about a quarter of a cent with 87–88% recall; Sonnet is mid-priced with 73–74% recall; Opus is most expensive with 85–89% recall.">
+        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={ariaLabel}>
           {Y_TICKS.map((t) => (
             <g key={t}>
               <line className="chart-grid" x1={M.left} x2={W - M.right} y1={y(t)} y2={y(t)} />
@@ -89,7 +98,7 @@ export default function ModelChart() {
             const cx = x(p.meanUsd!)
             const cy = y(p.evidenceRecall)
             const low = p.effort === 'low'
-            const pos = LABEL_POS[p.key]
+            const pos = LABEL_POS[p.key] ?? DEFAULT_POS
             return (
               <g key={p.key} className="chart-point" onMouseEnter={() => setHover(p)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(p)} onBlur={() => setHover(null)} tabIndex={0}>
                 {/* Interval on recall, so the gap between models reads against the noise. */}

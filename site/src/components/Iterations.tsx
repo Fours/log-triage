@@ -96,7 +96,11 @@ export default function Iterations() {
           large and certain. The write-up was corrected to say so.
         </p>
       </div>
-      <DiffChart />
+      <DiffChart
+        rows={results.paired}
+        subtitle="paired over the same 48 held-out incidents · 95% bootstrap intervals, in points"
+        note="A bar that crosses the dashed zero line is consistent with no change. Only intervals that exclude zero are drawn in the accent color, and every within-noise value is also labeled “noise”. Cost and latency differences, all clear, are in the model table below."
+      />
     </section>
   )
 }

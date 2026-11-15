@@ -40,10 +40,31 @@ const RUNS = {
   devV3Low: "2026-11-12_claude-opus-5-5_v3_low",
   devV4Low: "2026-11-12_claude-opus-5-5_v4_low",
   devBaseline: "2026-11-12_baseline-keywords",
+  // Generator v2 test set (Phase 7)
+  v2Baseline: "2026-11-15_baseline-keywords_v2-test",
+  v2HaikuLow: "2026-11-15_claude-haiku-5-5_v3_low_v2-test",
+  v2HaikuLow2: "2026-11-15_claude-haiku-5-5_v3_low_v2-test_rep2",
+  v2HaikuLow3: "2026-11-15_claude-haiku-5-5_v3_low_v2-test_rep3",
+  v2HaikuMedium: "2026-11-15_claude-haiku-5-5_v3_medium_v2-test",
+  v2SonnetLow: "2026-11-15_claude-sonnet-5-5_v3_low_v2-test",
+  v2SonnetMedium: "2026-11-15_claude-sonnet-5-5_v3_medium_v2-test",
+  v2OpusLow: "2026-11-15_claude-opus-5-5_v3_low_v2-test",
+  v2OpusMedium: "2026-11-15_claude-opus-5-5_v3_medium_v2-test",
 } as const;
 
 const MATRIX = ["haikuLowTest", "haikuMediumTest", "sonnetLowTest", "sonnetMediumTest", "opusLowTest", "opusMediumTest"] as const;
 const ITERATIONS = ["devV1", "devV2", "devV3", "devV3Low", "devV4Low"] as const;
+const MATRIX_V2 = ["v2HaikuLow", "v2HaikuMedium", "v2SonnetLow", "v2SonnetMedium", "v2OpusLow", "v2OpusMedium"] as const;
+/** Three identical Haiku low runs on v2: the run-to-run noise floor. */
+const REPEATS_V2 = ["v2HaikuLow", "v2HaikuLow2", "v2HaikuLow3"] as const;
+/** Shown next to a run in a replay when the same configuration was run more than once. */
+const RUN_LABELS: Partial<Record<keyof typeof RUNS, string>> = { v2HaikuLow: "run 1 of 3", v2HaikuLow2: "run 2 of 3", v2HaikuLow3: "run 3 of 3" };
+const PAIRS_V2: Array<[string, keyof typeof RUNS, keyof typeof RUNS]> = [
+  ["Haiku low, run 1 → run 2 (identical)", "v2HaikuLow", "v2HaikuLow2"],
+  ["Opus low → Haiku low", "v2OpusLow", "v2HaikuLow"],
+  ["Opus low → Sonnet low", "v2OpusLow", "v2SonnetLow"],
+  ["Opus: low → medium effort", "v2OpusLow", "v2OpusMedium"],
+];
 const PAIRS: Array<[string, keyof typeof RUNS, keyof typeof RUNS]> = [
   ["v1 → v3 (Opus, held-out)", "opusV1Test", "opusMediumTest"],
   ["Opus: medium → low effort", "opusMediumTest", "opusLowTest"],
@@ -81,6 +102,8 @@ function runSummary(key: keyof typeof RUNS) {
     ece: s.calibration.ece,
     confidentlyWrong: s.calibration.confidentlyWrong,
     herringIncidents: s.herrings.incidentsCitingAny,
+    herringsMean: s.herrings.meanCited,
+    hardTop1: s.byDifficulty.hard?.top1 ?? null,
     meanUsd: s.cost.meanUsd,
     p50Ms: s.latency.p50Ms,
     meanToolCalls: s.effort.meanToolCalls,
@@ -100,22 +123,36 @@ const results = {
     b,
     diffs: pairedDiff(loaded[a].scores, loaded[b].scores),
   })),
-  dataset: (() => {
-    const manifest = JSON.parse(readFileSync(resolve(root, "incidents/test/manifest.json"), "utf8"));
-    const lines = manifest.incidents.map((m: { lines: number }) => m.lines);
-    return {
-      incidents: manifest.count,
-      categories: new Set(manifest.incidents.map((m: { rootCause: string }) => m.rootCause)).size,
-      ambiguous: manifest.incidents.filter((m: { acceptableCauses: string[] }) => m.acceptableCauses.length).length,
-      minLines: Math.min(...lines),
-      maxLines: Math.max(...lines),
-    };
-  })(),
+  dataset: datasetStats("incidents/test"),
+  v2: {
+    matrix: [...MATRIX_V2],
+    repeats: [...REPEATS_V2],
+    baseline: "v2Baseline",
+    paired: PAIRS_V2.map(([label, a, b]) => ({
+      label,
+      a,
+      b,
+      diffs: pairedDiff(loaded[a].scores, loaded[b].scores),
+    })),
+    dataset: datasetStats("incidents/v2/test"),
+  },
 };
+
+function datasetStats(dir: string) {
+  const manifest = JSON.parse(readFileSync(resolve(root, dir, "manifest.json"), "utf8"));
+  const lines = manifest.incidents.map((m: { lines: number }) => m.lines);
+  return {
+    incidents: manifest.count,
+    categories: new Set(manifest.incidents.map((m: { rootCause: string }) => m.rootCause)).size,
+    ambiguous: manifest.incidents.filter((m: { acceptableCauses: string[] }) => m.acceptableCauses.length).length,
+    minLines: Math.min(...lines),
+    maxLines: Math.max(...lines),
+  };
+}
 
 // ---- Replays ----
 
-const REPLAYS: Array<{ incidentId: string; title: string; why: string; runs: Array<keyof typeof RUNS> }> = [
+const REPLAYS: Array<{ incidentId: string; dataset?: string; title: string; why: string; runs: Array<keyof typeof RUNS> }> = [
   {
     incidentId: "test-008",
     title: "A held row lock",
@@ -134,6 +171,13 @@ const REPLAYS: Array<{ incidentId: string; title: string; why: string; runs: Arr
     why: "Same right answer, different diligence: Sonnet stopped after one search and cited under half the evidence; Haiku kept reading and found all of it.",
     runs: ["sonnetLowTest", "haikuLowTest", "opusLowTest"],
   },
+  {
+    incidentId: "ht-012",
+    dataset: "incidents/v2/test",
+    title: "A crash loop, and a deploy just before it",
+    why: "Of 13 misses on the v2 test set, the only one whose answer cited a labeled red herring, and it's a debatable one. The consumer crash-loops on one message. A deploy of that same consumer landed two minutes earlier, which the label calls a red herring. Haiku blamed the deploy in one run and named the poison message in another, with the same configuration both times. Opus named the poison message. Our label arguably should accept both: see Limitations.",
+    runs: ["v2HaikuLow2", "v2HaikuLow", "v2OpusLow"],
+  },
 ];
 
 interface Record_ {
@@ -146,7 +190,8 @@ function readRecord(runId: string, incidentId: string): Record_ {
 }
 
 const replays = REPLAYS.map((r) => {
-  const incident = loadIncident(resolve(root, "incidents/test", `${r.incidentId}.json`));
+  const dataset = r.dataset ?? "incidents/test";
+  const incident = loadIncident(resolve(root, dataset, `${r.incidentId}.json`));
   const runs = r.runs.map((key) => {
     const config: RunConfig = loaded[key].config;
     const { score, result } = readRecord(config.runId, r.incidentId);
@@ -155,6 +200,7 @@ const replays = REPLAYS.map((r) => {
       modelName: MODEL_NAMES[config.model] ?? config.model,
       prompt: runPrompt(config),
       effort: config.effort ?? "medium",
+      runLabel: RUN_LABELS[key] ?? null,
       steps: result.trace.map((t) => ({ tool: t.tool, input: t.input, output: t.output, isError: !!t.isError })),
       verdict: result.verdict,
       score: {
@@ -176,6 +222,7 @@ const replays = REPLAYS.map((r) => {
   for (const run of runs) for (const h of run.verdict?.hypotheses ?? []) for (const n of h.evidenceLines) wanted.add(n);
   return {
     incidentId: r.incidentId,
+    dataset: dataset === "incidents/test" ? "v1" : "v2",
     title: r.title,
     why: r.why,
     incident: {

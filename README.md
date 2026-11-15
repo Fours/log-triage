@@ -2,7 +2,7 @@
 
 An LLM agent that investigates production logs and returns a **ranked root-cause triage** — each hypothesis backed by the specific log lines it cites, with a calibrated confidence and a recommended next action. It is built to be **measured**: the point of the project is the eval harness, not the demo.
 
-> Status: **Phase 6**. Showcase page: [log-triage.kylewillett.com](https://log-triage.kylewillett.com) (source in [`site/`](site/)), with recorded investigations you can replay step by step. Model comparison on a held-out test set of 48 incidents: **Haiku 5.5 gets every root cause right at $0.003 per incident**, the same accuracy and evidence quality as Opus 5.5 for 1/15 of the cost. Prompt work (Phase 4) raised evidence precision from 63% to ~90%. The keyword baseline gets 54%. See the [results](results/README.md), the [iteration log](results/ITERATIONS.md) and the [model comparison](#model-comparison-phase-5).
+> Status: **Phase 7 complete**. Showcase page: [log-triage.kylewillett.com](https://log-triage.kylewillett.com) (source in [`site/`](site/)), with recorded investigations you can replay step by step. Model comparison on a held-out test set of 48 incidents: **Haiku 5.5 gets every root cause right at $0.003 per incident**, the same accuracy and evidence quality as Opus 5.5 for 1/15 of the cost. Prompt work (Phase 4) raised evidence precision from 63% to ~90%. The keyword baseline gets 54%. Phase 7 built a much harder incident set: **every model still scored 92–100% top-1**, and three identical runs of one model spread 8 points, so no model wins on diagnosis. See the [results](results/README.md), the [iteration log](results/ITERATIONS.md), the [model comparison](#model-comparison-phase-5) and [harder incidents](#harder-incidents-phase-7).
 
 ## Why this exists
 
@@ -134,6 +134,46 @@ What this says:
 
 Phase 5 cost $2.00: the four runs above (Opus's two are from Phase 4) plus a one-incident smoke test per model.
 
+### Harder incidents (Phase 7)
+
+Phase 5 left every model at 98–100% top-1, so the eval couldn't rank them on diagnosis. Phase 7 built **generator v2** to break the shortcuts the agents had been seen using, then re-ran the matrix on it. The plan, every pilot and every decision are in [docs/milestone-7.md](docs/milestone-7.md) and [results/DATASET-V2.md](results/DATASET-V2.md).
+
+**What v2 adds** (v1 datasets and runs are unchanged; v2 is a new pair of 48-incident sets, generated from a seed and checked by hash):
+
+- **Quiet causes:** the originating lines logged at INFO or DEBUG, so `level: WARN` no longer lands on them.
+- **Paraphrased evidence:** the same failure logged 2–4 ways, so one grep doesn't collect it.
+- **Long haystacks:** 1,076–5,445 lines on the v2 test set, instead of 120–410.
+- **Loud decoys:** error floods on unrelated services that out-shout the real path, some starting with the fault.
+- **Lookalike events:** a harmless deploy, config reload or migration on the failing path minutes before the fault.
+- **A concurrent incident:** a second, real fault that doesn't explain the alert.
+
+Generator tests check that it's still fair: every evidence line is reachable with label-free queries, the alert names no cause, decoys and lookalikes never mimic an acceptable answer, and the keyword baseline falls to 15% top-1 on the v2 test set (54% on v1).
+
+**It didn't separate the models.** The goal was Opus medium at 65–85% top-1 on the v2 dev set; after two pilot rounds it was at 94% (100% lenient) on the hardest tier. On the v2 test set, prompt v3, cold cache, all runs complete:
+
+| model, effort | top-1 | lenient | hard top-1 | evidence P / R | cost / incident | p50 latency | tool calls |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **Haiku 5.5, low** (mean of 3 runs) | 97% | 97% | 92% | 84% / 85% | **$0.0039** | 13.4s | 8.3 |
+| Haiku 5.5, medium | 96% | 96% | 94% | 84% / 89% | $0.0056 | 16.3s | 11.8 |
+| Sonnet 5.5, low | 94% | 98% | 88% | 91% / 71% | $0.023 | **5.7s** | 2.3 |
+| Sonnet 5.5, medium | 96% | 100% | 88% | 92% / 75% | $0.025 | 6.3s | 2.5 |
+| Opus 5.5, low | 100% | 100% | 100% | 90% / 80% | $0.050 | 7.3s | 2.6 |
+| Opus 5.5, medium | 98% | 100% | 94% | 89% / **89%** | $0.076 | 14.2s | 5.3 |
+
+What this says:
+
+- **Run-to-run noise is larger than the gaps between models.** Three identical Haiku low runs scored 100%, 92% and 98% top-1. The paired bootstrap, which this project uses for every comparison, called run 1 vs. run 2 a real difference (−8.3 pts, 95% [−16.7, −2.1]). It resamples incidents, not reruns, so it understates noise. On top-1, no gap between models (the largest is Sonnet low, −6 pts against Opus low) is bigger than that 8-point spread. **No model wins on diagnosis.**
+- **The models didn't take the bait.** In 384 investigations, no top hypothesis cited a lookalike, a decoy or the second incident. The models follow the failing request's chain and ignore whatever isn't on it, however loud or well-timed. Of 13 misses, 6 picked the labeled acceptable answer. The only miss that cited a red herring blamed a deploy of the crash-looping consumer, and that label is debatable (below).
+- **What does separate them, beyond the measured noise:** cost (Haiku is 1/13 of Opus low, −$0.046 per incident [−0.051, −0.042]), latency (Sonnet low is 1.9s faster than Opus low [1.1, 2.7]; Haiku is 5.2s slower [3.9, 6.4]), and evidence recall (Sonnet low −10 pts [−14, −6] and Opus medium +8 pts [+5, +12] against Opus low, both beyond Haiku's 5-point run-to-run spread).
+- **The cheapest model is still the right one.** Haiku's diagnosis is indistinguishable from Opus's on the harder set too, at 1/13 of the cost. Its evidence precision is 4–7 points lower than Opus low's, close to its own 4-point run-to-run spread.
+- **Budgets never bound** (0 of 384 investigations), even on 5,000-line logs.
+
+**A debatable label.** In the consumer-crash-loop scenario, a Phase 1 herring plants a deploy of the queue consumer 1–3 minutes before onset, labeled "not on the failing request path". In that scenario the consumer *is* the service that crashes, so blaming the deploy is defensible. That's what Haiku did in one of three runs ([replay](https://log-triage.kylewillett.com/#replay)). It affects 5 of the 192 incidents across the four sets (gen-046, test-014, h-013, h-023, ht-012). It's documented, not fixed: fixing it would change the v1 sets that every earlier run was scored on.
+
+**Caveat for v1-vs-v2 comparisons:** v2 runs use tools v2, where `search_logs` gained `since`/`until` filters for fairness on long logs. Comparisons between models on v2 don't carry this caveat.
+
+Phase 7 cost $10.94: $1.75 of pilots on the v2 dev set and $9.19 for the eight test-set runs.
+
 ## The incident dataset
 
 The eval is only as good as its labels, so incidents are generated by **code, not an LLM**: every log line is emitted with a role (`cause`, `symptom`, `herring`, `noise`), and the label's evidence lines are exactly the `cause` lines. One seed reproduces the whole set.
@@ -219,5 +259,5 @@ Default model is `claude-opus-5-5`, with prompt `v3`. `TRIAGE_PROMPT=v1` picks a
 - [x] **Phase 3** — **eval harness**: scorer (root-cause top-1/top-3, evidence precision/recall, calibration, cost/latency), committed run results.
 - [x] **Phase 4** — iterate prompt + retrieval strategy against the eval, with a held-out test set and a before/after history ([ITERATIONS.md](results/ITERATIONS.md)).
 - [x] **Phase 5** — model matrix (Haiku / Sonnet / Opus × effort): accuracy vs. cost, with bootstrap intervals and paired comparisons.
-- [x] **Phase 6** — showcase page (metrics, model comparison, recorded investigation replays, the iteration story), with an S3 + CloudFront deploy (not yet live).
-- [ ] **Phase 7** — harder incident set (generator v2: quiet causes, loud decoys, concurrent incidents, long haystacks) and the model comparison re-run on it. Planned in [docs/milestone-7.md](docs/milestone-7.md).
+- [x] **Phase 6** — showcase page (metrics, model comparison, recorded investigation replays, the iteration story), with an S3 + CloudFront deploy.
+- [x] **Phase 7** — harder incident set (generator v2: quiet causes, paraphrased evidence, long haystacks, loud and timed decoys, lookalike events, concurrent incidents) and the model comparison re-run on it, with repeated runs for run-to-run variance. The models still weren't separated on diagnosis. See [harder incidents](#harder-incidents-phase-7) and [docs/milestone-7.md](docs/milestone-7.md).

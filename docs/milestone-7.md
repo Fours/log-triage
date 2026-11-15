@@ -1,6 +1,6 @@
 # Milestone 7: A harder incident set (generator v2)
 
-Status: **In progress.** Phases 0–6 are in the README roadmap; this is the first one tracked as a task spec.
+Status: **Done, with the calibration target missed** (see T6–T8). Phases 0–6 are in the README roadmap; this is the first one tracked as a task spec.
 
 ## Outcome
 
@@ -123,8 +123,8 @@ Do these in order. Each one ends with `npm test` and `npm run typecheck` passing
 | T4. Concurrent incidents and the `secondary` role | Done | 91630ba |
 | T5. Long haystacks, fairness checks, baseline ceiling | Done | 6a25997 |
 | T6. Pilot and calibrate on the v2 dev set | Done (band missed) | 9e5db7a |
-| T7. Model matrix and repeats on the v2 test set | Done | |
-| T8. Write-up, site update, deploy | Not started | |
+| T7. Model matrix and repeats on the v2 test set | Done | f8d85d6 |
+| T8. Write-up, site update, deploy | Done | |
 
 ### T1. Dataset plumbing for generator v2
 
@@ -250,8 +250,8 @@ Done. Eight cold runs, all `complete`, $9.19: Haiku low ×3, Haiku medium, Sonne
 
 - **Every model is at 92–100% top-1.** No model-vs-model gap (largest: Sonnet low, −6 pts against Opus low) exceeds the 8-point spread between three identical Haiku low runs (100%, 92%, 98%).
 - **The paired bootstrap is not enough on its own.** Comparing Haiku low run 1 with run 2 gives top-1 −8.3 pts, 95% [−16.7, −2.1]: "significant" between identical configurations. It resamples incidents, not reruns. Claims in T8 need a gap larger than the measured run-to-run spread, not just an interval that excludes 0.
-- **What separates the models beyond noise:** cost (Haiku 1/13 of Opus low), latency (Sonnet fastest), and evidence recall (Sonnet low −10 pts and Opus medium +9 pts against Opus low).
-- **The T6 bait was almost never taken on the test set:** a lookalike's category was picked once in 192 chances, and no top hypothesis cited a lookalike, decoy or second-fault line.
+- **What separates the models beyond noise:** cost (Haiku 1/13 of Opus low), latency (Sonnet fastest), and evidence recall (Sonnet low −10 pts and Opus medium +8 pts against Opus low).
+- **The T6 bait was never taken on the test set:** no top hypothesis cited a lookalike, decoy or second-fault line. The one time a lookalike's category was picked (ht-012), the model was reacting to a different, older herring.
 - **Budgets never bound:** 0 of 384 investigations ran out.
 
 Decisions made while building it:
@@ -267,13 +267,28 @@ Decisions made while building it:
 
 **Done when:** the README, leaderboard, and site show both datasets, and the site is deployed (or the deploy is blocked only on the AWS setup, noted in the README).
 
+Done. The README has a "Harder incidents (Phase 7)" section, the leaderboard lists every v2 run, and the site was deployed with both datasets.
+
+- **README:** the v2 matrix, run-to-run variance, what the models fell for (nothing planted), whether the cheapest model is still right (yes: same diagnosis as Opus within noise, at 1/13 of the cost), the debatable label, and the tools-v2 caveat. The status line and roadmap are updated; Phase 6's "not yet live" is gone, since the site was already live.
+- **`export:site`:** exports the 8 v2 test runs, a v2 keyword baseline (`2026-11-15_baseline-keywords_v2-test`, 15% top-1), v2 pairs including **Haiku low run 1 → run 2 (identical)** as the noise floor, v2 dataset stats, per-run hard top-1 and herrings cited, and dataset-aware replays.
+- **Site:**
+  - **Models:** a v1 / v2 switch over the chart, the table (now with a hard top-1 column) and the cards. The v2 view adds a paired-differences chart with the identical-runs row highlighted as the noise floor.
+  - **Replay:** a v2 incident, ht-012 (tagged "v2"), comparing Haiku low runs 1 and 2 (labeled "run 1 of 3" / "run 2 of 3") with Opus low.
+  - **Hero:** keeps the v1 stats and adds a pointer to the v2 result.
+  - **Limitations:** rewritten: synthetic incidents don't separate these models on diagnosis, run-to-run noise exceeds the error bars, and one herring is debatable.
+
+Decisions made while building it:
+
+- **The v2 replay shows a debatable label, not a model taking planted bait.** No model took the T6 bait on the test set. ht-012 is the only miss of 13 whose answer cited a herring: Haiku blamed a deploy of the consumer that then crash-looped. That's an older herring, "unrelated-deploy" from Phase 1, which hard crash-loop incidents prefer because `bad_deploy` is confusable. In that scenario the "unrelated" consumer *is* the failing service.
+- **That label is documented, not fixed** (agreed before building). It affects gen-046, test-014, h-013, h-023 and ht-012. Fixing it would change the v1 sets, which this milestone keeps byte-identical. A fix would belong in a future generator version: skip that herring when the consumer is the faulty service, or add `bad_deploy` to that scenario's acceptable causes.
+
 ## Definition of done
 
-- [ ] T1 to T8 are complete.
-- [ ] `npm test` and `npm run typecheck` pass; the site builds.
-- [ ] v1 datasets and all pre-Phase-7 run records are unchanged.
-- [ ] On the v2 test set, at least two models differ on top-1 by more than the paired 95% interval, or the write-up explains why not. *(T7: they don't, beyond run-to-run noise. T8's write-up must explain why.)*
-- [ ] Every claim in the write-up has a paired interval behind it.
+- [x] T1 to T8 are complete.
+- [x] `npm test` and `npm run typecheck` pass; the site builds.
+- [x] v1 datasets and all pre-Phase-7 run records are unchanged. *(Checked at T8: `git diff 53ca8b7^` over `incidents/generated`, `incidents/test` and every `2026-11-12_*` run is empty.)*
+- [x] On the v2 test set, at least two models differ on top-1 by more than the paired 95% interval, or the write-up explains why not. *(They don't, beyond run-to-run noise. The README, `DATASET-V2.md` and the site explain why: identical Haiku runs spread 8 points, and the paired test flags even those as different.)*
+- [x] Every claim in the write-up has a paired interval behind it, or, for top-1 on v2, the measured run-to-run spread, which T7 showed is the stricter test.
 
 ## Open questions
 
