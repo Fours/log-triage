@@ -1,0 +1,174 @@
+{
+  "score": {
+    "incidentId": "h-014",
+    "difficulty": "hard",
+    "scenario": "external_outage/provider-5xx",
+    "truth": "external_outage",
+    "acceptable": [
+      "dependency_timeout"
+    ],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 0.8571428571428571,
+      "f1": 0.923076923076923
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.07149319999999999,
+    "durationMs": 13483,
+    "iterations": 5,
+    "toolCalls": 7,
+    "tokens": {
+      "input": 12,
+      "output": 1379,
+      "cacheRead": 22626,
+      "cacheWrite": 7868
+    }
+  },
+  "result": {
+    "incidentId": "h-014",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.85,
+          "evidenceLines": [
+            2926,
+            3009,
+            2978,
+            3104,
+            3337,
+            3819
+          ],
+          "reasoning": "The third-party email provider api.mailer.example started returning 503 Service Unavailable at 05:58:56 (#2926, #3009). Some calls also hung until they timed out (#2978, #3104). template-svc's circuit breaker opened at 95% failure (#3142), and its half-open probes kept getting 503/502 back (#3337, #3819). Because the breaker was open, template-svc answered /render with 503 (notification-svc #3274 and later), and that came out at the gateway as 503 on POST /v1/notify. Most failures were the provider reporting itself down rather than hanging, so this fits external_outage better than dependency_timeout. No template-svc deploy appears in the window. The status-poller errors (legacy-inventory, a deprecated endpoint) were already happening before onset, and the analytics-forwarder 429s are on a separate path that POST /v1/notify doesn't use, so both are red herrings."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.12,
+          "evidenceLines": [
+            2978,
+            3104
+          ],
+          "reasoning": "Some of the provider calls hung until the 10s read timeout instead of failing fast."
+        }
+      ],
+      "recommendedAction": "Check the mailer provider's status page and open a ticket with them. Fail over to a backup email provider, or queue and defer sends in notif-worker so POST /v1/notify returns 202 instead of 503. Consider lowering template-svc's provider timeout below 10s."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "level": "WARN",
+          "limit": 40
+        },
+        "output": "7 match(es):\n#2926 2026-10-10T05:58:56Z ERROR template-svc [t-5326] upstream answered 503, treating the call as failed (bcb18da)\n#2978 2026-10-10T05:59:21Z ERROR template-svc [t-5359] call to the email provider aborted: no response within 10s\n#3009 2026-10-10T05:59:34Z ERROR template-svc [t-5379] email provider returned 503 Service Unavailable POST https://api.mailer.example/v3/send (x-request-id a5b5b53)\n#3104 2026-10-10T06:00:15Z ERROR template-svc [t-5428] HTTP client: read timed out after 10000 ms waiting for api.mailer.example\n#3142 2026-10-10T06:00:31Z WARN template-svc circuit breaker OPEN for api.mailer.example (failure rate 95% over 20 calls), failing fast for 30s\n#3337 2026-10-10T06:02:05Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 503, re-opening\n#3819 2026-10-10T06:05:50Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 502, re-opening"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "level": "WARN",
+          "limit": 40
+        },
+        "output": "6 match(es):\n#3274 2026-10-10T06:01:34Z ERROR notification-svc [t-5510] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#3372 2026-10-10T06:02:25Z ERROR notification-svc [t-5556] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#3701 2026-10-10T06:05:01Z ERROR notification-svc [t-5720] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#3936 2026-10-10T06:06:39Z ERROR notification-svc [t-5832] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#4122 2026-10-10T06:08:02Z ERROR notification-svc [t-5926] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#4294 2026-10-10T06:09:23Z ERROR notification-svc [t-5999] TemplateClient.render failed: template-svc returned 503 (circuit open)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "mailer",
+          "limit": 30
+        },
+        "output": "5 match(es):\n#3009 2026-10-10T05:59:34Z ERROR template-svc [t-5379] email provider returned 503 Service Unavailable POST https://api.mailer.example/v3/send (x-request-id a5b5b53)\n#3104 2026-10-10T06:00:15Z ERROR template-svc [t-5428] HTTP client: read timed out after 10000 ms waiting for api.mailer.example\n#3142 2026-10-10T06:00:31Z WARN template-svc circuit breaker OPEN for api.mailer.example (failure rate 95% over 20 calls), failing fast for 30s\n#3337 2026-10-10T06:02:05Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 503, re-opening\n#3819 2026-10-10T06:05:50Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 502, re-opening"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "until": "05:59:00",
+          "limit": 30
+        },
+        "output": "8 match(es):\n#1395 2026-10-10T05:52:42Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1505 2026-10-10T05:53:10Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1810 2026-10-10T05:54:23Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1981 2026-10-10T05:55:05Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2150 2026-10-10T05:55:45Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2446 2026-10-10T05:56:59Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2686 2026-10-10T05:57:56Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2926 2026-10-10T05:58:56Z ERROR template-svc [t-5326] upstream answered 503, treating the call as failed (bcb18da)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 2926,
+          "before": 15,
+          "after": 5
+        },
+        "output": "#2911 2026-10-10T05:58:49Z INFO session-cache stats: hits=10548 misses=589 evicted=0 connected_clients=35\n#2912 2026-10-10T05:58:49Z INFO analytics-forwarder forwarded 2136 events to analytics-ingest\n#2913 2026-10-10T05:58:50Z INFO audit-consumer processed batch of 47 messages from audit.events (lag 340ms)\n#2914 2026-10-10T05:58:50Z INFO account-svc [t-5323] user u-3365 accepted, calling auth-svc POST /tokens\n#2915 2026-10-10T05:58:50Z INFO edge-proxy [t-5323] POST /login 200 171ms\n#2916 2026-10-10T05:58:52Z INFO notif-worker processed batch of 68 messages from notifications.outbound (lag 278ms)\n#2917 2026-10-10T05:58:52Z DEBUG template-svc GC pause 20ms (young), heap 42%\n#2918 2026-10-10T05:58:53Z INFO account-svc [t-5324] user u-3366 accepted, calling auth-svc POST /tokens\n#2919 2026-10-10T05:58:53Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#2920 2026-10-10T05:58:53Z INFO edge-proxy [t-5324] POST /login 200 98ms\n#2921 2026-10-10T05:58:53Z INFO redis stats: hits=18154 misses=833 evicted=0 connected_clients=37\n#2922 2026-10-10T05:58:54Z DEBUG auth-svc GC pause 10ms (young), heap 39%\n#2923 2026-10-10T05:58:55Z INFO analytics-forwarder forwarded 1786 events to analytics-ingest\n#2924 2026-10-10T05:58:56Z INFO notif-db InnoDB: page cleaner flushed 112 pages, buffer pool hit rate 98.8%\n#2925 2026-10-10T05:58:56Z INFO notif-worker processed batch of 31 messages from notifications.outbound (lag 327ms)\n#2926 2026-10-10T05:58:56Z ERROR template-svc [t-5326] upstream answered 503, treating the call as failed (bcb18da)\n#2927 2026-10-10T05:58:58Z INFO status-poller poll cycle complete: 26 targets checked in 787ms\n#2928 2026-10-10T05:58:58Z INFO account-svc [t-5327] user u-3369 accepted, calling auth-svc POST /tokens\n#2929 2026-10-10T05:58:58Z INFO notification-svc [t-5330] message m-3371 accepted, calling template-svc POST /render\n#2930 2026-10-10T05:58:58Z INFO edge-proxy [t-5327] POST /login 200 124ms\n#2931 2026-10-10T05:58:58Z INFO template-svc [t-5330] POST /render m-3371 ok 23ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "query": "deploy"
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "analytics-forwarder",
+          "level": "ERROR",
+          "limit": 3
+        },
+        "output": "19 match(es), showing first 3:\n#2966 2026-10-10T05:59:17Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 230 events (attempt 1/5, then dropped)\n#3047 2026-10-10T05:59:50Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 272 events (attempt 2/5, then dropped)\n#3130 2026-10-10T06:00:25Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 58 events (attempt 3/5, then dropped)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.85,
+              "evidenceLines": [
+                2926,
+                3009,
+                2978,
+                3104,
+                3337,
+                3819
+              ],
+              "reasoning": "The third-party email provider api.mailer.example started returning 503 Service Unavailable at 05:58:56 (#2926, #3009). Some calls also hung until they timed out (#2978, #3104). template-svc's circuit breaker opened at 95% failure (#3142), and its half-open probes kept getting 503/502 back (#3337, #3819). Because the breaker was open, template-svc answered /render with 503 (notification-svc #3274 and later), and that came out at the gateway as 503 on POST /v1/notify. Most failures were the provider reporting itself down rather than hanging, so this fits external_outage better than dependency_timeout. No template-svc deploy appears in the window. The status-poller errors (legacy-inventory, a deprecated endpoint) were already happening before onset, and the analytics-forwarder 429s are on a separate path that POST /v1/notify doesn't use, so both are red herrings."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.12,
+              "evidenceLines": [
+                2978,
+                3104
+              ],
+              "reasoning": "Some of the provider calls hung until the 10s read timeout instead of failing fast."
+            }
+          ],
+          "recommendedAction": "Check the mailer provider's status page and open a ticket with them. Fail over to a backup email provider, or queue and defer sends in notif-worker so POST /v1/notify returns 202 instead of 503. Consider lowering template-svc's provider timeout below 10s."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 7,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1379,
+      "cacheReadTokens": 22626,
+      "cacheWriteTokens": 7868
+    },
+    "durationMs": 13483,
+    "stopReason": "tool_use"
+  }
+}

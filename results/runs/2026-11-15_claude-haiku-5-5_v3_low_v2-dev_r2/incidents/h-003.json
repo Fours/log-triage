@@ -1,0 +1,200 @@
+{
+  "score": {
+    "incidentId": "h-003",
+    "difficulty": "medium",
+    "scenario": "dependency_timeout/external-hang",
+    "truth": "dependency_timeout",
+    "acceptable": [
+      "external_outage"
+    ],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 5,
+      "precision": 1,
+      "recall": 0.625,
+      "f1": 0.7692307692307693
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.0034943100000000005,
+    "durationMs": 13781,
+    "iterations": 6,
+    "toolCalls": 8,
+    "tokens": {
+      "input": 14,
+      "output": 2957,
+      "cacheRead": 40241,
+      "cacheWrite": 12896
+    }
+  },
+  "result": {
+    "incidentId": "h-003",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.85,
+          "evidenceLines": [
+            1596,
+            1645,
+            1703,
+            1803,
+            1854
+          ],
+          "reasoning": "The fault originates in enrichment-svc's calls to the external geo-IP provider (api.geoip.example). The first anomaly is a slow-call warning at 14:42:18 (#1596, 5973ms vs 2000ms soft threshold), followed by worsening slowness (#1645, 8536ms) and then hard failures at the 30s timeout (#1703, #1803, #1854). Hanging calls, not fast 5xx, point to dependency_timeout. Enrichment threads stall, so ingest-api's calls to enrichment-svc time out (#1704, #1855 are the direct downstream failures). Ingest-api's connection pool to enrichment-svc then exhausts (pool checkout timeout, not cited), and ingest-gateway returns 503s on POST /v1/events. Search-api/web-bff and catalog-svc load shedding, and metrics-agent drops, are downstream amplification and were not cited. GC and DB metrics were healthy, which rules out resource exhaustion locally and events-db. Confidence is not higher because the logs don't show why the provider slowed, and external_outage is the alternative reading."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.35,
+          "evidenceLines": [
+            1596,
+            1703
+          ],
+          "reasoning": "The geo-IP provider may be down or degraded on their side. The timeouts are consistent with an outage, but the logs show only slow and timed-out calls, with no status or explicit error from the provider to confirm it."
+        }
+      ],
+      "recommendedAction": "Mitigate now: add a short timeout and circuit breaker on enrichment-svc's geo-IP lookup, with a fallback that enriches without geo data, so enrichment threads stop hanging. Lower ingest-api's enrichment call timeout so it fails fast, and check its pool sizing. Check the geo-IP provider's status and escalate to them. After recovery, reprocess events that were enriched without geo data. Review metrics-agent's exporter queue sizing separately, since it is dropping samples."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "since": "14:30:00",
+          "until": "14:31:30",
+          "limit": 60
+        },
+        "output": "tool error: since (14:30:00) is after until (14:31:30)",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 50
+        },
+        "output": "39 match(es):\n#1657 2026-10-04T14:43:01Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 200 samples\n#1703 2026-10-04T14:43:36Z ERROR enrichment-svc [t-7115] geo-IP provider call FAILED: upstream timeout after 30000ms POST https://api.geoip.example/v1/lookup\n#1704 2026-10-04T14:43:37Z ERROR ingest-api [t-7115] EnrichClient.enrich timed out after 30000ms calling enrichment-svc POST /enrich (e-4580)\n#1712 2026-10-04T14:43:45Z ERROR web-bff [t-7117] GET /search 503 8198ms: upstream search-api returned 503 (retries exhausted)\n#1748 2026-10-04T14:44:23Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 456 samples\n#1785 2026-10-04T14:44:48Z ERROR catalog-svc [t-7150] load shed: rejected GET /products/batch with 503 (queue full)\n#1790 2026-10-04T14:44:53Z ERROR web-bff [t-7152] GET /search 503 22558ms: upstream search-api returned 503 (retries exhausted)\n#1803 2026-10-04T14:45:03Z ERROR enrichment-svc [t-7158] call to the geo-IP provider aborted: no response within 30s\n#1804 2026-10-04T14:45:03Z ERROR ingest-api [t-7158] upstream request to enrichment-svc failed: ReadTimeout (read timeout=30s) [e-4608]\n#1839 2026-10-04T14:45:32Z ERROR catalog-svc [t-7175] load shed: rejected GET /products/batch with 503 (queue full)\n#1847 2026-10-04T14:45:35Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2191 samples\n#1854 2026-10-04T14:45:40Z ERROR enrichment-svc [t-7185] HTTP client: read timed out after 30000 ms waiting for api.geoip.example\n#1855 2026-10-04T14:45:40Z ERROR ingest-api [t-7185] POST /enrich -> enrichment-svc: context deadline exceeded after 30.0s (e-4624)\n#1864 2026-10-04T14:45:47Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1177 samples\n#1882 2026-10-04T14:46:01Z ERROR ingest-gateway [t-7201] POST /v1/events 503 23359ms: upstream ingest-api returned 503 Service Unavailable\n#1929 2026-10-04T14:46:47Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 947 samples\n#1962 2026-10-04T14:47:25Z ERROR ingest-gateway [t-7223] POST /v1/events 503 20295ms: upstream ingest-api returned 503 Service Unavailable\n#1972 2026-10-04T14:47:35Z ERROR web-bff [t-7226] GET /search 503 8823ms: upstream search-api returned 503 (retries exhausted)\n#1991 2026-10-04T14:47:57Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 712 samples\n#2009 2026-10-04T14:48:16Z ERROR ingest-api pool checkout timeout: no connection to enrichment-svc available after 5000ms\n#2044 2026-10-04T14:48:48Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1595 samples\n#2057 2026-10-04T14:48:58Z ERROR ingest-gateway [t-7258] POST /v1/events 503 7054ms: upstream ingest-api returned 503 Service Unavailable\n#2058 2026-10-04T14:48:58Z ERROR web-bff [t-7261] GET /search 503 7449ms: upstream search-api returned 503 (retries exhausted)\n#2117 2026-10-04T14:49:47Z ERROR catalog-svc [t-7281] load shed: rejected GET /products/batch with 503 (queue full)\n#2140 2026-10-04T14:50:07Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 441 samples\n#2165 2026-10-04T14:50:30Z ERROR ingest-gateway [t-7293] POST /v1/events 503 17943ms: upstream ingest-api returned 503 Service Unavailable\n#2172 2026-10-04T14:50:37Z ERROR catalog-svc [t-7297] load shed: rejected GET /products/batch with 503 (queue full)\n#2178 2026-10-04T14:50:41Z ERROR web-bff [t-7298] GET /search 503 19963ms: upstream search-api returned 503 (retries exhausted)\n#2202 2026-10-04T14:51:00Z ERROR ingest-gateway [t-7305] POST /v1/events 503 28288ms: upstream ingest-api returned 503 Service Unavailable\n#2205 2026-10-04T14:51:05Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1241 samples\n#2253 2026-10-04T14:51:45Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1167 samples\n#2256 2026-10-04T14:51:47Z ERROR web-bff [t-7327] GET /search 503 13650ms: upstream search-api returned 503 (retries exhausted)\n#2322 2026-10-04T14:52:42Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 831 samples\n#2330 2026-10-04T14:52:48Z ERROR catalog-svc [t-7355] load shed: rejected GET /products/batch with 503 (queue full)\n#2356 2026-10-04T14:53:14Z ERROR ingest-gateway [t-7363] POST /v1/events 503 19237ms: upstream ingest-api returned 503 Service Unavailable\n#2398 2026-10-04T14:53:47Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1544 samples\n#2401 2026-10-04T14:53:50Z ERROR ingest-gateway [t-7386] POST /v1/events 503 27323ms: upstream ingest-api returned 503 Service Unavailable\n#2430 2026-10-04T14:54:19Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1045 samples\n#2463 2026-10-04T14:54:39Z ERROR web-bff [t-7408] GET /search 503 14011ms: upstream search-api returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "14:30:00",
+          "until": "14:43:36",
+          "service": "enrichment-svc",
+          "limit": 60
+        },
+        "output": "tool error: since (14:30:00) is after until (14:43:36)",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "geoip",
+          "since": "14:30:00",
+          "until": "14:43:40",
+          "limit": 40
+        },
+        "output": "tool error: since (14:30:00) is after until (14:43:40)",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "2026-10-04T14:30:00Z",
+          "until": "2026-10-04T14:43:36Z",
+          "service": "enrichment-svc",
+          "limit": 60
+        },
+        "output": "134 match(es), showing first 60:\n#12 2026-10-04T14:30:07Z INFO enrichment-svc [t-6092] POST /enrich e-3727 ok 49ms\n#21 2026-10-04T14:30:12Z INFO enrichment-svc [t-6095] POST /enrich e-3729 ok 37ms\n#36 2026-10-04T14:30:19Z INFO enrichment-svc [t-6106] POST /enrich e-3737 ok 69ms\n#41 2026-10-04T14:30:21Z INFO enrichment-svc [t-6113] POST /enrich e-3741 ok 50ms\n#49 2026-10-04T14:30:24Z INFO enrichment-svc [t-6119] POST /enrich e-3744 ok 40ms\n#60 2026-10-04T14:30:30Z DEBUG enrichment-svc GC pause 25ms (young), heap 30%\n#70 2026-10-04T14:30:33Z INFO enrichment-svc [t-6129] POST /enrich e-3755 ok 53ms\n#96 2026-10-04T14:30:46Z INFO enrichment-svc [t-6146] POST /enrich e-3772 ok 34ms\n#118 2026-10-04T14:30:58Z DEBUG enrichment-svc GC pause 5ms (young), heap 44%\n#124 2026-10-04T14:31:00Z INFO enrichment-svc [t-6162] POST /enrich e-3787 ok 54ms\n#131 2026-10-04T14:31:03Z INFO enrichment-svc [t-6167] POST /enrich e-3790 ok 85ms\n#140 2026-10-04T14:31:06Z INFO enrichment-svc [t-6173] POST /enrich e-3795 ok 28ms\n#143 2026-10-04T14:31:09Z INFO enrichment-svc [t-6177] POST /enrich e-3798 ok 31ms\n#160 2026-10-04T14:31:15Z INFO enrichment-svc [t-6184] POST /enrich e-3804 ok 88ms\n#194 2026-10-04T14:31:33Z DEBUG enrichment-svc GC pause 13ms (young), heap 28%\n#229 2026-10-04T14:31:50Z INFO enrichment-svc [t-6228] POST /enrich e-3841 ok 37ms\n#239 2026-10-04T14:31:54Z INFO enrichment-svc [t-6231] POST /enrich e-3847 ok 78ms\n#248 2026-10-04T14:31:57Z DEBUG enrichment-svc GC pause 13ms (young), heap 34%\n#257 2026-10-04T14:32:02Z INFO enrichment-svc [t-6240] POST /enrich e-3853 ok 29ms\n#267 2026-10-04T14:32:08Z INFO enrichment-svc [t-6246] POST /enrich e-3858 ok 26ms\n#273 2026-10-04T14:32:10Z INFO enrichment-svc [t-6251] POST /enrich e-3860 ok 20ms\n#278 2026-10-04T14:32:13Z INFO enrichment-svc [t-6254] POST /enrich e-3863 ok 89ms\n#297 2026-10-04T14:32:22Z INFO enrichment-svc [t-6270] POST /enrich e-3874 ok 29ms\n#300 2026-10-04T14:32:22Z DEBUG enrichment-svc GC pause 7ms (young), heap 39%\n#308 2026-10-04T14:32:25Z INFO enrichment-svc [t-6274] POST /enrich e-3878 ok 80ms\n#324 2026-10-04T14:32:32Z INFO enrichment-svc [t-6280] POST /enrich e-3885 ok 27ms\n#337 2026-10-04T14:32:39Z INFO enrichment-svc [t-6287] POST /enrich e-3893 ok 49ms\n#346 2026-10-04T14:32:42Z INFO enrichment-svc [t-6293] POST /enrich e-3899 ok 31ms\n#355 2026-10-04T14:32:47Z DEBUG enrichment-svc GC pause 20ms (young), heap 41%\n#360 2026-10-04T14:32:49Z INFO enrichment-svc [t-6302] POST /enrich e-3906 ok 56ms\n#404 2026-10-04T14:33:08Z DEBUG enrichment-svc GC pause 20ms (young), heap 41%\n#410 2026-10-04T14:33:13Z INFO enrichment-svc [t-6335] POST /enrich e-3931 ok 33ms\n#416 2026-10-04T14:33:15Z INFO enrichment-svc [t-6338] POST /enrich e-3933 ok 36ms\n#443 2026-10-04T14:33:27Z INFO enrichment-svc [t-6355] POST /enrich e-3951 ok 21ms\n#447 2026-10-04T14:33:30Z DEBUG enrichment-svc GC pause 6ms (young), heap 42%\n#451 2026-10-04T14:33:33Z INFO enrichment-svc [t-6361] POST /enrich e-3954 ok 36ms\n#468 2026-10-04T14:33:41Z INFO enrichment-svc [t-6372] POST /enrich e-3963 ok 89ms\n#483 2026-10-04T14:33:49Z INFO enrichment-svc [t-6382] POST /enrich e-3971 ok 64ms\n#492 2026-10-04T14:33:53Z DEBUG enrichment-svc GC pause 13ms (young), heap 37%\n#505 2026-10-04T14:33:57Z INFO enrichment-svc [t-6397] POST /enrich e-3987 ok 69ms\n#516 2026-10-04T14:34:03Z INFO enrichment-svc [t-6403] POST /enrich e-3992 ok 65ms\n#533 2026-10-04T14:34:09Z INFO enrichment-svc [t-6414] POST /enrich e-4001 ok 78ms\n#541 2026-10-04T14:34:13Z DEBUG enrichment-svc GC pause 8ms (young), heap 32%\n#543 2026-10-04T14:34:13Z INFO enrichment-svc [t-6423] POST /enrich e-4005 ok 90ms\n#584 2026-10-04T14:34:34Z INFO enrichment-svc [t-6445] POST /enrich e-4026 ok 40ms\n#589 2026-10-04T14:34:36Z INFO enrichment-svc [t-6446] POST /enrich e-4027 ok 66ms\n#613 2026-10-04T14:34:47Z DEBUG enrichment-svc GC pause 8ms (young), heap 38%\n#622 2026-10-04T14:34:50Z INFO enrichment-svc [t-6466] POST /enrich e-4041 ok 57ms\n#640 2026-10-04T14:34:59Z INFO enrichment-svc [t-6477] POST /enrich e-4055 ok 31ms\n#655 2026-10-04T14:35:05Z INFO enrichment-svc [t-6486] POST /enrich e-4065 ok 54ms\n#664 2026-10-04T14:35:10Z INFO enrichment-svc [t-6491] POST /enrich e-4070 ok 81ms\n#666 2026-10-04T14:35:11Z DEBUG enrichment-svc GC pause 16ms (young), heap 38%\n#691 2026-10-04T14:35:23Z INFO enrichment-svc [t-6507] POST /enrich e-4084 ok 48ms\n#730 2026-10-04T14:35:39Z INFO enrichment-svc [t-6536] POST /enrich e-4103 ok 32ms\n#732 2026-10-04T14:35:40Z DEBUG enrichment-svc GC pause 21ms (young), heap 43%\n#736 2026-10-04T14:35:42Z INFO enrichment-svc [t-6538] POST /enrich e-4106 ok 66ms\n#746 2026-10-04T14:35:46Z INFO enrichment-svc [t-6545] POST /enrich e-4111 ok 69ms\n#754 2026-10-04T14:35:48Z INFO enrichment-svc [t-6552] POST /enrich e-4116 ok 25ms\n#761 2026-10-04T14:35:53Z INFO enrichment-svc [t-6556] POST /enrich e-4119 ok 86ms\n#785 2026-10-04T14:36:05Z INFO enrichment-svc [t-6566] POST /enrich e-4129 ok 40ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "geo",
+          "since": "2026-10-04T14:30:00Z",
+          "until": "2026-10-04T14:43:40Z",
+          "limit": 40
+        },
+        "output": "3 match(es):\n#1596 2026-10-04T14:42:18Z WARN enrichment-svc [t-7071] geo-IP provider call slow: 5973ms (soft threshold 2000ms) POST https://api.geoip.example/v1/lookup\n#1645 2026-10-04T14:42:54Z WARN enrichment-svc [t-7090] geo-IP provider call slow: 8536ms (soft threshold 2000ms) POST https://api.geoip.example/v1/lookup\n#1703 2026-10-04T14:43:36Z ERROR enrichment-svc [t-7115] geo-IP provider call FAILED: upstream timeout after 30000ms POST https://api.geoip.example/v1/lookup"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1596,
+          "before": 8,
+          "after": 5
+        },
+        "output": "#1588 2026-10-04T14:42:07Z DEBUG enrichment-svc GC pause 7ms (young), heap 35%\n#1589 2026-10-04T14:42:09Z INFO search-api [t-7070] product p-4543 accepted, calling catalog-svc GET /products/batch\n#1590 2026-10-04T14:42:09Z INFO web-bff [t-7070] GET /search 200 65ms\n#1591 2026-10-04T14:42:11Z INFO analytics-forwarder forwarded 1994 events to analytics-ingest\n#1592 2026-10-04T14:42:12Z INFO index-worker processed batch of 71 messages from catalog.updates (lag 387ms)\n#1593 2026-10-04T14:42:14Z INFO event-processor processed batch of 86 messages from events.raw (lag 249ms)\n#1594 2026-10-04T14:42:17Z INFO geo-cache stats: hits=17404 misses=305 evicted=0 connected_clients=36\n#1595 2026-10-04T14:42:18Z DEBUG ingest-api GC pause 8ms (young), heap 42%\n#1596 2026-10-04T14:42:18Z WARN enrichment-svc [t-7071] geo-IP provider call slow: 5973ms (soft threshold 2000ms) POST https://api.geoip.example/v1/lookup\n#1597 2026-10-04T14:42:19Z INFO ingest-api [t-7073] event e-4545 accepted, calling enrichment-svc POST /enrich\n#1598 2026-10-04T14:42:19Z INFO events-db InnoDB: page cleaner flushed 567 pages, buffer pool hit rate 99.8%\n#1599 2026-10-04T14:42:19Z INFO enrichment-svc [t-7073] POST /enrich e-4545 ok 33ms\n#1600 2026-10-04T14:42:19Z INFO ingest-gateway [t-7073] POST /v1/events 200 93ms\n#1601 2026-10-04T14:42:20Z INFO index-worker processed batch of 27 messages from catalog.updates (lag 83ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "geoip",
+          "since": "2026-10-04T14:43:40Z",
+          "until": "2026-10-04T14:44:30Z",
+          "limit": 15
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"dependency_timeout\",\"confidence\":0.85,\"evidenceLines\":[1596,1645,1703,1803,1854],\"reasoning\":\"The fault originates in enrichment-svc's calls to the external geo-IP provider (api.geoip.example). The first anomaly is a slow-call warning at 14:42:18 (#1596, 5973ms vs 2000ms soft threshold), followed by worsening slowness (#1645, 8536ms) and then hard failures at the 30s timeout (#1703, #1803, #1854). Hanging calls, not fast 5xx, point to dependency_timeout. Enrichment threads stall, so ingest-api's calls to enrichment-svc time out (#1704, #1855 are the direct downstream failures). Ingest-api's connection pool to enrichment-svc then exhausts (pool checkout timeout, not cited), and ingest-gateway returns 503s on POST /v1/events. Search-api/web-bff and catalog-svc load shedding, and metrics-agent drops, are downstream amplification and were not cited. GC and DB metrics were healthy, which rules out resource exhaustion locally and events-db. Confidence is not higher because the logs don't show why the provider slowed (external outage vs. a provider-side issue), and external_outage is the alternative reading.\",\"}, {\"rootCause\":\"external_outage\",\"confidence\":0.35,\"evidenceLines\":[1596,1703],\"reasoning\":\"The geo-IP provider may be down or degraded on their side. The timeouts are consistent with an outage, but the logs show only slow and timed-out calls, with no status or explicit error from the provider to confirm an outage.\"}]",
+          "recommendedAction": "Mitigate now: add a short timeout and circuit breaker on enrichment-svc's geo-IP lookup, with a fallback that enriches without geo data, so enrichment threads stop hanging. Then raise ingest-api's enrichment call timeout and pool limits so they fail fast. Check the geo-IP provider's status and escalate to them. Once the provider recovers, backfill events that were enriched without geo data. Review metrics-agent's exporter queue sizing separately, since it is dropping samples."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.85,
+              "evidenceLines": [
+                1596,
+                1645,
+                1703,
+                1803,
+                1854
+              ],
+              "reasoning": "The fault originates in enrichment-svc's calls to the external geo-IP provider (api.geoip.example). The first anomaly is a slow-call warning at 14:42:18 (#1596, 5973ms vs 2000ms soft threshold), followed by worsening slowness (#1645, 8536ms) and then hard failures at the 30s timeout (#1703, #1803, #1854). Hanging calls, not fast 5xx, point to dependency_timeout. Enrichment threads stall, so ingest-api's calls to enrichment-svc time out (#1704, #1855 are the direct downstream failures). Ingest-api's connection pool to enrichment-svc then exhausts (pool checkout timeout, not cited), and ingest-gateway returns 503s on POST /v1/events. Search-api/web-bff and catalog-svc load shedding, and metrics-agent drops, are downstream amplification and were not cited. GC and DB metrics were healthy, which rules out resource exhaustion locally and events-db. Confidence is not higher because the logs don't show why the provider slowed, and external_outage is the alternative reading."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.35,
+              "evidenceLines": [
+                1596,
+                1703
+              ],
+              "reasoning": "The geo-IP provider may be down or degraded on their side. The timeouts are consistent with an outage, but the logs show only slow and timed-out calls, with no status or explicit error from the provider to confirm it."
+            }
+          ],
+          "recommendedAction": "Mitigate now: add a short timeout and circuit breaker on enrichment-svc's geo-IP lookup, with a fallback that enriches without geo data, so enrichment threads stop hanging. Lower ingest-api's enrichment call timeout so it fails fast, and check its pool sizing. Check the geo-IP provider's status and escalate to them. After recovery, reprocess events that were enriched without geo data. Review metrics-agent's exporter queue sizing separately, since it is dropping samples."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 8,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 2957,
+      "cacheReadTokens": 40241,
+      "cacheWriteTokens": 12896
+    },
+    "durationMs": 13781,
+    "stopReason": "tool_use"
+  }
+}

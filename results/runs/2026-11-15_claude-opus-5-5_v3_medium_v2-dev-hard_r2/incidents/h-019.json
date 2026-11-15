@@ -1,0 +1,203 @@
+{
+  "score": {
+    "incidentId": "h-019",
+    "difficulty": "hard",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 7,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 2,
+    "secondaryCited": 1,
+    "costUsd": 0.1384352,
+    "durationMs": 23680,
+    "iterations": 7,
+    "toolCalls": 8,
+    "tokens": {
+      "input": 16,
+      "output": 1889,
+      "cacheRead": 72556,
+      "cacheWrite": 17216
+    }
+  },
+  "result": {
+    "incidentId": "h-019",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.9,
+          "evidenceLines": [
+            2805,
+            3834,
+            3837,
+            4210,
+            4212,
+            4626,
+            4629
+          ],
+          "reasoning": "notification-svc's messageCache keeps growing until the heap runs out. At 14:23:36, after a full GC, the heap was still 78% used with the old generation not reclaimed (#2805). The heap then ran out while growing messageCache at 14:28:00 (#3834), and the OOM killer took the pod (#3837). It happened again at 14:30:56 (#4210, #4212) and 14:34:11 (#4626, #4629). Every restart runs the same v4.16.1 and starts by warming the message cache, so notification-svc was not redeployed. Each crash and restart leaves no healthy upstream, and the gateway's 502 'connection reset (no healthy upstream)' errors on POST /v1/notify start at 14:28:43, right after the first OOM. That explains why the 502s come in bursts. Ruled out as unrelated: report-cron failing on a missing pandas module, account-svc/accounts-db errors on a missing status_v2 column (they only affect /login), status-poller timing out against a deprecated endpoint, and the notif-worker v1.2.6 deploy at 14:25:48, which came after the heap was already in trouble at 14:23:36."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.06,
+          "evidenceLines": [
+            3350,
+            3457
+          ],
+          "reasoning": "notif-worker v1.2.6 rolled out at 14:25:48, shortly before the first OOM. It could in theory have changed message traffic into notification-svc. But the heap was already under pressure before the rollout, and notif-worker kept processing batches normally afterwards."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.04,
+          "evidenceLines": [
+            3587,
+            3602
+          ],
+          "reasoning": "Queries fail because the status_v2 column is missing from accounts, which suggests a half-applied migration. This only affects account-svc and /login, not /v1/notify."
+        }
+      ],
+      "recommendedAction": "Raise notification-svc's memory/heap limits for now, or cap messageCache (size limit or eviction/TTL), so the pods stop crash-looping. Analyze /tmp/heap.hprof to find the unbounded growth in messageCache and fix it. Track the accounts status_v2 migration and the report-cron missing pandas module as separate issues."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 80
+        },
+        "output": "69 match(es):\n#2000 2026-10-17T14:20:23Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2403 2026-10-17T14:22:00Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2612 2026-10-17T14:22:49Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2925 2026-10-17T14:24:07Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3267 2026-10-17T14:25:28Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3521 2026-10-17T14:26:31Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3587 2026-10-17T14:26:48Z ERROR accounts-db column \"status_v2\" of relation \"accounts\" does not exist at character 88\n#3602 2026-10-17T14:26:53Z ERROR account-svc [t-9534] query on accounts failed for u-9217: column \"status_v2\" does not exist\n#3684 2026-10-17T14:27:18Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3747 2026-10-17T14:27:35Z ERROR edge-proxy [t-9631] POST /login 500 16742ms: upstream account-svc returned 500 Internal Server Error\n#3784 2026-10-17T14:27:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3788 2026-10-17T14:27:45Z ERROR accounts-db ERROR:  column accounts.status_v2 does not exist (SQLSTATE 42703)\n#3834 2026-10-17T14:28:00Z FATAL notification-svc fatal: heap exhausted while growing messageCache (requested 64MB, max 1536MB)\n#3837 2026-10-17T14:28:01Z ERROR notification-svc oom-killer: killed process 1 in notification-svc-1, cgroup memory limit reached (restart 1)\n#3859 2026-10-17T14:28:10Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3893 2026-10-17T14:28:27Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3897 2026-10-17T14:28:27Z ERROR edge-proxy [t-9715] POST /login 500 8860ms: upstream account-svc returned 500 Internal Server Error\n#3930 2026-10-17T14:28:43Z ERROR api-gateway [t-9730] POST /v1/notify 502 25252ms: upstream notification-svc connection reset (no healthy upstream)\n#3977 2026-10-17T14:29:04Z ERROR api-gateway [t-9754] POST /v1/notify 502 29642ms: upstream notification-svc connection reset (no healthy upstream)\n#4000 2026-10-17T14:29:16Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4007 2026-10-17T14:29:17Z ERROR accounts-db statement failed: undefined_column, no attribute status_v2 on accounts\n#4029 2026-10-17T14:29:26Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4117 2026-10-17T14:30:09Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4124 2026-10-17T14:30:14Z ERROR accounts-db column \"status_v2\" of relation \"accounts\" does not exist at character 125\n#4143 2026-10-17T14:30:24Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4154 2026-10-17T14:30:31Z ERROR api-gateway [t-9834] POST /v1/notify 502 20149ms: upstream notification-svc connection reset (no healthy upstream)\n#4210 2026-10-17T14:30:56Z FATAL notification-svc JVM terminating after OutOfMemoryError in messageCache.put; heap dump written to /tmp/heap.hprof\n#4212 2026-10-17T14:30:57Z ERROR notification-svc container notification-svc-1 killed: OOMKilled (memory limit 2Gi), restart count 2\n#4215 2026-10-17T14:30:59Z ERROR edge-proxy [t-9856] POST /login 500 23276ms: upstream account-svc returned 500 Internal Server Error\n#4221 2026-10-17T14:31:00Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4252 2026-10-17T14:31:14Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4290 2026-10-17T14:31:32Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4317 2026-10-17T14:31:47Z ERROR api-gateway [t-9891] POST /v1/notify 502 19967ms: upstream notification-svc connection reset (no healthy upstream)\n#4333 2026-10-17T14:31:55Z ERROR account-svc [t-9900] query on accounts failed for u-9471: column \"status_v2\" does not exist\n#4339 2026-10-17T14:31:58Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4385 2026-10-17T14:32:14Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4432 2026-10-17T14:32:37Z ERROR api-gateway [t-9945] POST /v1/notify 502 22871ms: upstream notification-svc connection reset (no healthy upstream)\n#4447 2026-10-17T14:32:45Z ERROR edge-proxy [t-9951] POST /login 500 25708ms: upstream account-svc returned 500 Internal Server Error\n#4477 2026-10-17T14:32:59Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4533 2026-10-17T14:33:27Z ERROR api-gateway [t-9990] POST /v1/notify 502 8755ms: upstream notification-svc connection reset (no healthy upstream)\n#4539 2026-10-17T14:33:31Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4558 2026-10-17T14:33:39Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4626 2026-10-17T14:34:11Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#4628 2026-10-17T14:34:12Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4629 2026-10-17T14:34:12Z ERROR notification-svc kubelet: notification-svc-0 terminated (reason OOMKilled, exit code 137), restarts=3\n#4666 2026-10-17T14:34:31Z ERROR edge-proxy [t-10037] POST /login 500 22386ms: upstream account-svc returned 500 Internal Server Error\n#4683 2026-10-17T14:34:39Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4692 2026-10-17T14:34:44Z ERROR api-gateway [t-10047] POST /v1/notify 502 16180ms: upstream notification-svc connection reset (no healthy upstream)\n#4701 2026-10-17T14:34:48Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4759 2026-10-17T14:35:22Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4810 2026-10-17T14:35:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4811 2026-10-17T14:35:45Z ERROR api-gateway [t-10085] POST /v1/notify 502 23167ms: upstream notification-svc connection reset (no healthy upstream)\n#4821 2026-10-17T14:35:48Z ERROR account-svc [t-10092] query on accounts failed for u-9633: column \"status_v2\" does not exist\n#4875 2026-10-17T14:36:16Z ERROR edge-proxy [t-10114] POST /login 500 6860ms: upstream account-svc returned 500 Internal Server Error\n#4878 2026-10-17T14:36:16Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4947 2026-10-17T14:36:46Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4948 2026-10-17T14:36:47Z ERROR api-gateway [t-10139] POST /v1/notify 502 13142ms: upstream notification-svc connection reset (no healthy upstream)\n#4959 2026-10-17T14:36:49Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#5049 2026-10-17T14:37:29Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#5064 2026-10-17T14:37:36Z ERROR api-gateway [t-10192] POST /v1/notify 502 17446ms: upstream notification-svc connection reset (no healthy upstream)\n#5107 2026-10-17T14:38:00Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#5111 2026-10-17T14:38:03Z ERROR account-svc [t-10208] query on accounts failed for u-9738: column \"status_v2\" does not exist\n#5125 2026-10-17T14:38:09Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#5163 2026-10-17T14:38:29Z ERROR api-gateway [t-10230] POST /v1/notify 502 28035ms: upstream notification-svc connection reset (no healthy upstream)\n#5212 2026-10-17T14:38:55Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#5240 2026-10-17T14:39:12Z ERROR edge-proxy [t-10259] POST /login 500 14974ms: upstream account-svc returned 500 Internal Server Error\n#5285 2026-10-17T14:39:34Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#5286 2026-10-17T14:39:34Z ERROR api-gateway [t-10277] POST /v1/notify 502 14392ms: upstream notification-svc connection reset (no healthy upstream)\n#5298 2026-10-17T14:39:40Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "level": "WARN",
+          "limit": 40
+        },
+        "output": "7 match(es):\n#1883 2026-10-17T14:19:53Z WARN notification-svc circuit breaker for template-svc OPEN: 5 failures in 10s, shedding calls for 15s\n#3834 2026-10-17T14:28:00Z FATAL notification-svc fatal: heap exhausted while growing messageCache (requested 64MB, max 1536MB)\n#3837 2026-10-17T14:28:01Z ERROR notification-svc oom-killer: killed process 1 in notification-svc-1, cgroup memory limit reached (restart 1)\n#4210 2026-10-17T14:30:56Z FATAL notification-svc JVM terminating after OutOfMemoryError in messageCache.put; heap dump written to /tmp/heap.hprof\n#4212 2026-10-17T14:30:57Z ERROR notification-svc container notification-svc-1 killed: OOMKilled (memory limit 2Gi), restart count 2\n#4626 2026-10-17T14:34:11Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#4629 2026-10-17T14:34:12Z ERROR notification-svc kubelet: notification-svc-0 terminated (reason OOMKilled, exit code 137), restarts=3"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 20
+        },
+        "output": "18 match(es):\n#2000 2026-10-17T14:20:23Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2403 2026-10-17T14:22:00Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2612 2026-10-17T14:22:49Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2925 2026-10-17T14:24:07Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3267 2026-10-17T14:25:28Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3350 2026-10-17T14:25:48Z INFO notif-worker deploy: rolling out notif-worker v1.2.6 (build 675f2cd)\n#3521 2026-10-17T14:26:31Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3784 2026-10-17T14:27:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4000 2026-10-17T14:29:16Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4143 2026-10-17T14:30:24Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4252 2026-10-17T14:31:14Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4385 2026-10-17T14:32:14Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4539 2026-10-17T14:33:31Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4701 2026-10-17T14:34:48Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4810 2026-10-17T14:35:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4947 2026-10-17T14:36:46Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#5125 2026-10-17T14:38:09Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#5298 2026-10-17T14:39:40Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "query": "heap",
+          "limit": 40
+        },
+        "output": "121 match(es), showing first 40:\n#12 2026-10-17T14:12:03Z DEBUG notification-svc GC pause 14ms (young), heap 36%\n#75 2026-10-17T14:12:20Z DEBUG notification-svc GC pause 25ms (young), heap 34%\n#144 2026-10-17T14:12:37Z DEBUG notification-svc GC pause 20ms (young), heap 36%\n#199 2026-10-17T14:12:50Z DEBUG notification-svc GC pause 9ms (young), heap 39%\n#269 2026-10-17T14:13:09Z DEBUG notification-svc GC pause 9ms (young), heap 47%\n#322 2026-10-17T14:13:22Z DEBUG notification-svc GC pause 14ms (young), heap 46%\n#391 2026-10-17T14:13:39Z DEBUG notification-svc GC pause 11ms (young), heap 38%\n#458 2026-10-17T14:13:53Z DEBUG notification-svc GC pause 18ms (young), heap 41%\n#505 2026-10-17T14:14:06Z DEBUG notification-svc GC pause 8ms (young), heap 47%\n#575 2026-10-17T14:14:24Z DEBUG notification-svc GC pause 5ms (young), heap 42%\n#629 2026-10-17T14:14:37Z DEBUG notification-svc GC pause 20ms (young), heap 31%\n#666 2026-10-17T14:14:47Z DEBUG notification-svc GC pause 5ms (young), heap 45%\n#703 2026-10-17T14:14:57Z DEBUG notification-svc GC pause 20ms (young), heap 32%\n#765 2026-10-17T14:15:12Z DEBUG notification-svc GC pause 12ms (young), heap 30%\n#806 2026-10-17T14:15:24Z DEBUG notification-svc GC pause 19ms (young), heap 36%\n#868 2026-10-17T14:15:38Z DEBUG notification-svc GC pause 4ms (young), heap 36%\n#940 2026-10-17T14:15:57Z DEBUG notification-svc GC pause 16ms (young), heap 39%\n#1003 2026-10-17T14:16:13Z DEBUG notification-svc GC pause 9ms (young), heap 31%\n#1072 2026-10-17T14:16:29Z DEBUG notification-svc GC pause 14ms (young), heap 30%\n#1122 2026-10-17T14:16:41Z DEBUG notification-svc GC pause 18ms (young), heap 38%\n#1189 2026-10-17T14:16:58Z DEBUG notification-svc GC pause 13ms (young), heap 30%\n#1255 2026-10-17T14:17:13Z DEBUG notification-svc GC pause 11ms (young), heap 44%\n#1304 2026-10-17T14:17:25Z DEBUG notification-svc GC pause 12ms (young), heap 41%\n#1374 2026-10-17T14:17:42Z DEBUG notification-svc GC pause 24ms (young), heap 43%\n#1423 2026-10-17T14:17:55Z DEBUG notification-svc GC pause 7ms (young), heap 34%\n#1474 2026-10-17T14:18:09Z DEBUG notification-svc GC pause 8ms (young), heap 39%\n#1530 2026-10-17T14:18:23Z DEBUG notification-svc GC pause 8ms (young), heap 45%\n#1571 2026-10-17T14:18:33Z DEBUG notification-svc GC pause 5ms (young), heap 46%\n#1627 2026-10-17T14:18:48Z DEBUG notification-svc GC pause 18ms (young), heap 34%\n#1688 2026-10-17T14:19:03Z DEBUG notification-svc GC pause 6ms (young), heap 47%\n#1748 2026-10-17T14:19:18Z DEBUG notification-svc GC pause 20ms (young), heap 32%\n#1798 2026-10-17T14:19:30Z DEBUG notification-svc GC pause 22ms (young), heap 36%\n#1844 2026-10-17T14:19:42Z DEBUG notification-svc GC pause 10ms (young), heap 46%\n#1886 2026-10-17T14:19:54Z DEBUG notification-svc GC pause 20ms (young), heap 35%\n#1930 2026-10-17T14:20:05Z DEBUG notification-svc GC pause 13ms (young), heap 30%\n#1988 2026-10-17T14:20:20Z DEBUG notification-svc GC pause 8ms (young), heap 34%\n#2040 2026-10-17T14:20:31Z DEBUG notification-svc GC pause 6ms (young), heap 42%\n#2112 2026-10-17T14:20:49Z DEBUG notification-svc GC pause 18ms (young), heap 40%\n#2155 2026-10-17T14:20:59Z DEBUG notification-svc GC pause 25ms (young), heap 37%\n#2230 2026-10-17T14:21:17Z DEBUG notification-svc GC pause 22ms (young), heap 36%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-worker",
+          "since": "14:25:00",
+          "until": "14:28:00",
+          "limit": 30
+        },
+        "output": "47 match(es), showing first 30:\n#3149 2026-10-17T14:25:01Z INFO notif-worker processed batch of 79 messages from notifications.outbound (lag 383ms)\n#3167 2026-10-17T14:25:05Z INFO notif-worker processed batch of 89 messages from notifications.outbound (lag 67ms)\n#3184 2026-10-17T14:25:09Z INFO notif-worker processed batch of 27 messages from notifications.outbound (lag 173ms)\n#3203 2026-10-17T14:25:14Z INFO notif-worker processed batch of 93 messages from notifications.outbound (lag 389ms)\n#3224 2026-10-17T14:25:17Z INFO notif-worker processed batch of 109 messages from notifications.outbound (lag 267ms)\n#3243 2026-10-17T14:25:22Z INFO notif-worker processed batch of 83 messages from notifications.outbound (lag 157ms)\n#3260 2026-10-17T14:25:26Z INFO notif-worker processed batch of 83 messages from notifications.outbound (lag 307ms)\n#3276 2026-10-17T14:25:31Z INFO notif-worker processed batch of 80 messages from notifications.outbound (lag 158ms)\n#3289 2026-10-17T14:25:34Z INFO notif-worker processed batch of 45 messages from notifications.outbound (lag 365ms)\n#3313 2026-10-17T14:25:38Z INFO notif-worker processed batch of 53 messages from notifications.outbound (lag 218ms)\n#3325 2026-10-17T14:25:42Z INFO notif-worker processed batch of 81 messages from notifications.outbound (lag 230ms)\n#3336 2026-10-17T14:25:45Z INFO notif-worker processed batch of 103 messages from notifications.outbound (lag 149ms)\n#3350 2026-10-17T14:25:48Z INFO notif-worker deploy: rolling out notif-worker v1.2.6 (build 675f2cd)\n#3354 2026-10-17T14:25:49Z INFO notif-worker processed batch of 107 messages from notifications.outbound (lag 169ms)\n#3372 2026-10-17T14:25:52Z INFO notif-worker processed batch of 69 messages from notifications.outbound (lag 304ms)\n#3381 2026-10-17T14:25:55Z INFO notif-worker processed batch of 66 messages from notifications.outbound (lag 253ms)\n#3391 2026-10-17T14:25:58Z INFO notif-worker processed batch of 77 messages from notifications.outbound (lag 386ms)\n#3407 2026-10-17T14:26:03Z INFO notif-worker processed batch of 97 messages from notifications.outbound (lag 46ms)\n#3426 2026-10-17T14:26:08Z INFO notif-worker processed batch of 89 messages from notifications.outbound (lag 162ms)\n#3447 2026-10-17T14:26:11Z INFO notif-worker processed batch of 63 messages from notifications.outbound (lag 131ms)\n#3457 2026-10-17T14:26:14Z INFO notif-worker started notif-worker v1.2.6, pid 1, ready\n#3471 2026-10-17T14:26:17Z INFO notif-worker processed batch of 91 messages from notifications.outbound (lag 288ms)\n#3486 2026-10-17T14:26:20Z INFO notif-worker processed batch of 26 messages from notifications.outbound (lag 346ms)\n#3501 2026-10-17T14:26:24Z INFO notif-worker processed batch of 54 messages from notifications.outbound (lag 368ms)\n#3515 2026-10-17T14:26:29Z INFO notif-worker processed batch of 95 messages from notifications.outbound (lag 134ms)\n#3532 2026-10-17T14:26:33Z INFO notif-worker processed batch of 45 messages from notifications.outbound (lag 160ms)\n#3549 2026-10-17T14:26:38Z INFO notif-worker processed batch of 99 messages from notifications.outbound (lag 387ms)\n#3561 2026-10-17T14:26:42Z INFO notif-worker processed batch of 100 messages from notifications.outbound (lag 340ms)\n#3578 2026-10-17T14:26:46Z INFO notif-worker processed batch of 85 messages from notifications.outbound (lag 141ms)\n#3595 2026-10-17T14:26:51Z INFO notif-worker processed batch of 62 messages from notifications.outbound (lag 48ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "since": "14:21:20",
+          "until": "14:28:05",
+          "query": "heap",
+          "limit": 40
+        },
+        "output": "29 match(es):\n#2293 2026-10-17T14:21:33Z DEBUG notification-svc GC pause 19ms (young), heap 36%\n#2362 2026-10-17T14:21:50Z DEBUG notification-svc GC pause 12ms (young), heap 32%\n#2410 2026-10-17T14:22:02Z DEBUG notification-svc GC pause 25ms (young), heap 36%\n#2456 2026-10-17T14:22:12Z DEBUG notification-svc GC pause 4ms (young), heap 46%\n#2525 2026-10-17T14:22:30Z DEBUG notification-svc GC pause 25ms (young), heap 33%\n#2608 2026-10-17T14:22:48Z DEBUG notification-svc GC pause 25ms (young), heap 35%\n#2660 2026-10-17T14:23:01Z DEBUG notification-svc GC pause 24ms (young), heap 35%\n#2704 2026-10-17T14:23:13Z DEBUG notification-svc GC pause 13ms (young), heap 33%\n#2755 2026-10-17T14:23:25Z DEBUG notification-svc GC pause 6ms (young), heap 45%\n#2795 2026-10-17T14:23:35Z DEBUG notification-svc GC pause 9ms (young), heap 36%\n#2805 2026-10-17T14:23:36Z INFO notification-svc heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#2867 2026-10-17T14:23:51Z DEBUG notification-svc GC pause 23ms (young), heap 42%\n#2915 2026-10-17T14:24:05Z DEBUG notification-svc GC pause 18ms (young), heap 46%\n#2992 2026-10-17T14:24:23Z DEBUG notification-svc GC pause 12ms (young), heap 37%\n#3044 2026-10-17T14:24:35Z DEBUG notification-svc GC pause 20ms (young), heap 33%\n#3109 2026-10-17T14:24:50Z DEBUG notification-svc GC pause 19ms (young), heap 44%\n#3165 2026-10-17T14:25:04Z DEBUG notification-svc GC pause 19ms (young), heap 32%\n#3209 2026-10-17T14:25:14Z DEBUG notification-svc GC pause 5ms (young), heap 48%\n#3281 2026-10-17T14:25:31Z DEBUG notification-svc GC pause 7ms (young), heap 31%\n#3341 2026-10-17T14:25:45Z DEBUG notification-svc GC pause 10ms (young), heap 37%\n#3394 2026-10-17T14:25:59Z DEBUG notification-svc GC pause 22ms (young), heap 37%\n#3473 2026-10-17T14:26:18Z DEBUG notification-svc GC pause 11ms (young), heap 47%\n#3533 2026-10-17T14:26:33Z DEBUG notification-svc GC pause 6ms (young), heap 38%\n#3577 2026-10-17T14:26:46Z DEBUG notification-svc GC pause 13ms (young), heap 33%\n#3641 2026-10-17T14:27:03Z DEBUG notification-svc GC pause 21ms (young), heap 43%\n#3700 2026-10-17T14:27:21Z DEBUG notification-svc GC pause 7ms (young), heap 36%\n#3761 2026-10-17T14:27:39Z DEBUG notification-svc GC pause 24ms (young), heap 38%\n#3798 2026-10-17T14:27:49Z DEBUG notification-svc GC pause 14ms (young), heap 30%\n#3834 2026-10-17T14:28:00Z FATAL notification-svc fatal: heap exhausted while growing messageCache (requested 64MB, max 1536MB)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "query": "cache",
+          "limit": 20
+        },
+        "output": "6 match(es):\n#3834 2026-10-17T14:28:00Z FATAL notification-svc fatal: heap exhausted while growing messageCache (requested 64MB, max 1536MB)\n#3885 2026-10-17T14:28:22Z INFO notification-svc started notification-svc v4.16.1, pid 1, warming message cache\n#4210 2026-10-17T14:30:56Z FATAL notification-svc JVM terminating after OutOfMemoryError in messageCache.put; heap dump written to /tmp/heap.hprof\n#4270 2026-10-17T14:31:23Z INFO notification-svc started notification-svc v4.16.1, pid 1, warming message cache\n#4626 2026-10-17T14:34:11Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#4686 2026-10-17T14:34:40Z INFO notification-svc started notification-svc v4.16.1, pid 1, warming message cache"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "v4.1",
+          "limit": 10
+        },
+        "output": "3 match(es):\n#3885 2026-10-17T14:28:22Z INFO notification-svc started notification-svc v4.16.1, pid 1, warming message cache\n#4270 2026-10-17T14:31:23Z INFO notification-svc started notification-svc v4.16.1, pid 1, warming message cache\n#4686 2026-10-17T14:34:40Z INFO notification-svc started notification-svc v4.16.1, pid 1, warming message cache"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.9,
+              "evidenceLines": [
+                2805,
+                3834,
+                3837,
+                4210,
+                4212,
+                4626,
+                4629
+              ],
+              "reasoning": "notification-svc's messageCache keeps growing until the heap runs out. At 14:23:36, after a full GC, the heap was still 78% used with the old generation not reclaimed (#2805). The heap then ran out while growing messageCache at 14:28:00 (#3834), and the OOM killer took the pod (#3837). It happened again at 14:30:56 (#4210, #4212) and 14:34:11 (#4626, #4629). Every restart runs the same v4.16.1 and starts by warming the message cache, so notification-svc was not redeployed. Each crash and restart leaves no healthy upstream, and the gateway's 502 'connection reset (no healthy upstream)' errors on POST /v1/notify start at 14:28:43, right after the first OOM. That explains why the 502s come in bursts. Ruled out as unrelated: report-cron failing on a missing pandas module, account-svc/accounts-db errors on a missing status_v2 column (they only affect /login), status-poller timing out against a deprecated endpoint, and the notif-worker v1.2.6 deploy at 14:25:48, which came after the heap was already in trouble at 14:23:36."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.06,
+              "evidenceLines": [
+                3350,
+                3457
+              ],
+              "reasoning": "notif-worker v1.2.6 rolled out at 14:25:48, shortly before the first OOM. It could in theory have changed message traffic into notification-svc. But the heap was already under pressure before the rollout, and notif-worker kept processing batches normally afterwards."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.04,
+              "evidenceLines": [
+                3587,
+                3602
+              ],
+              "reasoning": "Queries fail because the status_v2 column is missing from accounts, which suggests a half-applied migration. This only affects account-svc and /login, not /v1/notify."
+            }
+          ],
+          "recommendedAction": "Raise notification-svc's memory/heap limits for now, or cap messageCache (size limit or eviction/TTL), so the pods stop crash-looping. Analyze /tmp/heap.hprof to find the unbounded growth in messageCache and fix it. Track the accounts status_v2 migration and the report-cron missing pandas module as separate issues."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 7,
+    "toolCalls": 8,
+    "usage": {
+      "inputTokens": 16,
+      "outputTokens": 1889,
+      "cacheReadTokens": 72556,
+      "cacheWriteTokens": 17216
+    },
+    "durationMs": 23680,
+    "stopReason": "tool_use"
+  }
+}

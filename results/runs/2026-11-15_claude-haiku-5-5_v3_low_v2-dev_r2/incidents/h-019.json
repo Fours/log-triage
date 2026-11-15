@@ -1,0 +1,212 @@
+{
+  "score": {
+    "incidentId": "h-019",
+    "difficulty": "hard",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.82,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 6,
+      "precision": 0.75,
+      "recall": 0.8571428571428571,
+      "f1": 0.7999999999999999
+    },
+    "herringsCited": 1,
+    "secondaryCited": 0,
+    "costUsd": 0.004771770000000001,
+    "durationMs": 13210,
+    "iterations": 7,
+    "toolCalls": 11,
+    "tokens": {
+      "input": 16,
+      "output": 2494,
+      "cacheRead": 76867,
+      "cacheWrite": 22036
+    }
+  },
+  "result": {
+    "incidentId": "h-019",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.82,
+          "evidenceLines": [
+            3834,
+            3837,
+            4210,
+            4212,
+            4626,
+            4629,
+            3930,
+            4154
+          ],
+          "reasoning": "notification-svc (v4.16.1) runs out of heap while growing an unbounded messageCache: 'heap exhausted while growing messageCache (requested 64MB, max 1536MB)' at #3834, followed by the OOM-killer restarting the process (#3837). The pod is then OOMKilled again at #4212 and #4629 (restarts=3), and each restart re-warms the cache and dies again. While the process is down or restarting, api-gateway's POST /v1/notify calls fail with 502 'upstream notification-svc connection reset (no healthy upstream)' (#3930, #4154, and later), which is the paged symptom. Heap was steady at 30-47% through 14:21 (DEBUG GC lines), so growth was steady and cumulative, not a sudden spike. The template-svc circuit-breaker trip at #1883 was brief and template-svc recovered immediately, so it is not the origin. Red herrings: the report-cron pandas ModuleNotFoundError (#2000), the account-svc status_v2 column errors (#3587, #3788), and the legacy-inventory timeouts in status-poller are real faults but do not touch the notify path. The 429 throttle on k-7148 (#3962) is client-side rate limiting, not the 502 source."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.2,
+          "evidenceLines": [
+            3350
+          ],
+          "reasoning": "A notif-worker v1.2.6 rollout appears at #3350, but it is a worker, not the notify request path, and the OOM is in notification-svc. Not supported as the origin unless the notification-svc v4.16.1 release also changed the cache policy, which the logs do not show."
+        }
+      ],
+      "recommendedAction": "Immediately mitigate by scaling notification-svc or raising the memory limit so restarts stop, and by capping messageCache size or enabling eviction (roll back to the prior cache configuration if v4.16.1 changed it). Review the /tmp/heap.hprof heap dump to confirm what is retained. Separately, fix the report-cron image missing pandas, the account-svc status_v2 column mismatch on accounts-db, and the deprecated legacy-inventory healthcheck in status-poller."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "72 match(es), showing first 60:\n#1883 2026-10-17T14:19:53Z WARN notification-svc circuit breaker for template-svc OPEN: 5 failures in 10s, shedding calls for 15s\n#2000 2026-10-17T14:20:23Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2403 2026-10-17T14:22:00Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2612 2026-10-17T14:22:49Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2925 2026-10-17T14:24:07Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3267 2026-10-17T14:25:28Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3521 2026-10-17T14:26:31Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3587 2026-10-17T14:26:48Z ERROR accounts-db column \"status_v2\" of relation \"accounts\" does not exist at character 88\n#3602 2026-10-17T14:26:53Z ERROR account-svc [t-9534] query on accounts failed for u-9217: column \"status_v2\" does not exist\n#3684 2026-10-17T14:27:18Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3747 2026-10-17T14:27:35Z ERROR edge-proxy [t-9631] POST /login 500 16742ms: upstream account-svc returned 500 Internal Server Error\n#3781 2026-10-17T14:27:44Z WARN notif-db slow query 1330ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#3784 2026-10-17T14:27:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3788 2026-10-17T14:27:45Z ERROR accounts-db ERROR:  column accounts.status_v2 does not exist (SQLSTATE 42703)\n#3834 2026-10-17T14:28:00Z FATAL notification-svc fatal: heap exhausted while growing messageCache (requested 64MB, max 1536MB)\n#3837 2026-10-17T14:28:01Z ERROR notification-svc oom-killer: killed process 1 in notification-svc-1, cgroup memory limit reached (restart 1)\n#3859 2026-10-17T14:28:10Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3893 2026-10-17T14:28:27Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3897 2026-10-17T14:28:27Z ERROR edge-proxy [t-9715] POST /login 500 8860ms: upstream account-svc returned 500 Internal Server Error\n#3930 2026-10-17T14:28:43Z ERROR api-gateway [t-9730] POST /v1/notify 502 25252ms: upstream notification-svc connection reset (no healthy upstream)\n#3962 2026-10-17T14:28:55Z WARN api-gateway rate limiter: client key k-7148 throttled (429), 164 req/s over quota\n#3977 2026-10-17T14:29:04Z ERROR api-gateway [t-9754] POST /v1/notify 502 29642ms: upstream notification-svc connection reset (no healthy upstream)\n#4000 2026-10-17T14:29:16Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4007 2026-10-17T14:29:17Z ERROR accounts-db statement failed: undefined_column, no attribute status_v2 on accounts\n#4029 2026-10-17T14:29:26Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4117 2026-10-17T14:30:09Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4124 2026-10-17T14:30:14Z ERROR accounts-db column \"status_v2\" of relation \"accounts\" does not exist at character 125\n#4143 2026-10-17T14:30:24Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4154 2026-10-17T14:30:31Z ERROR api-gateway [t-9834] POST /v1/notify 502 20149ms: upstream notification-svc connection reset (no healthy upstream)\n#4210 2026-10-17T14:30:56Z FATAL notification-svc JVM terminating after OutOfMemoryError in messageCache.put; heap dump written to /tmp/heap.hprof\n#4212 2026-10-17T14:30:57Z ERROR notification-svc container notification-svc-1 killed: OOMKilled (memory limit 2Gi), restart count 2\n#4215 2026-10-17T14:30:59Z ERROR edge-proxy [t-9856] POST /login 500 23276ms: upstream account-svc returned 500 Internal Server Error\n#4221 2026-10-17T14:31:00Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4252 2026-10-17T14:31:14Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4290 2026-10-17T14:31:32Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4317 2026-10-17T14:31:47Z ERROR api-gateway [t-9891] POST /v1/notify 502 19967ms: upstream notification-svc connection reset (no healthy upstream)\n#4333 2026-10-17T14:31:55Z ERROR account-svc [t-9900] query on accounts failed for u-9471: column \"status_v2\" does not exist\n#4339 2026-10-17T14:31:58Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4385 2026-10-17T14:32:14Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4432 2026-10-17T14:32:37Z ERROR api-gateway [t-9945] POST /v1/notify 502 22871ms: upstream notification-svc connection reset (no healthy upstream)\n#4447 2026-10-17T14:32:45Z ERROR edge-proxy [t-9951] POST /login 500 25708ms: upstream account-svc returned 500 Internal Server Error\n#4477 2026-10-17T14:32:59Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4533 2026-10-17T14:33:27Z ERROR api-gateway [t-9990] POST /v1/notify 502 8755ms: upstream notification-svc connection reset (no healthy upstream)\n#4539 2026-10-17T14:33:31Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4558 2026-10-17T14:33:39Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4626 2026-10-17T14:34:11Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#4628 2026-10-17T14:34:12Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4629 2026-10-17T14:34:12Z ERROR notification-svc kubelet: notification-svc-0 terminated (reason OOMKilled, exit code 137), restarts=3\n#4666 2026-10-17T14:34:31Z ERROR edge-proxy [t-10037] POST /login 500 22386ms: upstream account-svc returned 500 Internal Server Error\n#4683 2026-10-17T14:34:39Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4692 2026-10-17T14:34:44Z ERROR api-gateway [t-10047] POST /v1/notify 502 16180ms: upstream notification-svc connection reset (no healthy upstream)\n#4701 2026-10-17T14:34:48Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4759 2026-10-17T14:35:22Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4810 2026-10-17T14:35:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4811 2026-10-17T14:35:45Z ERROR api-gateway [t-10085] POST /v1/notify 502 23167ms: upstream notification-svc connection reset (no healthy upstream)\n#4821 2026-10-17T14:35:48Z ERROR account-svc [t-10092] query on accounts failed for u-9633: column \"status_v2\" does not exist\n#4875 2026-10-17T14:36:16Z ERROR edge-proxy [t-10114] POST /login 500 6860ms: upstream account-svc returned 500 Internal Server Error\n#4878 2026-10-17T14:36:16Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4947 2026-10-17T14:36:46Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4948 2026-10-17T14:36:47Z ERROR api-gateway [t-10139] POST /v1/notify 502 13142ms: upstream notification-svc connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "accounts-db"
+        },
+        "output": "77 match(es), showing first 25:\n#29 2026-10-17T14:12:08Z INFO accounts-db checkpoint complete: wrote 233 buffers (1.2%)\n#140 2026-10-17T14:12:36Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 5\n#245 2026-10-17T14:13:02Z INFO accounts-db checkpoint complete: wrote 1297 buffers (3.7%)\n#354 2026-10-17T14:13:29Z INFO accounts-db checkpoint complete: wrote 228 buffers (7.1%)\n#431 2026-10-17T14:13:48Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 2\n#524 2026-10-17T14:14:11Z INFO accounts-db checkpoint complete: wrote 828 buffers (3.7%)\n#623 2026-10-17T14:14:35Z INFO accounts-db checkpoint complete: wrote 846 buffers (2.9%)\n#733 2026-10-17T14:15:04Z INFO accounts-db checkpoint complete: wrote 1127 buffers (5.8%)\n#837 2026-10-17T14:15:30Z INFO accounts-db checkpoint complete: wrote 395 buffers (1.2%)\n#915 2026-10-17T14:15:52Z INFO accounts-db checkpoint complete: wrote 375 buffers (4.2%)\n#1009 2026-10-17T14:16:14Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 7\n#1118 2026-10-17T14:16:40Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 9\n#1220 2026-10-17T14:17:05Z INFO accounts-db checkpoint complete: wrote 1291 buffers (6.3%)\n#1300 2026-10-17T14:17:24Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 14\n#1403 2026-10-17T14:17:49Z INFO accounts-db checkpoint complete: wrote 906 buffers (3.7%)\n#1473 2026-10-17T14:18:08Z INFO accounts-db checkpoint complete: wrote 942 buffers (4.8%)\n#1574 2026-10-17T14:18:34Z INFO accounts-db checkpoint complete: wrote 262 buffers (6.4%)\n#1665 2026-10-17T14:18:57Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 38\n#1763 2026-10-17T14:19:22Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 6\n#1840 2026-10-17T14:19:41Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 35\n#1936 2026-10-17T14:20:07Z INFO accounts-db checkpoint complete: wrote 1144 buffers (4.8%)\n#2010 2026-10-17T14:20:25Z INFO accounts-db checkpoint complete: wrote 533 buffers (6.2%)\n#2086 2026-10-17T14:20:43Z INFO accounts-db checkpoint complete: wrote 892 buffers (1.7%)\n#2194 2026-10-17T14:21:08Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 39\n#2287 2026-10-17T14:21:31Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 38"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "messageCache",
+          "service": "notification-svc",
+          "limit": 40
+        },
+        "output": "3 match(es):\n#3834 2026-10-17T14:28:00Z FATAL notification-svc fatal: heap exhausted while growing messageCache (requested 64MB, max 1536MB)\n#4210 2026-10-17T14:30:56Z FATAL notification-svc JVM terminating after OutOfMemoryError in messageCache.put; heap dump written to /tmp/heap.hprof\n#4626 2026-10-17T14:34:11Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "since": "14:12:00",
+          "until": "14:20:00",
+          "level": "INFO",
+          "limit": 40
+        },
+        "output": "384 match(es), showing first 40:\n#1 2026-10-17T14:12:00Z INFO notification-svc [t-7108] message m-7264 accepted, calling template-svc POST /render\n#4 2026-10-17T14:12:01Z INFO notification-svc [t-7110] message m-7267 accepted, calling template-svc POST /render\n#10 2026-10-17T14:12:03Z INFO notification-svc [t-7116] message m-7270 accepted, calling template-svc POST /render\n#14 2026-10-17T14:12:04Z INFO notification-svc [t-7117] message m-7272 accepted, calling template-svc POST /render\n#19 2026-10-17T14:12:06Z INFO notification-svc [t-7120] message m-7275 accepted, calling template-svc POST /render\n#27 2026-10-17T14:12:07Z INFO notification-svc [t-7125] message m-7277 accepted, calling template-svc POST /render\n#35 2026-10-17T14:12:09Z INFO notification-svc [t-7131] message m-7280 accepted, calling template-svc POST /render\n#39 2026-10-17T14:12:11Z INFO notification-svc [t-7132] message m-7282 accepted, calling template-svc POST /render\n#41 2026-10-17T14:12:12Z INFO notification-svc [t-7133] message m-7285 accepted, calling template-svc POST /render\n#44 2026-10-17T14:12:13Z INFO notification-svc [t-7134] message m-7286 accepted, calling template-svc POST /render\n#49 2026-10-17T14:12:14Z INFO notification-svc [t-7138] message m-7292 accepted, calling template-svc POST /render\n#52 2026-10-17T14:12:15Z INFO notification-svc [t-7142] message m-7293 accepted, calling template-svc POST /render\n#56 2026-10-17T14:12:16Z INFO notification-svc [t-7143] message m-7296 accepted, calling template-svc POST /render\n#60 2026-10-17T14:12:17Z INFO notification-svc [t-7147] message m-7299 accepted, calling template-svc POST /render\n#68 2026-10-17T14:12:18Z INFO notification-svc [t-7154] message m-7303 accepted, calling template-svc POST /render\n#72 2026-10-17T14:12:20Z INFO notification-svc [t-7155] message m-7304 accepted, calling template-svc POST /render\n#77 2026-10-17T14:12:21Z INFO notification-svc [t-7159] message m-7306 accepted, calling template-svc POST /render\n#83 2026-10-17T14:12:22Z INFO notification-svc [t-7162] message m-7309 accepted, calling template-svc POST /render\n#90 2026-10-17T14:12:24Z INFO notification-svc [t-7167] message m-7312 accepted, calling template-svc POST /render\n#96 2026-10-17T14:12:25Z INFO notification-svc [t-7168] message m-7315 accepted, calling template-svc POST /render\n#98 2026-10-17T14:12:26Z INFO notification-svc [t-7171] message m-7317 accepted, calling template-svc POST /render\n#105 2026-10-17T14:12:28Z INFO notification-svc [t-7176] message m-7323 accepted, calling template-svc POST /render\n#110 2026-10-17T14:12:30Z INFO notification-svc [t-7179] message m-7324 accepted, calling template-svc POST /render\n#115 2026-10-17T14:12:31Z INFO notification-svc [t-7181] message m-7326 accepted, calling template-svc POST /render\n#121 2026-10-17T14:12:32Z INFO notification-svc [t-7184] message m-7331 accepted, calling template-svc POST /render\n#126 2026-10-17T14:12:33Z INFO notification-svc [t-7188] message m-7334 accepted, calling template-svc POST /render\n#133 2026-10-17T14:12:35Z INFO notification-svc [t-7195] message m-7337 accepted, calling template-svc POST /render\n#137 2026-10-17T14:12:35Z INFO notification-svc [t-7199] message m-7340 accepted, calling template-svc POST /render\n#141 2026-10-17T14:12:36Z INFO notification-svc [t-7203] message m-7343 accepted, calling template-svc POST /render\n#145 2026-10-17T14:12:37Z INFO notification-svc [t-7205] message m-7345 accepted, calling template-svc POST /render\n#149 2026-10-17T14:12:39Z INFO notification-svc [t-7208] message m-7347 accepted, calling template-svc POST /render\n#156 2026-10-17T14:12:40Z INFO notification-svc [t-7212] message m-7353 accepted, calling template-svc POST /render\n#161 2026-10-17T14:12:42Z INFO notification-svc [t-7215] message m-7354 accepted, calling template-svc POST /render\n#164 2026-10-17T14:12:42Z INFO notification-svc [t-7219] message m-7357 accepted, calling template-svc POST /render\n#167 2026-10-17T14:12:43Z INFO notification-svc [t-7222] message m-7360 accepted, calling template-svc POST /render\n#170 2026-10-17T14:12:44Z INFO notification-svc [t-7224] message m-7362 accepted, calling template-svc POST /render\n#178 2026-10-17T14:12:45Z INFO notification-svc [t-7229] message m-7365 accepted, calling template-svc POST /render\n#180 2026-10-17T14:12:46Z INFO notification-svc [t-7230] message m-7367 accepted, calling template-svc POST /render\n#184 2026-10-17T14:12:47Z INFO notification-svc [t-7232] message m-7369 accepted, calling template-svc POST /render\n#186 2026-10-17T14:12:48Z INFO notification-svc [t-7236] message m-7370 accepted, calling template-svc POST /render"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "query": "cache",
+          "limit": 30
+        },
+        "output": "6 match(es):\n#3834 2026-10-17T14:28:00Z FATAL notification-svc fatal: heap exhausted while growing messageCache (requested 64MB, max 1536MB)\n#3885 2026-10-17T14:28:22Z INFO notification-svc started notification-svc v4.16.1, pid 1, warming message cache\n#4210 2026-10-17T14:30:56Z FATAL notification-svc JVM terminating after OutOfMemoryError in messageCache.put; heap dump written to /tmp/heap.hprof\n#4270 2026-10-17T14:31:23Z INFO notification-svc started notification-svc v4.16.1, pid 1, warming message cache\n#4626 2026-10-17T14:34:11Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#4686 2026-10-17T14:34:40Z INFO notification-svc started notification-svc v4.16.1, pid 1, warming message cache"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "level": "WARN",
+          "limit": 30
+        },
+        "output": "7 match(es):\n#1883 2026-10-17T14:19:53Z WARN notification-svc circuit breaker for template-svc OPEN: 5 failures in 10s, shedding calls for 15s\n#3834 2026-10-17T14:28:00Z FATAL notification-svc fatal: heap exhausted while growing messageCache (requested 64MB, max 1536MB)\n#3837 2026-10-17T14:28:01Z ERROR notification-svc oom-killer: killed process 1 in notification-svc-1, cgroup memory limit reached (restart 1)\n#4210 2026-10-17T14:30:56Z FATAL notification-svc JVM terminating after OutOfMemoryError in messageCache.put; heap dump written to /tmp/heap.hprof\n#4212 2026-10-17T14:30:57Z ERROR notification-svc container notification-svc-1 killed: OOMKilled (memory limit 2Gi), restart count 2\n#4626 2026-10-17T14:34:11Z FATAL notification-svc java.lang.OutOfMemoryError: Java heap space (at messageCache.put)\n#4629 2026-10-17T14:34:12Z ERROR notification-svc kubelet: notification-svc-0 terminated (reason OOMKilled, exit code 137), restarts=3"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1883,
+          "before": 15,
+          "after": 5
+        },
+        "output": "#1868 2026-10-17T14:19:49Z INFO report-cron scheduler heartbeat: 14 jobs registered, next run in 80s\n#1869 2026-10-17T14:19:49Z INFO api-gateway [t-8378] POST /v1/notify 200 165ms\n#1870 2026-10-17T14:19:49Z INFO redis stats: hits=8985 misses=258 evicted=0 connected_clients=40\n#1871 2026-10-17T14:19:50Z INFO account-svc [t-8379] user u-8296 accepted, calling auth-svc POST /tokens\n#1872 2026-10-17T14:19:50Z INFO auth-svc [t-8379] POST /tokens u-8296 ok 88ms\n#1873 2026-10-17T14:19:50Z INFO edge-proxy [t-8379] POST /login 200 157ms\n#1874 2026-10-17T14:19:50Z INFO notification-svc [t-8382] message m-8298 accepted, calling template-svc POST /render\n#1875 2026-10-17T14:19:50Z INFO template-svc [t-8382] POST /render m-8298 ok 59ms\n#1876 2026-10-17T14:19:50Z INFO api-gateway [t-8382] POST /v1/notify 200 110ms\n#1877 2026-10-17T14:19:51Z INFO notif-worker processed batch of 60 messages from notifications.outbound (lag 355ms)\n#1878 2026-10-17T14:19:51Z INFO notification-svc [t-8383] message m-8299 accepted, calling template-svc POST /render\n#1879 2026-10-17T14:19:51Z INFO api-gateway [t-8383] POST /v1/notify 200 100ms\n#1880 2026-10-17T14:19:52Z INFO analytics-forwarder forwarded 1183 events to analytics-ingest\n#1881 2026-10-17T14:19:52Z INFO notification-svc [t-8384] message m-8302 accepted, calling template-svc POST /render\n#1882 2026-10-17T14:19:53Z INFO api-gateway [t-8384] POST /v1/notify 200 181ms\n#1883 2026-10-17T14:19:53Z WARN notification-svc circuit breaker for template-svc OPEN: 5 failures in 10s, shedding calls for 15s\n#1884 2026-10-17T14:19:54Z INFO notification-svc [t-8388] message m-8303 accepted, calling template-svc POST /render\n#1885 2026-10-17T14:19:54Z INFO api-gateway [t-8388] POST /v1/notify 200 146ms\n#1886 2026-10-17T14:19:54Z DEBUG notification-svc GC pause 20ms (young), heap 35%\n#1887 2026-10-17T14:19:55Z INFO notif-db InnoDB: page cleaner flushed 109 pages, buffer pool hit rate 99.5%\n#1888 2026-10-17T14:19:55Z INFO notif-worker processed batch of 36 messages from notifications.outbound (lag 302ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "since": "14:19:00",
+          "until": "14:21:00",
+          "limit": 40
+        },
+        "output": "57 match(es), showing first 40:\n#1677 2026-10-17T14:19:00Z DEBUG template-svc GC pause 23ms (young), heap 28%\n#1684 2026-10-17T14:19:02Z INFO template-svc [t-8250] POST /render m-8186 ok 29ms\n#1694 2026-10-17T14:19:04Z INFO template-svc [t-8258] POST /render m-8194 ok 83ms\n#1701 2026-10-17T14:19:06Z INFO template-svc [t-8263] POST /render m-8198 ok 68ms\n#1706 2026-10-17T14:19:07Z INFO template-svc [t-8267] POST /render m-8200 ok 45ms\n#1713 2026-10-17T14:19:10Z INFO template-svc [t-8270] POST /render m-8205 ok 84ms\n#1724 2026-10-17T14:19:12Z INFO template-svc [t-8275] POST /render m-8212 ok 82ms\n#1731 2026-10-17T14:19:14Z INFO template-svc [t-8279] POST /render m-8215 ok 39ms\n#1738 2026-10-17T14:19:15Z INFO template-svc [t-8283] POST /render m-8220 ok 28ms\n#1746 2026-10-17T14:19:17Z DEBUG template-svc GC pause 19ms (young), heap 40%\n#1752 2026-10-17T14:19:19Z INFO template-svc [t-8291] POST /render m-8227 ok 87ms\n#1761 2026-10-17T14:19:21Z INFO template-svc [t-8300] POST /render m-8231 ok 40ms\n#1765 2026-10-17T14:19:23Z INFO template-svc [t-8304] POST /render m-8234 ok 83ms\n#1779 2026-10-17T14:19:25Z INFO template-svc [t-8312] POST /render m-8240 ok 36ms\n#1783 2026-10-17T14:19:27Z INFO template-svc [t-8315] POST /render m-8241 ok 32ms\n#1789 2026-10-17T14:19:29Z INFO template-svc [t-8320] POST /render m-8244 ok 62ms\n#1801 2026-10-17T14:19:31Z INFO template-svc [t-8331] POST /render m-8251 ok 49ms\n#1810 2026-10-17T14:19:34Z DEBUG template-svc GC pause 17ms (young), heap 40%\n#1834 2026-10-17T14:19:40Z INFO template-svc [t-8357] POST /render m-8275 ok 70ms\n#1858 2026-10-17T14:19:47Z DEBUG template-svc GC pause 6ms (young), heap 36%\n#1867 2026-10-17T14:19:49Z INFO template-svc [t-8378] POST /render m-8295 ok 36ms\n#1875 2026-10-17T14:19:50Z INFO template-svc [t-8382] POST /render m-8298 ok 59ms\n#1896 2026-10-17T14:19:57Z INFO template-svc [t-8391] POST /render m-8309 ok 45ms\n#1905 2026-10-17T14:19:59Z INFO template-svc [t-8394] POST /render m-8311 ok 24ms\n#1910 2026-10-17T14:20:00Z INFO template-svc [t-8396] POST /render m-8313 ok 73ms\n#1915 2026-10-17T14:20:01Z INFO template-svc [t-8401] POST /render m-8317 ok 76ms\n#1929 2026-10-17T14:20:05Z DEBUG template-svc GC pause 10ms (young), heap 29%\n#1934 2026-10-17T14:20:06Z INFO template-svc [t-8411] POST /render m-8327 ok 23ms\n#1938 2026-10-17T14:20:08Z INFO template-svc [t-8415] POST /render m-8328 ok 49ms\n#1944 2026-10-17T14:20:09Z INFO template-svc [t-8422] POST /render m-8330 ok 79ms\n#1954 2026-10-17T14:20:12Z INFO template-svc [t-8426] POST /render m-8335 ok 58ms\n#1963 2026-10-17T14:20:14Z INFO template-svc [t-8434] POST /render m-8341 ok 89ms\n#1969 2026-10-17T14:20:15Z INFO template-svc [t-8439] POST /render m-8345 ok 60ms\n#1974 2026-10-17T14:20:16Z INFO template-svc [t-8443] POST /render m-8348 ok 80ms\n#1977 2026-10-17T14:20:17Z INFO template-svc [t-8447] POST /render m-8351 ok 28ms\n#1980 2026-10-17T14:20:18Z INFO template-svc [t-8448] POST /render m-8353 ok 87ms\n#1989 2026-10-17T14:20:20Z INFO template-svc [t-8453] POST /render m-8357 ok 38ms\n#1994 2026-10-17T14:20:21Z INFO template-svc [t-8456] POST /render m-8360 ok 36ms\n#1998 2026-10-17T14:20:23Z INFO template-svc [t-8458] POST /render m-8361 ok 59ms\n#2001 2026-10-17T14:20:23Z DEBUG template-svc GC pause 7ms (young), heap 34%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "query": "heap",
+          "limit": 40
+        },
+        "output": "121 match(es), showing first 40:\n#12 2026-10-17T14:12:03Z DEBUG notification-svc GC pause 14ms (young), heap 36%\n#75 2026-10-17T14:12:20Z DEBUG notification-svc GC pause 25ms (young), heap 34%\n#144 2026-10-17T14:12:37Z DEBUG notification-svc GC pause 20ms (young), heap 36%\n#199 2026-10-17T14:12:50Z DEBUG notification-svc GC pause 9ms (young), heap 39%\n#269 2026-10-17T14:13:09Z DEBUG notification-svc GC pause 9ms (young), heap 47%\n#322 2026-10-17T14:13:22Z DEBUG notification-svc GC pause 14ms (young), heap 46%\n#391 2026-10-17T14:13:39Z DEBUG notification-svc GC pause 11ms (young), heap 38%\n#458 2026-10-17T14:13:53Z DEBUG notification-svc GC pause 18ms (young), heap 41%\n#505 2026-10-17T14:14:06Z DEBUG notification-svc GC pause 8ms (young), heap 47%\n#575 2026-10-17T14:14:24Z DEBUG notification-svc GC pause 5ms (young), heap 42%\n#629 2026-10-17T14:14:37Z DEBUG notification-svc GC pause 20ms (young), heap 31%\n#666 2026-10-17T14:14:47Z DEBUG notification-svc GC pause 5ms (young), heap 45%\n#703 2026-10-17T14:14:57Z DEBUG notification-svc GC pause 20ms (young), heap 32%\n#765 2026-10-17T14:15:12Z DEBUG notification-svc GC pause 12ms (young), heap 30%\n#806 2026-10-17T14:15:24Z DEBUG notification-svc GC pause 19ms (young), heap 36%\n#868 2026-10-17T14:15:38Z DEBUG notification-svc GC pause 4ms (young), heap 36%\n#940 2026-10-17T14:15:57Z DEBUG notification-svc GC pause 16ms (young), heap 39%\n#1003 2026-10-17T14:16:13Z DEBUG notification-svc GC pause 9ms (young), heap 31%\n#1072 2026-10-17T14:16:29Z DEBUG notification-svc GC pause 14ms (young), heap 30%\n#1122 2026-10-17T14:16:41Z DEBUG notification-svc GC pause 18ms (young), heap 38%\n#1189 2026-10-17T14:16:58Z DEBUG notification-svc GC pause 13ms (young), heap 30%\n#1255 2026-10-17T14:17:13Z DEBUG notification-svc GC pause 11ms (young), heap 44%\n#1304 2026-10-17T14:17:25Z DEBUG notification-svc GC pause 12ms (young), heap 41%\n#1374 2026-10-17T14:17:42Z DEBUG notification-svc GC pause 24ms (young), heap 43%\n#1423 2026-10-17T14:17:55Z DEBUG notification-svc GC pause 7ms (young), heap 34%\n#1474 2026-10-17T14:18:09Z DEBUG notification-svc GC pause 8ms (young), heap 39%\n#1530 2026-10-17T14:18:23Z DEBUG notification-svc GC pause 8ms (young), heap 45%\n#1571 2026-10-17T14:18:33Z DEBUG notification-svc GC pause 5ms (young), heap 46%\n#1627 2026-10-17T14:18:48Z DEBUG notification-svc GC pause 18ms (young), heap 34%\n#1688 2026-10-17T14:19:03Z DEBUG notification-svc GC pause 6ms (young), heap 47%\n#1748 2026-10-17T14:19:18Z DEBUG notification-svc GC pause 20ms (young), heap 32%\n#1798 2026-10-17T14:19:30Z DEBUG notification-svc GC pause 22ms (young), heap 36%\n#1844 2026-10-17T14:19:42Z DEBUG notification-svc GC pause 10ms (young), heap 46%\n#1886 2026-10-17T14:19:54Z DEBUG notification-svc GC pause 20ms (young), heap 35%\n#1930 2026-10-17T14:20:05Z DEBUG notification-svc GC pause 13ms (young), heap 30%\n#1988 2026-10-17T14:20:20Z DEBUG notification-svc GC pause 8ms (young), heap 34%\n#2040 2026-10-17T14:20:31Z DEBUG notification-svc GC pause 6ms (young), heap 42%\n#2112 2026-10-17T14:20:49Z DEBUG notification-svc GC pause 18ms (young), heap 40%\n#2155 2026-10-17T14:20:59Z DEBUG notification-svc GC pause 25ms (young), heap 37%\n#2230 2026-10-17T14:21:17Z DEBUG notification-svc GC pause 22ms (young), heap 36%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 20
+        },
+        "output": "18 match(es):\n#2000 2026-10-17T14:20:23Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2403 2026-10-17T14:22:00Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2612 2026-10-17T14:22:49Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2925 2026-10-17T14:24:07Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3267 2026-10-17T14:25:28Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3350 2026-10-17T14:25:48Z INFO notif-worker deploy: rolling out notif-worker v1.2.6 (build 675f2cd)\n#3521 2026-10-17T14:26:31Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3784 2026-10-17T14:27:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4000 2026-10-17T14:29:16Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4143 2026-10-17T14:30:24Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4252 2026-10-17T14:31:14Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4385 2026-10-17T14:32:14Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4539 2026-10-17T14:33:31Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4701 2026-10-17T14:34:48Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4810 2026-10-17T14:35:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4947 2026-10-17T14:36:46Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#5125 2026-10-17T14:38:09Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#5298 2026-10-17T14:39:40Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 3834,
+          "before": 25,
+          "after": 3
+        },
+        "output": "#3809 2026-10-17T14:27:52Z INFO api-gateway [t-9669] POST /v1/notify 200 145ms\n#3810 2026-10-17T14:27:53Z INFO status-poller poll cycle complete: 27 targets checked in 806ms\n#3811 2026-10-17T14:27:53Z INFO account-svc [t-9673] user u-9313 accepted, calling auth-svc POST /tokens\n#3812 2026-10-17T14:27:53Z INFO notification-svc [t-9676] message m-9316 accepted, calling template-svc POST /render\n#3813 2026-10-17T14:27:53Z INFO edge-proxy [t-9673] POST /login 200 91ms\n#3814 2026-10-17T14:27:54Z INFO api-gateway [t-9676] POST /v1/notify 200 150ms\n#3815 2026-10-17T14:27:55Z DEBUG api-gateway upstream health: notification-svc ok, template-svc ok\n#3816 2026-10-17T14:27:55Z INFO notification-svc [t-9677] message m-9317 accepted, calling template-svc POST /render\n#3817 2026-10-17T14:27:55Z INFO template-svc [t-9677] POST /render m-9317 ok 45ms\n#3818 2026-10-17T14:27:55Z INFO api-gateway [t-9677] POST /v1/notify 200 160ms\n#3819 2026-10-17T14:27:56Z INFO notif-worker processed batch of 54 messages from notifications.outbound (lag 215ms)\n#3820 2026-10-17T14:27:56Z INFO notification-svc [t-9681] message m-9320 accepted, calling template-svc POST /render\n#3821 2026-10-17T14:27:56Z INFO template-svc [t-9681] POST /render m-9320 ok 49ms\n#3822 2026-10-17T14:27:56Z INFO api-gateway [t-9681] POST /v1/notify 200 121ms\n#3823 2026-10-17T14:27:56Z INFO notification-svc [t-9685] message m-9322 accepted, calling template-svc POST /render\n#3824 2026-10-17T14:27:57Z INFO template-svc [t-9685] POST /render m-9322 ok 85ms\n#3825 2026-10-17T14:27:57Z INFO api-gateway [t-9685] POST /v1/notify 200 154ms\n#3826 2026-10-17T14:27:57Z INFO analytics-forwarder forwarded 2126 events to analytics-ingest\n#3827 2026-10-17T14:27:57Z INFO notification-svc [t-9688] message m-9325 accepted, calling template-svc POST /render\n#3828 2026-10-17T14:27:57Z DEBUG account-svc GC pause 16ms (young), heap 36%\n#3829 2026-10-17T14:27:57Z INFO template-svc [t-9688] POST /render m-9325 ok 87ms\n#3830 2026-10-17T14:27:58Z INFO api-gateway [t-9688] POST /v1/notify 200 168ms\n#3831 2026-10-17T14:27:59Z INFO notification-svc [t-9692] message m-9327 accepted, calling template-svc POST /render\n#3832 2026-10-17T14:27:59Z INFO notif-db InnoDB: page cleaner flushed 558 pages, buffer pool hit rate 98.8%\n#3833 2026-10-17T14:27:59Z INFO api-gateway [t-9692] POST /v1/notify 200 165ms\n#3834 2026-10-17T14:28:00Z FATAL notification-svc fatal: heap exhausted while growing messageCache (requested 64MB, max 1536MB)\n#3835 2026-10-17T14:28:00Z INFO redis stats: hits=10929 misses=851 evicted=0 connected_clients=30\n#3836 2026-10-17T14:28:00Z INFO notif-worker processed batch of 34 messages from notifications.outbound (lag 343ms)\n#3837 2026-10-17T14:28:01Z ERROR notification-svc oom-killer: killed process 1 in notification-svc-1, cgroup memory limit reached (restart 1)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.82,
+              "evidenceLines": [
+                3834,
+                3837,
+                4210,
+                4212,
+                4626,
+                4629,
+                3930,
+                4154
+              ],
+              "reasoning": "notification-svc (v4.16.1) runs out of heap while growing an unbounded messageCache: 'heap exhausted while growing messageCache (requested 64MB, max 1536MB)' at #3834, followed by the OOM-killer restarting the process (#3837). The pod is then OOMKilled again at #4212 and #4629 (restarts=3), and each restart re-warms the cache and dies again. While the process is down or restarting, api-gateway's POST /v1/notify calls fail with 502 'upstream notification-svc connection reset (no healthy upstream)' (#3930, #4154, and later), which is the paged symptom. Heap was steady at 30-47% through 14:21 (DEBUG GC lines), so growth was steady and cumulative, not a sudden spike. The template-svc circuit-breaker trip at #1883 was brief and template-svc recovered immediately, so it is not the origin. Red herrings: the report-cron pandas ModuleNotFoundError (#2000), the account-svc status_v2 column errors (#3587, #3788), and the legacy-inventory timeouts in status-poller are real faults but do not touch the notify path. The 429 throttle on k-7148 (#3962) is client-side rate limiting, not the 502 source.",
+              "hypothesis_note": "The root cause is an unbounded or under-evicted messageCache in notification-svc, inside a 2Gi container limit."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.2,
+              "evidenceLines": [
+                3350
+              ],
+              "reasoning": "A notif-worker v1.2.6 rollout appears at #3350, but it is a worker, not the notify request path, and the OOM is in notification-svc. Not supported as the origin unless the notification-svc v4.16.1 release also changed the cache policy, which the logs do not show."
+            }
+          ],
+          "recommendedAction": "Immediately mitigate by scaling notification-svc or raising the memory limit so restarts stop, and by capping messageCache size or enabling eviction (roll back to the prior cache configuration if v4.16.1 changed it). Review the /tmp/heap.hprof heap dump to confirm what is retained. Separately, fix the report-cron image missing pandas, the account-svc status_v2 column mismatch on accounts-db, and the deprecated legacy-inventory healthcheck in status-poller."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 7,
+    "toolCalls": 11,
+    "usage": {
+      "inputTokens": 16,
+      "outputTokens": 2494,
+      "cacheReadTokens": 76867,
+      "cacheWriteTokens": 22036
+    },
+    "durationMs": 13210,
+    "stopReason": "tool_use"
+  }
+}

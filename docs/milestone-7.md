@@ -66,6 +66,8 @@ Each is a function that takes the scenario's `Ctx` and is switched on by version
 | Concurrent incident | off | off | on |
 | Haystack size (lines) | ~1,500 | ~2,500 | ~4,000 |
 
+This is the table as planned. T6 changed it: see the table in T6's notes for the final settings.
+
 **Quiet causes.** The originating lines (the release, the config reload, the lock holder, the restore) are emitted at INFO or DEBUG instead of WARN or ERROR, and there are fewer of them (1–2). Downstream symptoms keep their levels, so the trail is still there, but `level: WARN` no longer lands on the cause. Each scenario declares which of its cause lines can be quieted, because some causes are inherently loud: an OOM kill stays FATAL.
 
 **Paraphrased evidence.** The direct-failure lines that are evidence (query timeouts, refused connections, duplicate keys) cycle through 2–4 realistic message variants from different code paths and libraries. One substring search finds some of them; getting the recall needs a second query, `get_context`, or `correlate_trace`.
@@ -119,8 +121,8 @@ Do these in order. Each one ends with `npm test` and `npm run typecheck` passing
 | T2. Quiet causes and paraphrased evidence | Done | 60e1f8a |
 | T3. Loud decoys | Done | c3e7876 |
 | T4. Concurrent incidents and the `secondary` role | Done | 91630ba |
-| T5. Long haystacks, fairness checks, baseline ceiling | Done | |
-| T6. Pilot and calibrate on the v2 dev set | Not started | |
+| T5. Long haystacks, fairness checks, baseline ceiling | Done | 6a25997 |
+| T6. Pilot and calibrate on the v2 dev set | Done (band missed) | |
 | T7. Model matrix and repeats on the v2 test set | Not started | |
 | T8. Write-up, site update, deploy | Not started | |
 
@@ -206,6 +208,36 @@ Decisions made while building it:
 
 **Done when:** Opus medium top-1 on v2 dev is in the 65–85% band, budget exhaustion is under 15%, and the pilot log is committed.
 
+Done, with the band **missed**: Opus medium is at 94% top-1 (100% lenient) on the hard tier of v2 dev. Two rounds and $1.75 of pilots, all in [`results/DATASET-V2.md`](../results/DATASET-V2.md). Budget exhaustion is 0% in every run. The test set's manifest is regenerated from the final settings.
+
+- **Round 1 (T5 settings):** Haiku low 98% top-1, 100% lenient. The traces show why: the alert gives the onset time, and a few-minute `since`/`until` search on the paged service finds the quiet cause no matter how big the haystack is. Chronic decoys are ruled out because they predate the fault. Median 6 tool calls out of 40. No settings change could help, because hard already had every feature on. Opus was not run.
+- **Design change (agreed before building):** bait that lines up with the fault in time, so classification and not just search has to do the work.
+  - **Timed decoys** (`src/generator/decoys.ts`): the same error floods, starting just after the fault's first cause line, on a service no failing request's trace touches.
+  - **Lookalike events** (`src/generator/lookalikes.ts`): one harmless event on the paged path, 2–6 minutes before the fault, mimicking a confusable category. Eight kinds: an app deploy, a config reload, a heap warning that GC clears, one slow call, a circuit breaker that flaps closed, a provider status notice for another region, one redelivered message, an online index migration. Each is followed by healthy traffic, labeled `herring`, and never the root cause or an acceptable answer.
+  - **The concurrent incident** now runs at medium too.
+  - **Generator tests** for each: timed decoys start after the fault's first evidence line and within 3 minutes of its first failure, and share no trace with the failing path. Lookalikes sit on the paged topology, lead the fault by 1–6.5 minutes, have at least 3 healthy lines on their service before the fault, stay below ERROR, and never mimic an answer.
+- **Round 2:** Haiku low 94% top-1, 94% lenient (hard 88%). Opus medium was run on the 16 hard incidents only: 94% top-1, 100% lenient, $1.38. On top-1 that's 15 vs 14 of 16, inside run-to-run noise. Haiku took the bait rarely: it picked a lookalike's category in 2 of 24, cited a timed decoy in 0 of 32, and cited the second fault in 1 of 32. Opus took none of it. The models follow the failing request's chain and ignore whatever isn't on it.
+- **Stopped after round 2** rather than three rounds. Round 3 could only change settings, and hard already has everything on.
+
+Final feature table:
+
+| Feature | easy | medium | hard |
+| --- | --- | --- | --- |
+| Quiet causes | off | half the scenarios | all scenarios |
+| Paraphrased evidence | 2 phrasings | 3 | 4 |
+| Loud decoys | 1 chronic | 1 timed | 1 chronic + 1 timed |
+| Lookalike event | off | half the scenarios (the other half) | all scenarios |
+| Concurrent incident | off | on | on |
+| Volume factor (mean lines) | 8 (~1,500) | 5.5 (~2,550) | 10.5 (~4,500) |
+
+Decisions made while building it:
+
+- **Volume rebalanced** (medium 10 → 5.5, hard 7 → 10.5). The second fault at medium brings its own background traffic, taken at the medium density, which also feeds hard's second fault. Sizes stay on target.
+- **Reachability looks back 5 minutes**, not 1, per service before any loud line. The denser medium logs pushed one quiet memory-leak line (h-007) out of `get_context` range of its OOM. The pilot agents search 5–13 minute windows routinely, so a 5-minute lead-up is still a label-free query, and the 200-result cap still applies.
+- **Keyword baseline:** 10% top-1 on the regenerated v2 dev (`results/runs/2026-11-15_baseline-keywords_v2-dev_r2`). Citing every ERROR line gets 11% precision, against 32% on v1.
+
+What this means for T7 and T8: v2 is unlikely to separate models on top-1. What it can separate them on is evidence precision and recall, herrings cited, cost and latency, plus top-1 on the hard tier, reported with its interval. T7 runs as planned. The write-up states plainly that the calibration target was missed and why.
+
 ### T7. Model matrix and repeats on the v2 test set
 
 - Runs, ordered so no two share prompt cache (same rule as Phase 5): Haiku low, Sonnet low, Opus low, Opus medium; optionally Haiku and Sonnet medium.
@@ -232,8 +264,8 @@ Decisions made while building it:
 
 ## Open questions
 
-1. **Calibration band.** 65–85% for Opus medium leaves room both ways. Is a harder target, like 50–70%, more useful for separating models, at the risk of a set that mostly measures budget exhaustion?
-2. **Budgets.** Keeping v1's budgets makes v1 and v2 comparable, but long haystacks may make budget the binding constraint. Alternative: raise budgets for v2 and report both.
+1. **Calibration band.** 65–85% for Opus medium leaves room both ways. Is a harder target, like 50–70%, more useful for separating models, at the risk of a set that mostly measures budget exhaustion? *Answered at T6: even 65–85% was out of reach. Two rounds of features left Opus medium at 94% on the hard tier, with no budget exhaustion. Fair synthetic bait doesn't defeat these models on diagnosis.*
+2. **Budgets.** Keeping v1's budgets makes v1 and v2 comparable, but long haystacks may make budget the binding constraint. Alternative: raise budgets for v2 and report both. *Answered at T6: keep v1's budgets. They never bound in any pilot (median 6 tool calls, maximum 19, out of 40).*
 3. **Concurrent incidents and scoring.** This spec only reports `secondaryCited`. Should citing the secondary fault's cause lines in the top hypothesis count against the agent the way a herring does?
 4. **Effort levels.** The matrix keeps `low` and `medium`. On harder incidents, `high` may now matter for Opus and Sonnet. Add Opus high (~$5+) if the budget allows?
 5. **Prompt v4.** If v3 does badly on v2, is tuning a v4 on the v2 dev set the next phase, or should the comparison stay "one fixed prompt, many models"?

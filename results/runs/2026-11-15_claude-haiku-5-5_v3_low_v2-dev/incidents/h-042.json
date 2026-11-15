@@ -1,0 +1,236 @@
+{
+  "score": {
+    "incidentId": "h-042",
+    "difficulty": "easy",
+    "scenario": "resource_exhaustion/db-disk-full",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 6,
+      "precision": 0.8571428571428571,
+      "recall": 1,
+      "f1": 0.923076923076923
+    },
+    "herringsCited": 0,
+    "costUsd": 0.00552387,
+    "durationMs": 18787,
+    "iterations": 9,
+    "toolCalls": 13,
+    "tokens": {
+      "input": 20,
+      "output": 3657,
+      "cacheRead": 107937,
+      "cacheWrite": 20912
+    }
+  },
+  "result": {
+    "incidentId": "h-042",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.85,
+          "evidenceLines": [
+            716,
+            792,
+            1029,
+            1043,
+            1133,
+            1140,
+            1106
+          ],
+          "reasoning": "notif-db's /var/lib/mysql volume filled up. Disk usage was 95% at 16:43:49 (#716, WAL/binlog growing ~765MB/h) and 99% at 16:44:54 (#792). InnoDB then failed writes with 'No space left on device' (#1029, #1133), and notification-svc's inserts failed with error 1114 'table is full' (#1043, #1140). Those failed writes surfaced at api-gateway as POST /v1/notify 500s (#1106), which is the alert. The gateway errors are downstream; the fault is the full disk. Reads stay healthy because they do not write. The specific trigger for the WAL/binlog growth was not found in the logs (no long transaction, retention or flag change appeared), so the origin of the growth is unconfirmed."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.1,
+          "evidenceLines": [
+            1106,
+            1281,
+            1417,
+            1600
+          ],
+          "reasoning": "Gateway latency climbing from about 9.7s to about 26s could look like retry amplification. But the 500s come from notification-svc's DB writes failing on the full disk, and no retry storm appears in the logs. Treat this as a secondary effect of the disk fill, not the origin."
+        }
+      ],
+      "recommendedAction": "Immediately free space on notif-db's /var/lib/mysql volume: purge or archive old binlogs and WAL files, or extend the volume. Then verify notification-svc writes recover and the gateway 500 rate returns to baseline. Find out what drives the roughly 650-765MB/h WAL/binlog growth (recent writers to notifications, retention settings, binlog expiry) so the disk does not refill. Separately, billing-reconciler is skipping invoice_archive rows on checksum violations in 2019 partitions. That is a data_integrity issue to triage on its own and does not affect the notify path."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "20 match(es):\n#375 2026-11-09T16:39:13Z ERROR billing-reconciler invoice_archive row inv-829886 violates checksum constraint, skipping (archive partition 2019-Q2)\n#609 2026-11-09T16:42:22Z ERROR billing-reconciler invoice_archive row inv-206406 violates checksum constraint, skipping (archive partition 2019-Q1)\n#716 2026-11-09T16:43:49Z WARN notif-db disk usage 95% on /var/lib/mysql (WAL/binlog growth 765MB/h)\n#721 2026-11-09T16:43:53Z ERROR billing-reconciler invoice_archive row inv-860809 violates checksum constraint, skipping (archive partition 2019-Q3)\n#792 2026-11-09T16:44:54Z WARN notif-db disk usage 99% on /var/lib/mysql (WAL/binlog growth 644MB/h)\n#837 2026-11-09T16:45:29Z ERROR billing-reconciler invoice_archive row inv-898489 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1029 2026-11-09T16:48:03Z ERROR notif-db [ERROR] [MY-012639] InnoDB: Write to file ./notifications.ibd failed: No space left on device\n#1043 2026-11-09T16:48:19Z ERROR notification-svc [t-2809] insert into notifications failed for m-5828: error 1114: The table is full\n#1076 2026-11-09T16:48:56Z ERROR billing-reconciler invoice_archive row inv-996801 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1106 2026-11-09T16:49:20Z ERROR api-gateway [t-2833] POST /v1/notify 500 9763ms: upstream notification-svc returned 500 Internal Server Error\n#1133 2026-11-09T16:49:49Z ERROR notif-db [ERROR] [MY-012639] InnoDB: Write to file ./notifications.ibd failed: No space left on device\n#1140 2026-11-09T16:49:52Z ERROR notification-svc [t-2845] could not save message m-5857: database rejected the write (table full)\n#1176 2026-11-09T16:50:27Z ERROR billing-reconciler invoice_archive row inv-894423 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1281 2026-11-09T16:52:21Z ERROR api-gateway [t-2891] POST /v1/notify 500 25932ms: upstream notification-svc returned 500 Internal Server Error\n#1362 2026-11-09T16:53:51Z ERROR billing-reconciler invoice_archive row inv-135230 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1417 2026-11-09T16:54:46Z ERROR api-gateway [t-2935] POST /v1/notify 500 19115ms: upstream notification-svc returned 500 Internal Server Error\n#1473 2026-11-09T16:55:45Z ERROR billing-reconciler invoice_archive row inv-338124 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1599 2026-11-09T16:58:02Z ERROR billing-reconciler invoice_archive row inv-918260 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1600 2026-11-09T16:58:03Z ERROR api-gateway [t-2997] POST /v1/notify 500 13563ms: upstream notification-svc returned 500 Internal Server Error\n#1729 2026-11-09T17:00:10Z ERROR billing-reconciler invoice_archive row inv-117530 violates checksum constraint, skipping (archive partition 2019-Q4)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "billing-reconciler",
+          "limit": 30
+        },
+        "output": "134 match(es), showing first 30:\n#11 2026-11-09T16:34:09Z INFO billing-reconciler reconciled 492 current-period invoices, 0 discrepancies\n#25 2026-11-09T16:34:23Z INFO billing-reconciler reconciled 328 current-period invoices, 0 discrepancies\n#39 2026-11-09T16:34:32Z INFO billing-reconciler reconciled 1137 current-period invoices, 0 discrepancies\n#57 2026-11-09T16:34:45Z INFO billing-reconciler reconciled 902 current-period invoices, 0 discrepancies\n#70 2026-11-09T16:34:56Z INFO billing-reconciler reconciled 326 current-period invoices, 0 discrepancies\n#90 2026-11-09T16:35:14Z INFO billing-reconciler reconciled 588 current-period invoices, 0 discrepancies\n#112 2026-11-09T16:35:32Z INFO billing-reconciler reconciled 1056 current-period invoices, 0 discrepancies\n#134 2026-11-09T16:35:49Z INFO billing-reconciler reconciled 388 current-period invoices, 0 discrepancies\n#147 2026-11-09T16:36:00Z INFO billing-reconciler reconciled 919 current-period invoices, 0 discrepancies\n#168 2026-11-09T16:36:17Z INFO billing-reconciler reconciled 875 current-period invoices, 0 discrepancies\n#181 2026-11-09T16:36:30Z INFO billing-reconciler reconciled 1151 current-period invoices, 0 discrepancies\n#201 2026-11-09T16:36:48Z INFO billing-reconciler reconciled 1032 current-period invoices, 0 discrepancies\n#219 2026-11-09T16:37:02Z INFO billing-reconciler reconciled 722 current-period invoices, 0 discrepancies\n#243 2026-11-09T16:37:18Z INFO billing-reconciler reconciled 582 current-period invoices, 0 discrepancies\n#258 2026-11-09T16:37:34Z INFO billing-reconciler reconciled 1019 current-period invoices, 0 discrepancies\n#279 2026-11-09T16:37:51Z INFO billing-reconciler reconciled 675 current-period invoices, 0 discrepancies\n#298 2026-11-09T16:38:09Z INFO billing-reconciler reconciled 898 current-period invoices, 0 discrepancies\n#318 2026-11-09T16:38:28Z INFO billing-reconciler reconciled 523 current-period invoices, 0 discrepancies\n#330 2026-11-09T16:38:37Z INFO billing-reconciler reconciled 329 current-period invoices, 0 discrepancies\n#347 2026-11-09T16:38:51Z INFO billing-reconciler reconciled 1177 current-period invoices, 0 discrepancies\n#362 2026-11-09T16:39:03Z INFO billing-reconciler reconciled 498 current-period invoices, 0 discrepancies\n#375 2026-11-09T16:39:13Z ERROR billing-reconciler invoice_archive row inv-829886 violates checksum constraint, skipping (archive partition 2019-Q2)\n#380 2026-11-09T16:39:17Z INFO billing-reconciler reconciled 868 current-period invoices, 0 discrepancies\n#403 2026-11-09T16:39:33Z INFO billing-reconciler reconciled 541 current-period invoices, 0 discrepancies\n#428 2026-11-09T16:39:51Z INFO billing-reconciler reconciled 573 current-period invoices, 0 discrepancies\n#440 2026-11-09T16:40:01Z INFO billing-reconciler reconciled 961 current-period invoices, 0 discrepancies\n#447 2026-11-09T16:40:08Z INFO billing-reconciler reconciled 764 current-period invoices, 0 discrepancies\n#460 2026-11-09T16:40:18Z INFO billing-reconciler reconciled 1063 current-period invoices, 0 discrepancies\n#477 2026-11-09T16:40:32Z INFO billing-reconciler reconciled 344 current-period invoices, 0 discrepancies\n#495 2026-11-09T16:40:48Z INFO billing-reconciler reconciled 567 current-period invoices, 0 discrepancies"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-db",
+          "limit": 60
+        },
+        "output": "107 match(es), showing first 60:\n#1 2026-11-09T16:34:00Z INFO notif-db InnoDB: page cleaner flushed 697 pages, buffer pool hit rate 99.8%\n#17 2026-11-09T16:34:15Z INFO notif-db InnoDB: page cleaner flushed 154 pages, buffer pool hit rate 98.9%\n#38 2026-11-09T16:34:31Z INFO notif-db InnoDB: page cleaner flushed 447 pages, buffer pool hit rate 99.5%\n#56 2026-11-09T16:34:44Z INFO notif-db InnoDB: page cleaner flushed 689 pages, buffer pool hit rate 98.9%\n#75 2026-11-09T16:35:01Z INFO notif-db InnoDB: page cleaner flushed 409 pages, buffer pool hit rate 98.5%\n#94 2026-11-09T16:35:17Z INFO notif-db InnoDB: page cleaner flushed 547 pages, buffer pool hit rate 99.3%\n#118 2026-11-09T16:35:36Z INFO notif-db InnoDB: page cleaner flushed 839 pages, buffer pool hit rate 98.6%\n#135 2026-11-09T16:35:49Z INFO notif-db InnoDB: page cleaner flushed 215 pages, buffer pool hit rate 99.3%\n#152 2026-11-09T16:36:05Z INFO notif-db InnoDB: page cleaner flushed 628 pages, buffer pool hit rate 99.6%\n#169 2026-11-09T16:36:19Z INFO notif-db InnoDB: page cleaner flushed 315 pages, buffer pool hit rate 98.5%\n#185 2026-11-09T16:36:31Z INFO notif-db InnoDB: page cleaner flushed 138 pages, buffer pool hit rate 98.8%\n#203 2026-11-09T16:36:49Z INFO notif-db InnoDB: page cleaner flushed 444 pages, buffer pool hit rate 98.7%\n#218 2026-11-09T16:37:02Z INFO notif-db InnoDB: page cleaner flushed 747 pages, buffer pool hit rate 98.9%\n#236 2026-11-09T16:37:14Z INFO notif-db InnoDB: page cleaner flushed 862 pages, buffer pool hit rate 98.9%\n#249 2026-11-09T16:37:25Z INFO notif-db InnoDB: page cleaner flushed 435 pages, buffer pool hit rate 99%\n#268 2026-11-09T16:37:44Z INFO notif-db InnoDB: page cleaner flushed 706 pages, buffer pool hit rate 98.6%\n#294 2026-11-09T16:38:04Z INFO notif-db InnoDB: page cleaner flushed 792 pages, buffer pool hit rate 98.9%\n#307 2026-11-09T16:38:17Z INFO notif-db InnoDB: page cleaner flushed 701 pages, buffer pool hit rate 98.7%\n#320 2026-11-09T16:38:29Z INFO notif-db InnoDB: page cleaner flushed 780 pages, buffer pool hit rate 99.5%\n#341 2026-11-09T16:38:46Z INFO notif-db InnoDB: page cleaner flushed 570 pages, buffer pool hit rate 99%\n#367 2026-11-09T16:39:06Z INFO notif-db InnoDB: page cleaner flushed 642 pages, buffer pool hit rate 99.5%\n#392 2026-11-09T16:39:25Z INFO notif-db InnoDB: page cleaner flushed 103 pages, buffer pool hit rate 98.6%\n#414 2026-11-09T16:39:41Z INFO notif-db InnoDB: page cleaner flushed 531 pages, buffer pool hit rate 98.9%\n#436 2026-11-09T16:39:56Z INFO notif-db InnoDB: page cleaner flushed 657 pages, buffer pool hit rate 99.2%\n#449 2026-11-09T16:40:10Z INFO notif-db InnoDB: page cleaner flushed 426 pages, buffer pool hit rate 99.7%\n#470 2026-11-09T16:40:27Z INFO notif-db InnoDB: page cleaner flushed 173 pages, buffer pool hit rate 99.7%\n#485 2026-11-09T16:40:42Z INFO notif-db InnoDB: page cleaner flushed 362 pages, buffer pool hit rate 99.4%\n#507 2026-11-09T16:40:57Z INFO notif-db InnoDB: page cleaner flushed 748 pages, buffer pool hit rate 99.5%\n#524 2026-11-09T16:41:09Z INFO notif-db InnoDB: page cleaner flushed 414 pages, buffer pool hit rate 99.9%\n#538 2026-11-09T16:41:22Z INFO notif-db InnoDB: page cleaner flushed 345 pages, buffer pool hit rate 98.8%\n#550 2026-11-09T16:41:34Z INFO notif-db InnoDB: page cleaner flushed 757 pages, buffer pool hit rate 99.9%\n#569 2026-11-09T16:41:51Z INFO notif-db InnoDB: page cleaner flushed 390 pages, buffer pool hit rate 98.6%\n#594 2026-11-09T16:42:11Z INFO notif-db InnoDB: page cleaner flushed 742 pages, buffer pool hit rate 98.5%\n#615 2026-11-09T16:42:25Z INFO notif-db InnoDB: page cleaner flushed 199 pages, buffer pool hit rate 98.5%\n#631 2026-11-09T16:42:37Z INFO notif-db InnoDB: page cleaner flushed 195 pages, buffer pool hit rate 98.6%\n#649 2026-11-09T16:42:54Z INFO notif-db InnoDB: page cleaner flushed 477 pages, buffer pool hit rate 98.9%\n#669 2026-11-09T16:43:10Z INFO notif-db InnoDB: page cleaner flushed 371 pages, buffer pool hit rate 99.6%\n#689 2026-11-09T16:43:27Z INFO notif-db InnoDB: page cleaner flushed 399 pages, buffer pool hit rate 99.6%\n#714 2026-11-09T16:43:46Z INFO notif-db InnoDB: page cleaner flushed 511 pages, buffer pool hit rate 99%\n#716 2026-11-09T16:43:49Z WARN notif-db disk usage 95% on /var/lib/mysql (WAL/binlog growth 765MB/h)\n#735 2026-11-09T16:44:03Z INFO notif-db InnoDB: page cleaner flushed 523 pages, buffer pool hit rate 99.9%\n#754 2026-11-09T16:44:20Z INFO notif-db InnoDB: page cleaner flushed 650 pages, buffer pool hit rate 99.2%\n#775 2026-11-09T16:44:39Z INFO notif-db InnoDB: page cleaner flushed 692 pages, buffer pool hit rate 98.5%\n#792 2026-11-09T16:44:54Z WARN notif-db disk usage 99% on /var/lib/mysql (WAL/binlog growth 644MB/h)\n#800 2026-11-09T16:44:59Z INFO notif-db InnoDB: page cleaner flushed 265 pages, buffer pool hit rate 99.3%\n#812 2026-11-09T16:45:11Z INFO notif-db InnoDB: page cleaner flushed 865 pages, buffer pool hit rate 98.7%\n#838 2026-11-09T16:45:30Z INFO notif-db InnoDB: page cleaner flushed 588 pages, buffer pool hit rate 99.9%\n#858 2026-11-09T16:45:44Z INFO notif-db InnoDB: page cleaner flushed 892 pages, buffer pool hit rate 99.9%\n#878 2026-11-09T16:46:01Z INFO notif-db InnoDB: page cleaner flushed 533 pages, buffer pool hit rate 99.6%\n#899 2026-11-09T16:46:15Z INFO notif-db InnoDB: page cleaner flushed 135 pages, buffer pool hit rate 98.8%\n#921 2026-11-09T16:46:33Z INFO notif-db InnoDB: page cleaner flushed 130 pages, buffer pool hit rate 98.6%\n#946 2026-11-09T16:46:52Z INFO notif-db InnoDB: page cleaner flushed 386 pages, buffer pool hit rate 99.3%\n#962 2026-11-09T16:47:04Z INFO notif-db InnoDB: page cleaner flushed 249 pages, buffer pool hit rate 98.7%\n#984 2026-11-09T16:47:24Z INFO notif-db InnoDB: page cleaner flushed 236 pages, buffer pool hit rate 99.3%\n#1006 2026-11-09T16:47:40Z INFO notif-db InnoDB: page cleaner flushed 413 pages, buffer pool hit rate 99%\n#1022 2026-11-09T16:47:57Z INFO notif-db InnoDB: page cleaner flushed 127 pages, buffer pool hit rate 98.8%\n#1029 2026-11-09T16:48:03Z ERROR notif-db [ERROR] [MY-012639] InnoDB: Write to file ./notifications.ibd failed: No space left on device\n#1034 2026-11-09T16:48:11Z INFO notif-db InnoDB: page cleaner flushed 122 pages, buffer pool hit rate 98.9%\n#1049 2026-11-09T16:48:28Z INFO notif-db InnoDB: page cleaner flushed 139 pages, buffer pool hit rate 99.2%\n#1067 2026-11-09T16:48:46Z INFO notif-db InnoDB: page cleaner flushed 544 pages, buffer pool hit rate 99.1%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "flag-sync",
+          "limit": 40
+        },
+        "output": "124 match(es), showing first 40:\n#6 2026-11-09T16:34:05Z INFO flag-sync synced 101 feature flags from flag service (etag 08cfacf)\n#29 2026-11-09T16:34:24Z INFO flag-sync synced 86 feature flags from flag service (etag 7bbeae3)\n#47 2026-11-09T16:34:39Z INFO flag-sync synced 89 feature flags from flag service (etag 5f35d71)\n#68 2026-11-09T16:34:56Z INFO flag-sync synced 84 feature flags from flag service (etag 9930bb9)\n#89 2026-11-09T16:35:13Z INFO flag-sync synced 104 feature flags from flag service (etag ad5dbf4)\n#99 2026-11-09T16:35:23Z INFO flag-sync synced 67 feature flags from flag service (etag 7cec25b)\n#116 2026-11-09T16:35:34Z INFO flag-sync synced 123 feature flags from flag service (etag 1aa78dc)\n#132 2026-11-09T16:35:48Z INFO flag-sync synced 96 feature flags from flag service (etag 6722300)\n#146 2026-11-09T16:36:00Z INFO flag-sync synced 109 feature flags from flag service (etag 5067330)\n#161 2026-11-09T16:36:11Z INFO flag-sync synced 68 feature flags from flag service (etag 19d3db2)\n#180 2026-11-09T16:36:30Z INFO flag-sync synced 117 feature flags from flag service (etag f04a4a2)\n#196 2026-11-09T16:36:43Z INFO flag-sync synced 106 feature flags from flag service (etag 8f95e9b)\n#217 2026-11-09T16:37:01Z INFO flag-sync synced 101 feature flags from flag service (etag 55f40b7)\n#238 2026-11-09T16:37:16Z INFO flag-sync synced 79 feature flags from flag service (etag d648de2)\n#257 2026-11-09T16:37:32Z INFO flag-sync synced 101 feature flags from flag service (etag 17b7a66)\n#277 2026-11-09T16:37:51Z INFO flag-sync synced 95 feature flags from flag service (etag 263d319)\n#286 2026-11-09T16:37:58Z INFO flag-sync synced 89 feature flags from flag service (etag 238cd8c)\n#297 2026-11-09T16:38:08Z INFO flag-sync synced 101 feature flags from flag service (etag 840a4ca)\n#312 2026-11-09T16:38:20Z INFO flag-sync synced 80 feature flags from flag service (etag 6f0d471)\n#329 2026-11-09T16:38:36Z INFO flag-sync synced 99 feature flags from flag service (etag f0feae3)\n#342 2026-11-09T16:38:48Z INFO flag-sync synced 95 feature flags from flag service (etag 5ff6084)\n#368 2026-11-09T16:39:06Z INFO flag-sync synced 96 feature flags from flag service (etag b54f4a8)\n#379 2026-11-09T16:39:17Z INFO flag-sync synced 115 feature flags from flag service (etag 946982f)\n#398 2026-11-09T16:39:30Z INFO flag-sync synced 128 feature flags from flag service (etag 2fff383)\n#412 2026-11-09T16:39:39Z INFO flag-sync synced 119 feature flags from flag service (etag f98f000)\n#421 2026-11-09T16:39:48Z INFO flag-sync synced 135 feature flags from flag service (etag 71226f6)\n#441 2026-11-09T16:40:02Z INFO flag-sync synced 122 feature flags from flag service (etag 1d82734)\n#459 2026-11-09T16:40:17Z INFO flag-sync synced 109 feature flags from flag service (etag 189c861)\n#473 2026-11-09T16:40:30Z INFO flag-sync synced 99 feature flags from flag service (etag cb76d31)\n#488 2026-11-09T16:40:45Z INFO flag-sync synced 73 feature flags from flag service (etag 19af433)\n#503 2026-11-09T16:40:53Z INFO flag-sync synced 127 feature flags from flag service (etag 0066c41)\n#517 2026-11-09T16:41:04Z INFO flag-sync synced 72 feature flags from flag service (etag 0cda8d4)\n#528 2026-11-09T16:41:13Z INFO flag-sync synced 120 feature flags from flag service (etag 513205a)\n#541 2026-11-09T16:41:24Z INFO flag-sync synced 131 feature flags from flag service (etag 6e73b91)\n#558 2026-11-09T16:41:43Z INFO flag-sync synced 62 feature flags from flag service (etag c3edb2b)\n#581 2026-11-09T16:42:01Z INFO flag-sync synced 135 feature flags from flag service (etag 3ddda01)\n#597 2026-11-09T16:42:14Z INFO flag-sync synced 123 feature flags from flag service (etag 955d5ea)\n#623 2026-11-09T16:42:32Z INFO flag-sync synced 124 feature flags from flag service (etag 060f254)\n#639 2026-11-09T16:42:45Z INFO flag-sync synced 105 feature flags from flag service (etag 0df6aa4)\n#658 2026-11-09T16:43:00Z INFO flag-sync synced 97 feature flags from flag service (etag a3ba54c)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "binlog",
+          "limit": 30
+        },
+        "output": "2 match(es):\n#716 2026-11-09T16:43:49Z WARN notif-db disk usage 95% on /var/lib/mysql (WAL/binlog growth 765MB/h)\n#792 2026-11-09T16:44:54Z WARN notif-db disk usage 99% on /var/lib/mysql (WAL/binlog growth 644MB/h)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "archive",
+          "limit": 30
+        },
+        "output": "10 match(es):\n#375 2026-11-09T16:39:13Z ERROR billing-reconciler invoice_archive row inv-829886 violates checksum constraint, skipping (archive partition 2019-Q2)\n#609 2026-11-09T16:42:22Z ERROR billing-reconciler invoice_archive row inv-206406 violates checksum constraint, skipping (archive partition 2019-Q1)\n#721 2026-11-09T16:43:53Z ERROR billing-reconciler invoice_archive row inv-860809 violates checksum constraint, skipping (archive partition 2019-Q3)\n#837 2026-11-09T16:45:29Z ERROR billing-reconciler invoice_archive row inv-898489 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1076 2026-11-09T16:48:56Z ERROR billing-reconciler invoice_archive row inv-996801 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1176 2026-11-09T16:50:27Z ERROR billing-reconciler invoice_archive row inv-894423 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1362 2026-11-09T16:53:51Z ERROR billing-reconciler invoice_archive row inv-135230 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1473 2026-11-09T16:55:45Z ERROR billing-reconciler invoice_archive row inv-338124 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1599 2026-11-09T16:58:02Z ERROR billing-reconciler invoice_archive row inv-918260 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1729 2026-11-09T17:00:10Z ERROR billing-reconciler invoice_archive row inv-117530 violates checksum constraint, skipping (archive partition 2019-Q4)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-worker",
+          "limit": 40
+        },
+        "output": "309 match(es), showing first 40:\n#4 2026-11-09T16:34:04Z INFO notif-worker processed batch of 71 messages from notifications.outbound (lag 291ms)\n#12 2026-11-09T16:34:10Z INFO notif-worker processed batch of 63 messages from notifications.outbound (lag 67ms)\n#15 2026-11-09T16:34:14Z INFO notif-worker processed batch of 47 messages from notifications.outbound (lag 296ms)\n#22 2026-11-09T16:34:18Z INFO notif-worker processed batch of 65 messages from notifications.outbound (lag 84ms)\n#26 2026-11-09T16:34:23Z INFO notif-worker processed batch of 60 messages from notifications.outbound (lag 155ms)\n#35 2026-11-09T16:34:29Z INFO notif-worker processed batch of 77 messages from notifications.outbound (lag 120ms)\n#41 2026-11-09T16:34:34Z INFO notif-worker processed batch of 71 messages from notifications.outbound (lag 230ms)\n#46 2026-11-09T16:34:39Z INFO notif-worker processed batch of 91 messages from notifications.outbound (lag 214ms)\n#52 2026-11-09T16:34:43Z INFO notif-worker processed batch of 93 messages from notifications.outbound (lag 271ms)\n#59 2026-11-09T16:34:47Z INFO notif-worker processed batch of 79 messages from notifications.outbound (lag 303ms)\n#64 2026-11-09T16:34:52Z INFO notif-worker processed batch of 118 messages from notifications.outbound (lag 314ms)\n#69 2026-11-09T16:34:56Z INFO notif-worker processed batch of 59 messages from notifications.outbound (lag 314ms)\n#76 2026-11-09T16:35:03Z INFO notif-worker processed batch of 91 messages from notifications.outbound (lag 266ms)\n#81 2026-11-09T16:35:08Z INFO notif-worker processed batch of 87 messages from notifications.outbound (lag 209ms)\n#87 2026-11-09T16:35:12Z INFO notif-worker processed batch of 87 messages from notifications.outbound (lag 396ms)\n#98 2026-11-09T16:35:19Z INFO notif-worker processed batch of 24 messages from notifications.outbound (lag 342ms)\n#100 2026-11-09T16:35:24Z INFO notif-worker processed batch of 39 messages from notifications.outbound (lag 219ms)\n#108 2026-11-09T16:35:30Z INFO notif-worker processed batch of 102 messages from notifications.outbound (lag 76ms)\n#119 2026-11-09T16:35:36Z INFO notif-worker processed batch of 114 messages from notifications.outbound (lag 146ms)\n#123 2026-11-09T16:35:40Z INFO notif-worker processed batch of 20 messages from notifications.outbound (lag 173ms)\n#127 2026-11-09T16:35:44Z INFO notif-worker processed batch of 93 messages from notifications.outbound (lag 246ms)\n#136 2026-11-09T16:35:50Z INFO notif-worker processed batch of 118 messages from notifications.outbound (lag 364ms)\n#145 2026-11-09T16:35:56Z INFO notif-worker processed batch of 20 messages from notifications.outbound (lag 239ms)\n#151 2026-11-09T16:36:03Z INFO notif-worker processed batch of 80 messages from notifications.outbound (lag 121ms)\n#158 2026-11-09T16:36:07Z INFO notif-worker processed batch of 79 messages from notifications.outbound (lag 134ms)\n#162 2026-11-09T16:36:12Z INFO notif-worker processed batch of 77 messages from notifications.outbound (lag 241ms)\n#167 2026-11-09T16:36:17Z INFO notif-worker processed batch of 111 messages from notifications.outbound (lag 117ms)\n#174 2026-11-09T16:36:23Z INFO notif-worker processed batch of 113 messages from notifications.outbound (lag 378ms)\n#178 2026-11-09T16:36:28Z INFO notif-worker processed batch of 41 messages from notifications.outbound (lag 250ms)\n#186 2026-11-09T16:36:34Z INFO notif-worker processed batch of 105 messages from notifications.outbound (lag 215ms)\n#192 2026-11-09T16:36:38Z INFO notif-worker processed batch of 64 messages from notifications.outbound (lag 129ms)\n#197 2026-11-09T16:36:44Z INFO notif-worker processed batch of 78 messages from notifications.outbound (lag 392ms)\n#202 2026-11-09T16:36:48Z INFO notif-worker processed batch of 101 messages from notifications.outbound (lag 222ms)\n#209 2026-11-09T16:36:52Z INFO notif-worker processed batch of 76 messages from notifications.outbound (lag 102ms)\n#212 2026-11-09T16:36:58Z INFO notif-worker processed batch of 118 messages from notifications.outbound (lag 300ms)\n#223 2026-11-09T16:37:05Z INFO notif-worker processed batch of 47 messages from notifications.outbound (lag 269ms)\n#231 2026-11-09T16:37:09Z INFO notif-worker processed batch of 73 messages from notifications.outbound (lag 326ms)\n#237 2026-11-09T16:37:14Z INFO notif-worker processed batch of 38 messages from notifications.outbound (lag 145ms)\n#242 2026-11-09T16:37:18Z INFO notif-worker processed batch of 117 messages from notifications.outbound (lag 288ms)\n#248 2026-11-09T16:37:23Z INFO notif-worker processed batch of 66 messages from notifications.outbound (lag 214ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "since": "16:34:00Z",
+          "until": "16:48:30Z",
+          "limit": 30
+        },
+        "output": "tool error: can't read time \"16:34:00Z\": use an ISO timestamp like 2026-11-09T16:34:00Z or HH:MM:SS",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notification-svc",
+          "level": "WARN",
+          "limit": 40
+        },
+        "output": "2 match(es):\n#1043 2026-11-09T16:48:19Z ERROR notification-svc [t-2809] insert into notifications failed for m-5828: error 1114: The table is full\n#1140 2026-11-09T16:49:52Z ERROR notification-svc [t-2845] could not save message m-5857: database rejected the write (table full)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "disk",
+          "limit": 40
+        },
+        "output": "2 match(es):\n#716 2026-11-09T16:43:49Z WARN notif-db disk usage 95% on /var/lib/mysql (WAL/binlog growth 765MB/h)\n#792 2026-11-09T16:44:54Z WARN notif-db disk usage 99% on /var/lib/mysql (WAL/binlog growth 644MB/h)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "flag",
+          "limit": 200,
+          "since": "16:34:00",
+          "until": "16:44:00"
+        },
+        "output": "44 match(es):\n#6 2026-11-09T16:34:05Z INFO flag-sync synced 101 feature flags from flag service (etag 08cfacf)\n#29 2026-11-09T16:34:24Z INFO flag-sync synced 86 feature flags from flag service (etag 7bbeae3)\n#47 2026-11-09T16:34:39Z INFO flag-sync synced 89 feature flags from flag service (etag 5f35d71)\n#68 2026-11-09T16:34:56Z INFO flag-sync synced 84 feature flags from flag service (etag 9930bb9)\n#89 2026-11-09T16:35:13Z INFO flag-sync synced 104 feature flags from flag service (etag ad5dbf4)\n#99 2026-11-09T16:35:23Z INFO flag-sync synced 67 feature flags from flag service (etag 7cec25b)\n#116 2026-11-09T16:35:34Z INFO flag-sync synced 123 feature flags from flag service (etag 1aa78dc)\n#132 2026-11-09T16:35:48Z INFO flag-sync synced 96 feature flags from flag service (etag 6722300)\n#146 2026-11-09T16:36:00Z INFO flag-sync synced 109 feature flags from flag service (etag 5067330)\n#161 2026-11-09T16:36:11Z INFO flag-sync synced 68 feature flags from flag service (etag 19d3db2)\n#180 2026-11-09T16:36:30Z INFO flag-sync synced 117 feature flags from flag service (etag f04a4a2)\n#196 2026-11-09T16:36:43Z INFO flag-sync synced 106 feature flags from flag service (etag 8f95e9b)\n#217 2026-11-09T16:37:01Z INFO flag-sync synced 101 feature flags from flag service (etag 55f40b7)\n#238 2026-11-09T16:37:16Z INFO flag-sync synced 79 feature flags from flag service (etag d648de2)\n#257 2026-11-09T16:37:32Z INFO flag-sync synced 101 feature flags from flag service (etag 17b7a66)\n#277 2026-11-09T16:37:51Z INFO flag-sync synced 95 feature flags from flag service (etag 263d319)\n#286 2026-11-09T16:37:58Z INFO flag-sync synced 89 feature flags from flag service (etag 238cd8c)\n#297 2026-11-09T16:38:08Z INFO flag-sync synced 101 feature flags from flag service (etag 840a4ca)\n#312 2026-11-09T16:38:20Z INFO flag-sync synced 80 feature flags from flag service (etag 6f0d471)\n#329 2026-11-09T16:38:36Z INFO flag-sync synced 99 feature flags from flag service (etag f0feae3)\n#342 2026-11-09T16:38:48Z INFO flag-sync synced 95 feature flags from flag service (etag 5ff6084)\n#368 2026-11-09T16:39:06Z INFO flag-sync synced 96 feature flags from flag service (etag b54f4a8)\n#379 2026-11-09T16:39:17Z INFO flag-sync synced 115 feature flags from flag service (etag 946982f)\n#398 2026-11-09T16:39:30Z INFO flag-sync synced 128 feature flags from flag service (etag 2fff383)\n#412 2026-11-09T16:39:39Z INFO flag-sync synced 119 feature flags from flag service (etag f98f000)\n#421 2026-11-09T16:39:48Z INFO flag-sync synced 135 feature flags from flag service (etag 71226f6)\n#441 2026-11-09T16:40:02Z INFO flag-sync synced 122 feature flags from flag service (etag 1d82734)\n#459 2026-11-09T16:40:17Z INFO flag-sync synced 109 feature flags from flag service (etag 189c861)\n#473 2026-11-09T16:40:30Z INFO flag-sync synced 99 feature flags from flag service (etag cb76d31)\n#488 2026-11-09T16:40:45Z INFO flag-sync synced 73 feature flags from flag service (etag 19af433)\n#503 2026-11-09T16:40:53Z INFO flag-sync synced 127 feature flags from flag service (etag 0066c41)\n#517 2026-11-09T16:41:04Z INFO flag-sync synced 72 feature flags from flag service (etag 0cda8d4)\n#528 2026-11-09T16:41:13Z INFO flag-sync synced 120 feature flags from flag service (etag 513205a)\n#541 2026-11-09T16:41:24Z INFO flag-sync synced 131 feature flags from flag service (etag 6e73b91)\n#558 2026-11-09T16:41:43Z INFO flag-sync synced 62 feature flags from flag service (etag c3edb2b)\n#581 2026-11-09T16:42:01Z INFO flag-sync synced 135 feature flags from flag service (etag 3ddda01)\n#597 2026-11-09T16:42:14Z INFO flag-sync synced 123 feature flags from flag service (etag 955d5ea)\n#623 2026-11-09T16:42:32Z INFO flag-sync synced 124 feature flags from flag service (etag 060f254)\n#639 2026-11-09T16:42:45Z INFO flag-sync synced 105 feature flags from flag service (etag 0df6aa4)\n#658 2026-11-09T16:43:00Z INFO flag-sync synced 97 feature flags from flag service (etag a3ba54c)\n#670 2026-11-09T16:43:11Z INFO flag-sync synced 62 feature flags from flag service (etag f7f62a9)\n#684 2026-11-09T16:43:22Z INFO flag-sync synced 66 feature flags from flag service (etag 30ce118)\n#704 2026-11-09T16:43:37Z INFO flag-sync synced 72 feature flags from flag service (etag 54070a7)\n#724 2026-11-09T16:43:53Z INFO flag-sync synced 116 feature flags from flag service (etag e688fea)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "transaction",
+          "limit": 30
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 716,
+          "before": 5,
+          "after": 3
+        },
+        "output": "#711 2026-11-09T16:43:45Z INFO notification-svc [t-2651] message m-5710 accepted, calling template-svc POST /render\n#712 2026-11-09T16:43:45Z INFO template-svc [t-2651] POST /render m-5710 ok 67ms\n#713 2026-11-09T16:43:46Z INFO api-gateway [t-2651] POST /v1/notify 200 105ms\n#714 2026-11-09T16:43:46Z INFO notif-db InnoDB: page cleaner flushed 511 pages, buffer pool hit rate 99%\n#715 2026-11-09T16:43:48Z INFO billing-reconciler reconciled 1150 current-period invoices, 0 discrepancies\n#716 2026-11-09T16:43:49Z WARN notif-db disk usage 95% on /var/lib/mysql (WAL/binlog growth 765MB/h)\n#717 2026-11-09T16:43:49Z INFO notif-worker processed batch of 52 messages from notifications.outbound (lag 310ms)\n#718 2026-11-09T16:43:51Z INFO notification-svc [t-2655] message m-5711 accepted, calling template-svc POST /render\n#719 2026-11-09T16:43:51Z INFO api-gateway [t-2655] POST /v1/notify 200 125ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"resource_exhaustion\",\"confidence\":0.85,\"evidenceLines\":[716,792,1029,1043,1133,1140,1106],\"reasoning\":\"notif-db's /var/lib/mysql volume filled up. Disk usage was 95% at 16:43:49 (#716, WAL/binlog growing ~765MB/h) and 99% at 16:44:54 (#792). InnoDB then failed writes with 'No space left on device' (#1029, #1133), and notification-svc's inserts failed with error 1114 'table is full' (#1043, #1140). Those failed writes surfaced at api-gateway as POST /v1/notify 500s (#1106), which is the alert. The gateway errors are downstream; the fault is the full disk. The reads stay healthy because they don't write. I could not find the specific trigger for the WAL/binlog growth in the logs (no long transaction, retention or flag change showed up), so the origin of the growth is unconfirmed.\",\"},{\"rootCause\":\"cascading_failure\",\"confidence\":0.1,\"evidenceLines\":[1106,1281,1417,1600],\"reasoning\":\"Gateway timeouts climbing from ~9.7s to ~26s could look like retry amplification. But the 500s are caused by notification-svc's DB writes failing on the full disk, and no retry storm appears in the logs. Treat this as a secondary effect of the disk fill, not the origin.\",\"}]",
+          "recommendedAction": "Immediately free space on notif-db's /var/lib/mysql volume: purge or archive old binlogs and WAL files, or extend the volume. Then restart or verify notification-svc writes recover and watch the gateway 500 rate return to baseline. Find out what is driving the ~650-765MB/h WAL/binlog growth (check recent writers to notifications, retention settings, and binlog expiry) so the disk does not refill. Separately, billing-reconciler is skipping invoice_archive rows on checksum violations (2019 partitions). That is a data_integrity issue to triage on its own, but it does not affect the notify path.\"}]"
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.85,
+              "evidenceLines": [
+                716,
+                792,
+                1029,
+                1043,
+                1133,
+                1140,
+                1106
+              ],
+              "reasoning": "notif-db's /var/lib/mysql volume filled up. Disk usage was 95% at 16:43:49 (#716, WAL/binlog growing ~765MB/h) and 99% at 16:44:54 (#792). InnoDB then failed writes with 'No space left on device' (#1029, #1133), and notification-svc's inserts failed with error 1114 'table is full' (#1043, #1140). Those failed writes surfaced at api-gateway as POST /v1/notify 500s (#1106), which is the alert. The gateway errors are downstream; the fault is the full disk. Reads stay healthy because they do not write. The specific trigger for the WAL/binlog growth was not found in the logs (no long transaction, retention or flag change appeared), so the origin of the growth is unconfirmed."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.1,
+              "evidenceLines": [
+                1106,
+                1281,
+                1417,
+                1600
+              ],
+              "reasoning": "Gateway latency climbing from about 9.7s to about 26s could look like retry amplification. But the 500s come from notification-svc's DB writes failing on the full disk, and no retry storm appears in the logs. Treat this as a secondary effect of the disk fill, not the origin."
+            }
+          ],
+          "recommendedAction": "Immediately free space on notif-db's /var/lib/mysql volume: purge or archive old binlogs and WAL files, or extend the volume. Then verify notification-svc writes recover and the gateway 500 rate returns to baseline. Find out what drives the roughly 650-765MB/h WAL/binlog growth (recent writers to notifications, retention settings, binlog expiry) so the disk does not refill. Separately, billing-reconciler is skipping invoice_archive rows on checksum violations in 2019 partitions. That is a data_integrity issue to triage on its own and does not affect the notify path."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 9,
+    "toolCalls": 13,
+    "usage": {
+      "inputTokens": 20,
+      "outputTokens": 3657,
+      "cacheReadTokens": 107937,
+      "cacheWriteTokens": 20912
+    },
+    "durationMs": 18787,
+    "stopReason": "tool_use"
+  }
+}

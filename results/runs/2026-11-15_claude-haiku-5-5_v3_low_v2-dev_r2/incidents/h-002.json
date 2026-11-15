@@ -1,0 +1,163 @@
+{
+  "score": {
+    "incidentId": "h-002",
+    "difficulty": "easy",
+    "scenario": "poison_message/redelivery-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "poison_message",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 6,
+      "precision": 0.8571428571428571,
+      "recall": 1,
+      "f1": 0.923076923076923
+    },
+    "herringsCited": 3,
+    "costUsd": 0.00267005,
+    "durationMs": 10531,
+    "iterations": 4,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 10,
+      "output": 2211,
+      "cacheRead": 21580,
+      "cacheWrite": 10782
+    }
+  },
+  "result": {
+    "incidentId": "h-002",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.9,
+          "evidenceLines": [
+            966,
+            969,
+            1005,
+            1006,
+            1104,
+            1105,
+            1106
+          ],
+          "reasoning": "index-worker's first failure is msg-716949 on catalog.updates partition 8, offset 421639. Its JSON body contains a NUL byte (\\u0000) at position 1350, so every parse fails. The consumer nacks and redelivers it with no max-retry or dead-letter policy: attempt 9 at #969, attempt 13 at #1006, attempt 17 at #1106. Partition 8 is blocked behind this message, and lag grows from 1211 messages (59s) at #1105 to 4164 messages (160s) at #1508. Lag is rising because the consumer is stuck, not because it is slow, which fits the normal CPU. The search-api timeouts (#1143, #1374, #1504) are downstream effects of the stale index. Billing-reconciler checksum skips and the catalog-svc translation resets are unrelated noise. Caveat: I did not trace where the NUL byte was produced upstream."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.3,
+          "evidenceLines": [
+            425,
+            605,
+            1144
+          ],
+          "reasoning": "Corrupt records exist in billing-reconciler's invoice_archive (checksum violations across 2019 partitions). This is a separate data problem that does not block catalog.updates, so it is a weak alternative for this lag and should be ticketed separately."
+        }
+      ],
+      "recommendedAction": "Immediately skip or move msg-716949 (catalog.updates partition 8, offset 421639) to a dead-letter topic so partition 8 can drain. Add a max-retry limit with DLQ routing to index-worker so one bad payload cannot block a partition again. Trace the producer that wrote the NUL byte (suspect the catalog-svc/catalog-db write path) and sanitize or reject such payloads at publish time. Reindex affected products once the backlog clears. Open a separate ticket for the invoice_archive checksum failures in billing-reconciler."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "23 match(es):\n#425 2026-10-27T05:23:50Z ERROR billing-reconciler invoice_archive row inv-954170 violates checksum constraint, skipping (archive partition 2019-Q4)\n#522 2026-10-27T05:25:06Z WARN catalog-svc [t-1679] translation API call failed: connection reset by peer POST https://api.translate.example/v2/translate, retry 1/3\n#605 2026-10-27T05:26:12Z ERROR billing-reconciler invoice_archive row inv-508153 violates checksum constraint, skipping (archive partition 2019-Q2)\n#724 2026-10-27T05:27:55Z ERROR billing-reconciler invoice_archive row inv-284054 violates checksum constraint, skipping (archive partition 2019-Q4)\n#862 2026-10-27T05:29:51Z ERROR billing-reconciler invoice_archive row inv-298890 violates checksum constraint, skipping (archive partition 2019-Q3)\n#966 2026-10-27T05:31:32Z ERROR index-worker failed to process msg-716949 (partition 8, offset 421639): JSON parse error: unexpected token '\\u0000' at position 1350\n#969 2026-10-27T05:31:32Z WARN index-worker nack msg-716949, redelivering (attempt 9, no max-retries configured)\n#975 2026-10-27T05:31:37Z ERROR billing-reconciler invoice_archive row inv-591931 violates checksum constraint, skipping (archive partition 2019-Q1)\n#1005 2026-10-27T05:32:08Z ERROR index-worker SyntaxError: Unexpected token \\u0000 in JSON at position 1350 (message msg-716949, catalog.updates[8]@421639)\n#1006 2026-10-27T05:32:08Z WARN index-worker nack msg-716949, redelivering (attempt 13, no max-retries configured)\n#1104 2026-10-27T05:33:41Z ERROR index-worker failed to process msg-716949 (partition 8, offset 421639): JSON parse error: unexpected token '\\u0000' at position 1350\n#1105 2026-10-27T05:33:41Z WARN index-worker consumer lag on catalog.updates partition 8: 1211 messages behind (59s)\n#1106 2026-10-27T05:33:42Z WARN index-worker nack msg-716949, redelivering (attempt 17, no max-retries configured)\n#1143 2026-10-27T05:34:20Z ERROR search-api [t-1978] product p-4997 timed out waiting for downstream confirmation (120s), marked failed\n#1144 2026-10-27T05:34:23Z ERROR billing-reconciler invoice_archive row inv-732065 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1209 2026-10-27T05:35:25Z ERROR billing-reconciler invoice_archive row inv-504208 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1226 2026-10-27T05:35:41Z WARN index-worker consumer lag on catalog.updates partition 8: 1306 messages behind (174s)\n#1320 2026-10-27T05:37:16Z WARN index-worker consumer lag on catalog.updates partition 8: 2712 messages behind (264s)\n#1359 2026-10-27T05:37:52Z ERROR billing-reconciler invoice_archive row inv-364627 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1374 2026-10-27T05:38:05Z ERROR search-api [t-2107] product p-5105 timed out waiting for downstream confirmation (120s), marked failed\n#1466 2026-10-27T05:39:42Z ERROR billing-reconciler invoice_archive row inv-576617 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1504 2026-10-27T05:40:15Z ERROR search-api [t-2185] product p-5159 timed out waiting for downstream confirmation (120s), marked failed\n#1508 2026-10-27T05:40:22Z WARN index-worker consumer lag on catalog.updates partition 8: 4164 messages behind (160s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "index-worker",
+          "limit": 60
+        },
+        "output": "153 match(es), showing first 60:\n#3 2026-10-27T05:18:01Z INFO index-worker processed batch of 48 messages from catalog.updates (lag 224ms)\n#8 2026-10-27T05:18:07Z INFO index-worker processed batch of 76 messages from catalog.updates (lag 386ms)\n#13 2026-10-27T05:18:11Z INFO index-worker processed batch of 52 messages from catalog.updates (lag 347ms)\n#21 2026-10-27T05:18:16Z INFO index-worker processed batch of 111 messages from catalog.updates (lag 313ms)\n#25 2026-10-27T05:18:21Z INFO index-worker processed batch of 49 messages from catalog.updates (lag 207ms)\n#33 2026-10-27T05:18:26Z INFO index-worker processed batch of 65 messages from catalog.updates (lag 398ms)\n#39 2026-10-27T05:18:31Z INFO index-worker processed batch of 113 messages from catalog.updates (lag 270ms)\n#43 2026-10-27T05:18:35Z INFO index-worker processed batch of 107 messages from catalog.updates (lag 135ms)\n#48 2026-10-27T05:18:39Z INFO index-worker processed batch of 97 messages from catalog.updates (lag 230ms)\n#54 2026-10-27T05:18:45Z INFO index-worker processed batch of 95 messages from catalog.updates (lag 191ms)\n#60 2026-10-27T05:18:50Z INFO index-worker processed batch of 50 messages from catalog.updates (lag 96ms)\n#67 2026-10-27T05:18:56Z INFO index-worker processed batch of 53 messages from catalog.updates (lag 244ms)\n#72 2026-10-27T05:19:01Z INFO index-worker processed batch of 79 messages from catalog.updates (lag 387ms)\n#77 2026-10-27T05:19:05Z INFO index-worker processed batch of 101 messages from catalog.updates (lag 348ms)\n#82 2026-10-27T05:19:10Z INFO index-worker processed batch of 23 messages from catalog.updates (lag 177ms)\n#88 2026-10-27T05:19:15Z INFO index-worker processed batch of 106 messages from catalog.updates (lag 62ms)\n#97 2026-10-27T05:19:20Z INFO index-worker processed batch of 44 messages from catalog.updates (lag 358ms)\n#100 2026-10-27T05:19:24Z INFO index-worker processed batch of 68 messages from catalog.updates (lag 177ms)\n#104 2026-10-27T05:19:30Z INFO index-worker processed batch of 99 messages from catalog.updates (lag 248ms)\n#115 2026-10-27T05:19:36Z INFO index-worker processed batch of 92 messages from catalog.updates (lag 263ms)\n#118 2026-10-27T05:19:41Z INFO index-worker processed batch of 74 messages from catalog.updates (lag 236ms)\n#125 2026-10-27T05:19:46Z INFO index-worker processed batch of 67 messages from catalog.updates (lag 353ms)\n#129 2026-10-27T05:19:50Z INFO index-worker processed batch of 78 messages from catalog.updates (lag 119ms)\n#138 2026-10-27T05:19:56Z INFO index-worker processed batch of 25 messages from catalog.updates (lag 106ms)\n#143 2026-10-27T05:20:00Z INFO index-worker processed batch of 58 messages from catalog.updates (lag 137ms)\n#148 2026-10-27T05:20:06Z INFO index-worker processed batch of 74 messages from catalog.updates (lag 99ms)\n#154 2026-10-27T05:20:11Z INFO index-worker processed batch of 42 messages from catalog.updates (lag 219ms)\n#166 2026-10-27T05:20:18Z INFO index-worker processed batch of 53 messages from catalog.updates (lag 88ms)\n#170 2026-10-27T05:20:22Z INFO index-worker processed batch of 44 messages from catalog.updates (lag 369ms)\n#175 2026-10-27T05:20:26Z INFO index-worker processed batch of 105 messages from catalog.updates (lag 177ms)\n#180 2026-10-27T05:20:33Z INFO index-worker processed batch of 75 messages from catalog.updates (lag 313ms)\n#187 2026-10-27T05:20:38Z INFO index-worker processed batch of 76 messages from catalog.updates (lag 381ms)\n#194 2026-10-27T05:20:42Z INFO index-worker processed batch of 102 messages from catalog.updates (lag 244ms)\n#199 2026-10-27T05:20:48Z INFO index-worker processed batch of 89 messages from catalog.updates (lag 99ms)\n#206 2026-10-27T05:20:53Z INFO index-worker processed batch of 86 messages from catalog.updates (lag 167ms)\n#213 2026-10-27T05:20:57Z INFO index-worker processed batch of 24 messages from catalog.updates (lag 312ms)\n#218 2026-10-27T05:21:03Z INFO index-worker processed batch of 40 messages from catalog.updates (lag 115ms)\n#223 2026-10-27T05:21:06Z INFO index-worker processed batch of 67 messages from catalog.updates (lag 286ms)\n#229 2026-10-27T05:21:12Z INFO index-worker processed batch of 35 messages from catalog.updates (lag 160ms)\n#240 2026-10-27T05:21:17Z INFO index-worker processed batch of 85 messages from catalog.updates (lag 84ms)\n#245 2026-10-27T05:21:22Z INFO index-worker processed batch of 101 messages from catalog.updates (lag 254ms)\n#250 2026-10-27T05:21:28Z INFO index-worker processed batch of 86 messages from catalog.updates (lag 397ms)\n#258 2026-10-27T05:21:35Z INFO index-worker processed batch of 99 messages from catalog.updates (lag 341ms)\n#267 2026-10-27T05:21:41Z INFO index-worker processed batch of 27 messages from catalog.updates (lag 223ms)\n#272 2026-10-27T05:21:46Z INFO index-worker processed batch of 43 messages from catalog.updates (lag 245ms)\n#278 2026-10-27T05:21:51Z INFO index-worker processed batch of 100 messages from catalog.updates (lag 108ms)\n#285 2026-10-27T05:21:55Z INFO index-worker processed batch of 40 messages from catalog.updates (lag 374ms)\n#289 2026-10-27T05:22:01Z INFO index-worker processed batch of 90 messages from catalog.updates (lag 230ms)\n#297 2026-10-27T05:22:07Z INFO index-worker processed batch of 76 messages from catalog.updates (lag 352ms)\n#304 2026-10-27T05:22:11Z INFO index-worker processed batch of 28 messages from catalog.updates (lag 186ms)\n#312 2026-10-27T05:22:17Z INFO index-worker processed batch of 88 messages from catalog.updates (lag 167ms)\n#316 2026-10-27T05:22:21Z INFO index-worker processed batch of 42 messages from catalog.updates (lag 100ms)\n#322 2026-10-27T05:22:27Z INFO index-worker processed batch of 95 messages from catalog.updates (lag 261ms)\n#329 2026-10-27T05:22:31Z INFO index-worker processed batch of 113 messages from catalog.updates (lag 41ms)\n#333 2026-10-27T05:22:36Z INFO index-worker processed batch of 100 messages from catalog.updates (lag 98ms)\n#339 2026-10-27T05:22:41Z INFO index-worker processed batch of 20 messages from catalog.updates (lag 148ms)\n#346 2026-10-27T05:22:47Z INFO index-worker processed batch of 103 messages from catalog.updates (lag 141ms)\n#352 2026-10-27T05:22:51Z INFO index-worker processed batch of 31 messages from catalog.updates (lag 69ms)\n#358 2026-10-27T05:22:56Z INFO index-worker processed batch of 93 messages from catalog.updates (lag 49ms)\n#366 2026-10-27T05:23:01Z INFO index-worker processed batch of 101 messages from catalog.updates (lag 53ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "msg-716949",
+          "limit": 10
+        },
+        "output": "6 match(es):\n#966 2026-10-27T05:31:32Z ERROR index-worker failed to process msg-716949 (partition 8, offset 421639): JSON parse error: unexpected token '\\u0000' at position 1350\n#969 2026-10-27T05:31:32Z WARN index-worker nack msg-716949, redelivering (attempt 9, no max-retries configured)\n#1005 2026-10-27T05:32:08Z ERROR index-worker SyntaxError: Unexpected token \\u0000 in JSON at position 1350 (message msg-716949, catalog.updates[8]@421639)\n#1006 2026-10-27T05:32:08Z WARN index-worker nack msg-716949, redelivering (attempt 13, no max-retries configured)\n#1104 2026-10-27T05:33:41Z ERROR index-worker failed to process msg-716949 (partition 8, offset 421639): JSON parse error: unexpected token '\\u0000' at position 1350\n#1106 2026-10-27T05:33:42Z WARN index-worker nack msg-716949, redelivering (attempt 17, no max-retries configured)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "u0000",
+          "limit": 10
+        },
+        "output": "3 match(es):\n#966 2026-10-27T05:31:32Z ERROR index-worker failed to process msg-716949 (partition 8, offset 421639): JSON parse error: unexpected token '\\u0000' at position 1350\n#1005 2026-10-27T05:32:08Z ERROR index-worker SyntaxError: Unexpected token \\u0000 in JSON at position 1350 (message msg-716949, catalog.updates[8]@421639)\n#1104 2026-10-27T05:33:41Z ERROR index-worker failed to process msg-716949 (partition 8, offset 421639): JSON parse error: unexpected token '\\u0000' at position 1350"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 966,
+          "before": 8,
+          "after": 2
+        },
+        "output": "#958 2026-10-27T05:31:26Z INFO search-api [t-1883] product p-4922 accepted, calling catalog-svc GET /products/batch\n#959 2026-10-27T05:31:26Z INFO catalog-svc [t-1883] GET /products/batch p-4922 ok 42ms\n#960 2026-10-27T05:31:26Z INFO web-bff [t-1883] GET /search 200 107ms\n#961 2026-10-27T05:31:28Z INFO metrics-agent flushed 8998 series to remote-write in 41ms\n#962 2026-10-27T05:31:29Z INFO search-api [t-1884] product p-4923 accepted, calling catalog-svc GET /products/batch\n#963 2026-10-27T05:31:29Z INFO catalog-svc [t-1884] GET /products/batch p-4923 ok 26ms\n#964 2026-10-27T05:31:29Z INFO web-bff [t-1884] GET /search 200 141ms\n#965 2026-10-27T05:31:30Z DEBUG search-api GC pause 16ms (young), heap 40%\n#966 2026-10-27T05:31:32Z ERROR index-worker failed to process msg-716949 (partition 8, offset 421639): JSON parse error: unexpected token '\\u0000' at position 1350\n#967 2026-10-27T05:31:32Z INFO search-api [t-1885] product p-4926 accepted, calling catalog-svc GET /products/batch\n#968 2026-10-27T05:31:32Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 19"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"poison_message\",\"confidence\":0.9,\"evidenceLines\":[966,969,1005,1006,1104,1105,1106],\"reasoning\":\"index-worker's first failure is msg-716949 on catalog.updates partition 8, offset 421639. Its JSON body contains a NUL byte (\\\\u0000) at position 1350, so every parse fails. The consumer nacks and redelivers it with no max-retry or dead-letter policy: attempt 9 at #969, attempt 13 at #1006, attempt 17 at #1106. Partition 8 is blocked behind this message, and lag grows from 1211 messages (59s) at #1105 to 4164 messages (160s) at #1508. Lag is rising because the consumer is stuck, not because it is slow, which fits the normal CPU. The search-api p-xxxx timeouts (#1143, #1374, #1504) and the gateway/BFF symptoms are downstream effects of the stale index. Billing-reconciler checksum skips and the catalog-svc translation resets are unrelated noise. Caveat: I did not trace where the NUL byte was produced upstream.\",\"},{\"rootCause\":\"data_integrity\",\"confidence\":0.3,\"evidenceLines\":[425,605,1144],\"reasoning\":\"Corrupt records are present in billing-reconciler's invoice_archive (checksum violations across partitions 2019-Q1 to Q4). That is a separate data problem and does not block catalog.updates, so it is a weak alternative for this lag and is mainly a side finding worth ticketing separately.\",\"}]\",\"recommendedAction\":\"Immediately skip or move msg-716949 (catalog.updates partition 8, offset 421639) to a dead-letter topic so partition 8 can drain. Then add a max-retry limit with DLQ routing to index-worker so a single bad payload can't block a partition again. Trace the producer that wrote the NUL byte into the message (suspect catalog-svc/catalog-db write path) and sanitize or reject such payloads at publish time. Reindex the affected product(s) once the backlog clears. Separately, open a ticket for the invoice_archive checksum failures in billing-reconciler.\"}]"
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string; recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.9,
+              "evidenceLines": [
+                966,
+                969,
+                1005,
+                1006,
+                1104,
+                1105,
+                1106
+              ],
+              "reasoning": "index-worker's first failure is msg-716949 on catalog.updates partition 8, offset 421639. Its JSON body contains a NUL byte (\\u0000) at position 1350, so every parse fails. The consumer nacks and redelivers it with no max-retry or dead-letter policy: attempt 9 at #969, attempt 13 at #1006, attempt 17 at #1106. Partition 8 is blocked behind this message, and lag grows from 1211 messages (59s) at #1105 to 4164 messages (160s) at #1508. Lag is rising because the consumer is stuck, not because it is slow, which fits the normal CPU. The search-api timeouts (#1143, #1374, #1504) are downstream effects of the stale index. Billing-reconciler checksum skips and the catalog-svc translation resets are unrelated noise. Caveat: I did not trace where the NUL byte was produced upstream."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.3,
+              "evidenceLines": [
+                425,
+                605,
+                1144
+              ],
+              "reasoning": "Corrupt records exist in billing-reconciler's invoice_archive (checksum violations across 2019 partitions). This is a separate data problem that does not block catalog.updates, so it is a weak alternative for this lag and should be ticketed separately."
+            }
+          ],
+          "recommendedAction": "Immediately skip or move msg-716949 (catalog.updates partition 8, offset 421639) to a dead-letter topic so partition 8 can drain. Add a max-retry limit with DLQ routing to index-worker so one bad payload cannot block a partition again. Trace the producer that wrote the NUL byte (suspect the catalog-svc/catalog-db write path) and sanitize or reject such payloads at publish time. Reindex affected products once the backlog clears. Open a separate ticket for the invoice_archive checksum failures in billing-reconciler."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 2211,
+      "cacheReadTokens": 21580,
+      "cacheWriteTokens": 10782
+    },
+    "durationMs": 10531,
+    "stopReason": "tool_use"
+  }
+}

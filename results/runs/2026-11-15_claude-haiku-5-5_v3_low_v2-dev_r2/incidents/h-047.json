@@ -1,0 +1,227 @@
+{
+  "score": {
+    "incidentId": "h-047",
+    "difficulty": "hard",
+    "scenario": "poison_message/redelivery-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "poison_message",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "secondaryCited": 6,
+    "costUsd": 0.003578825,
+    "durationMs": 12877,
+    "iterations": 5,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 12,
+      "output": 2935,
+      "cacheRead": 39675,
+      "cacheWrite": 13707
+    }
+  },
+  "result": {
+    "incidentId": "h-047",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.85,
+          "evidenceLines": [
+            2711,
+            2713,
+            2900,
+            3164,
+            3321,
+            3539
+          ],
+          "reasoning": "The events.raw lag is on partition 0, and it is pinned to a single message, msg-263454 at offset 197049, whose body contains a NUL byte at position 1367. event-processor fails to parse it on every delivery (#2711, #3164, #3321, #3539). Its nack (#2713) says attempt 8 with no max-retries configured, so the message is redelivered forever and the partition stops advancing. Consumer lag then grows steadily (#3025 1309 msgs/85s, #3457, #3744 5215/300s, #4636 13870/570s). Consumer CPU is normal because the consumer is blocked on retries, not computing."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.3,
+          "evidenceLines": [
+            1580,
+            2371,
+            2749,
+            2712,
+            3243,
+            3055
+          ],
+          "reasoning": "Postgres data volume filled (95% then 99% with WAL growth, then 'No space left on device'). This breaks orders.insert in order-service and causes checkout 500s (#2937, #3379). It is a serious parallel incident but does not explain the events.raw partition-0 lag, which is pinned to one unparseable message. Ranked lower as a contributor to the alert, not its cause."
+        }
+      ],
+      "recommendedAction": "Move msg-263454 (offset 197049, partition 0) to a dead-letter queue or skip it, then add a max-retry limit with DLQ routing for events.raw consumers, and fix the upstream producer that emitted the NUL byte. Separately, free space on the postgres data volume (99% full, WAL growth; #2371, #2749, #3055) to restore order inserts and checkout, which is a parallel incident not causing the lag."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "70 match(es), showing first 60:\n#1079 2026-11-12T04:42:33Z WARN ingest-gateway disk usage 77% on /var/log (threshold 75%)\n#1280 2026-11-12T04:43:21Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 242 samples\n#1579 2026-11-12T04:44:30Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2359 samples\n#1580 2026-11-12T04:44:30Z WARN postgres disk usage 95% on /var/lib/postgresql/data (WAL/binlog growth 871MB/h)\n#1701 2026-11-12T04:45:01Z WARN ingest-api heap usage 82% of 4096MiB (threshold 80%), starting concurrent mark cycle\n#1750 2026-11-12T04:45:14Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 434 samples\n#2143 2026-11-12T04:46:57Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2136 samples\n#2297 2026-11-12T04:47:38Z WARN event-processor GC pause 696ms (G1 Old Gen), heap 68% after collection\n#2300 2026-11-12T04:47:39Z WARN ingest-gateway [t-3888] POST /v1/events 400 11ms: request validation failed: field \"email\" is not a valid address\n#2328 2026-11-12T04:47:45Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1844 samples\n#2371 2026-11-12T04:47:57Z WARN postgres disk usage 99% on /var/lib/postgresql/data (WAL/binlog growth 592MB/h)\n#2577 2026-11-12T04:48:45Z WARN events-db slow query 2429ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#2711 2026-11-12T04:49:20Z ERROR event-processor handler error for msg-263454 at offset 197049: invalid JSON payload (byte 1367 is NUL)\n#2712 2026-11-12T04:49:20Z ERROR order-service [t-4177] orders.insert(o-5438) -> DiskFullError\n#2749 2026-11-12T04:49:31Z ERROR postgres could not extend file \"base/16384/20622\": No space left on device\n#2779 2026-11-12T04:49:40Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 427 samples\n#2853 2026-11-12T04:50:04Z ERROR billing-reconciler invoice_archive row inv-991762 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2900 2026-11-12T04:50:15Z ERROR event-processor cannot deserialize msg-263454 from partition 0: malformed body near position 1367\n#2902 2026-11-12T04:50:16Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 207 samples\n#2937 2026-11-12T04:50:26Z ERROR api-gateway [t-4343] POST /checkout 500 22884ms: upstream order-service returned 500 Internal Server Error\n#3025 2026-11-12T04:50:50Z WARN event-processor consumer lag on events.raw partition 0: 1309 messages behind (85s)\n#3026 2026-11-12T04:50:50Z ERROR order-service [t-4402] insert into orders failed for o-5602: could not extend file\n#3055 2026-11-12T04:50:59Z ERROR postgres could not extend file \"base/16384/29039\": No space left on device\n#3112 2026-11-12T04:51:14Z ERROR billing-reconciler invoice_archive row inv-750487 violates checksum constraint, skipping (archive partition 2019-Q3)\n#3164 2026-11-12T04:51:29Z ERROR event-processor failed to process msg-263454 (partition 0, offset 197049): JSON parse error: unexpected token '\\u0000' at position 1367\n#3167 2026-11-12T04:51:30Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1589 samples\n#3220 2026-11-12T04:51:44Z WARN event-processor consumer lag on events.raw partition 0: 2146 messages behind (116s)\n#3243 2026-11-12T04:51:51Z ERROR order-service [t-4546] could not save order o-5719: database rejected the write (disk full)\n#3318 2026-11-12T04:52:14Z ERROR billing-reconciler invoice_archive row inv-825354 violates checksum constraint, skipping (archive partition 2019-Q4)\n#3319 2026-11-12T04:52:14Z ERROR postgres could not extend file \"base/16384/24745\": No space left on device\n#3321 2026-11-12T04:52:15Z ERROR event-processor SyntaxError: Unexpected token \\u0000 in JSON at position 1367 (message msg-263454, events.raw[0]@197049)\n#3379 2026-11-12T04:52:31Z ERROR api-gateway [t-4649] POST /checkout 500 28719ms: upstream order-service returned 500 Internal Server Error\n#3397 2026-11-12T04:52:35Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 675 samples\n#3457 2026-11-12T04:52:55Z WARN event-processor consumer lag on events.raw partition 0: 3369 messages behind (195s)\n#3476 2026-11-12T04:53:01Z ERROR api-gateway [t-4711] POST /checkout 500 16676ms: upstream order-service returned 500 Internal Server Error\n#3515 2026-11-12T04:53:10Z ERROR billing-reconciler invoice_archive row inv-569721 violates checksum constraint, skipping (archive partition 2019-Q2)\n#3539 2026-11-12T04:53:17Z ERROR event-processor handler error for msg-263454 at offset 197049: invalid JSON payload (byte 1367 is NUL)\n#3546 2026-11-12T04:53:19Z ERROR ingest-api [t-4756] event e-5893 timed out waiting for downstream confirmation (120s), marked failed\n#3604 2026-11-12T04:53:35Z WARN event-processor consumer lag on events.raw partition 0: 5044 messages behind (208s)\n#3717 2026-11-12T04:54:06Z ERROR ingest-api [t-4877] event e-5983 timed out waiting for downstream confirmation (120s), marked failed\n#3731 2026-11-12T04:54:10Z ERROR billing-reconciler invoice_archive row inv-803001 violates checksum constraint, skipping (archive partition 2019-Q3)\n#3744 2026-11-12T04:54:13Z WARN event-processor consumer lag on events.raw partition 0: 5215 messages behind (300s)\n#3804 2026-11-12T04:54:29Z ERROR billing-reconciler invoice_archive row inv-241874 violates checksum constraint, skipping (archive partition 2019-Q4)\n#3854 2026-11-12T04:54:45Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 270 samples\n#3975 2026-11-12T04:55:21Z WARN event-processor consumer lag on events.raw partition 0: 6876 messages behind (510s)\n#4004 2026-11-12T04:55:30Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1658 samples\n#4015 2026-11-12T04:55:32Z ERROR ingest-api [t-5080] event e-6160 timed out waiting for downstream confirmation (120s), marked failed\n#4049 2026-11-12T04:55:43Z ERROR api-gateway [t-5109] POST /checkout 500 28039ms: upstream order-service returned 500 Internal Server Error\n#4093 2026-11-12T04:55:56Z ERROR billing-reconciler invoice_archive row inv-163601 violates checksum constraint, skipping (archive partition 2019-Q3)\n#4199 2026-11-12T04:56:31Z WARN event-processor consumer lag on events.raw partition 0: 8673 messages behind (469s)\n#4258 2026-11-12T04:56:48Z WARN event-processor consumer lag on events.raw partition 0: 10768 messages behind (528s)\n#4312 2026-11-12T04:57:04Z ERROR billing-reconciler invoice_archive row inv-444353 violates checksum constraint, skipping (archive partition 2019-Q1)\n#4326 2026-11-12T04:57:08Z ERROR ingest-api [t-5287] event e-6332 timed out waiting for downstream confirmation (120s), marked failed\n#4342 2026-11-12T04:57:12Z ERROR api-gateway [t-5302] POST /checkout 500 28450ms: upstream order-service returned 500 Internal Server Error\n#4346 2026-11-12T04:57:13Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1907 samples\n#4366 2026-11-12T04:57:19Z ERROR billing-reconciler invoice_archive row inv-834860 violates checksum constraint, skipping (archive partition 2019-Q2)\n#4437 2026-11-12T04:57:40Z WARN event-processor consumer lag on events.raw partition 0: 11889 messages behind (396s)\n#4467 2026-11-12T04:57:48Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 636 samples\n#4509 2026-11-12T04:58:01Z ERROR ingest-api [t-5425] event e-6440 timed out waiting for downstream confirmation (120s), marked failed\n#4636 2026-11-12T04:58:38Z WARN event-processor consumer lag on events.raw partition 0: 13870 messages behind (570s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "postgres",
+          "limit": 70
+        },
+        "output": "65 match(es):\n#1 2026-11-12T04:38:00Z INFO postgres checkpoint complete: wrote 746 buffers (2.8%)\n#74 2026-11-12T04:38:21Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 28\n#186 2026-11-12T04:38:48Z INFO postgres checkpoint complete: wrote 1205 buffers (6.9%)\n#257 2026-11-12T04:39:04Z INFO postgres checkpoint complete: wrote 704 buffers (3.5%)\n#334 2026-11-12T04:39:25Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 7\n#421 2026-11-12T04:39:47Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 9\n#490 2026-11-12T04:40:05Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 12\n#548 2026-11-12T04:40:21Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 1\n#643 2026-11-12T04:40:46Z INFO postgres checkpoint complete: wrote 1206 buffers (6.1%)\n#752 2026-11-12T04:41:13Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 22\n#871 2026-11-12T04:41:42Z INFO postgres checkpoint complete: wrote 315 buffers (6.0%)\n#977 2026-11-12T04:42:10Z INFO postgres checkpoint complete: wrote 1222 buffers (2.3%)\n#1052 2026-11-12T04:42:26Z INFO postgres checkpoint complete: wrote 794 buffers (6.4%)\n#1120 2026-11-12T04:42:43Z INFO postgres checkpoint complete: wrote 320 buffers (2.3%)\n#1214 2026-11-12T04:43:05Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 6\n#1289 2026-11-12T04:43:23Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 21\n#1385 2026-11-12T04:43:45Z INFO postgres checkpoint complete: wrote 929 buffers (1.3%)\n#1470 2026-11-12T04:44:06Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 19\n#1559 2026-11-12T04:44:25Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 27\n#1580 2026-11-12T04:44:30Z WARN postgres disk usage 95% on /var/lib/postgresql/data (WAL/binlog growth 871MB/h)\n#1638 2026-11-12T04:44:46Z INFO postgres checkpoint complete: wrote 732 buffers (3.0%)\n#1741 2026-11-12T04:45:12Z INFO postgres checkpoint complete: wrote 1117 buffers (2.7%)\n#1836 2026-11-12T04:45:36Z INFO postgres checkpoint complete: wrote 550 buffers (3.6%)\n#1907 2026-11-12T04:45:53Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 39\n#1999 2026-11-12T04:46:18Z INFO postgres checkpoint complete: wrote 838 buffers (1.8%)\n#2086 2026-11-12T04:46:42Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 31\n#2185 2026-11-12T04:47:09Z INFO postgres checkpoint complete: wrote 897 buffers (1.7%)\n#2278 2026-11-12T04:47:33Z INFO postgres checkpoint complete: wrote 1253 buffers (2.0%)\n#2365 2026-11-12T04:47:55Z INFO postgres checkpoint complete: wrote 1235 buffers (5.8%)\n#2371 2026-11-12T04:47:57Z WARN postgres disk usage 99% on /var/lib/postgresql/data (WAL/binlog growth 592MB/h)\n#2445 2026-11-12T04:48:13Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 37\n#2527 2026-11-12T04:48:33Z INFO postgres checkpoint complete: wrote 369 buffers (1.8%)\n#2627 2026-11-12T04:48:58Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 36\n#2692 2026-11-12T04:49:15Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 24\n#2749 2026-11-12T04:49:31Z ERROR postgres could not extend file \"base/16384/20622\": No space left on device\n#2774 2026-11-12T04:49:39Z INFO postgres checkpoint complete: wrote 974 buffers (6.7%)\n#2827 2026-11-12T04:49:55Z INFO postgres checkpoint complete: wrote 950 buffers (7.2%)\n#2933 2026-11-12T04:50:23Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 14\n#3028 2026-11-12T04:50:51Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 19\n#3055 2026-11-12T04:50:59Z ERROR postgres could not extend file \"base/16384/29039\": No space left on device\n#3130 2026-11-12T04:51:18Z INFO postgres checkpoint complete: wrote 511 buffers (6.1%)\n#3230 2026-11-12T04:51:47Z INFO postgres checkpoint complete: wrote 1263 buffers (3.0%)\n#3319 2026-11-12T04:52:14Z ERROR postgres could not extend file \"base/16384/24745\": No space left on device\n#3325 2026-11-12T04:52:15Z INFO postgres checkpoint complete: wrote 1018 buffers (2.1%)\n#3414 2026-11-12T04:52:41Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 35\n#3500 2026-11-12T04:53:06Z INFO postgres checkpoint complete: wrote 636 buffers (3.6%)\n#3587 2026-11-12T04:53:30Z INFO postgres checkpoint complete: wrote 1037 buffers (3.8%)\n#3691 2026-11-12T04:53:58Z INFO postgres checkpoint complete: wrote 1304 buffers (2.7%)\n#3798 2026-11-12T04:54:26Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 29\n#3876 2026-11-12T04:54:50Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 23\n#3939 2026-11-12T04:55:11Z INFO postgres checkpoint complete: wrote 1395 buffers (5.2%)\n#4005 2026-11-12T04:55:30Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 40\n#4092 2026-11-12T04:55:56Z INFO postgres checkpoint complete: wrote 943 buffers (4.0%)\n#4182 2026-11-12T04:56:25Z INFO postgres checkpoint complete: wrote 868 buffers (1.0%)\n#4275 2026-11-12T04:56:53Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 6\n#4343 2026-11-12T04:57:12Z INFO postgres checkpoint complete: wrote 732 buffers (1.3%)\n#4406 2026-11-12T04:57:32Z INFO postgres checkpoint complete: wrote 370 buffers (1.4%)\n#4489 2026-11-12T04:57:55Z INFO postgres checkpoint complete: wrote 812 buffers (7.8%)\n#4574 2026-11-12T04:58:20Z INFO postgres checkpoint complete: wrote 370 buffers (2.0%)\n#4641 2026-11-12T04:58:40Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 26\n#4703 2026-11-12T04:58:57Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 19\n#4803 2026-11-12T04:59:24Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 36\n#4890 2026-11-12T04:59:50Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 21\n#4980 2026-11-12T05:00:19Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 35\n#5059 2026-11-12T05:00:42Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 19"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "msg-263454",
+          "limit": 10
+        },
+        "output": "6 match(es):\n#2711 2026-11-12T04:49:20Z ERROR event-processor handler error for msg-263454 at offset 197049: invalid JSON payload (byte 1367 is NUL)\n#2713 2026-11-12T04:49:20Z INFO event-processor nack msg-263454, redelivering (attempt 8, no max-retries configured)\n#2900 2026-11-12T04:50:15Z ERROR event-processor cannot deserialize msg-263454 from partition 0: malformed body near position 1367\n#3164 2026-11-12T04:51:29Z ERROR event-processor failed to process msg-263454 (partition 0, offset 197049): JSON parse error: unexpected token '\\u0000' at position 1367\n#3321 2026-11-12T04:52:15Z ERROR event-processor SyntaxError: Unexpected token \\u0000 in JSON at position 1367 (message msg-263454, events.raw[0]@197049)\n#3539 2026-11-12T04:53:17Z ERROR event-processor handler error for msg-263454 at offset 197049: invalid JSON payload (byte 1367 is NUL)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "event-processor",
+          "level": "WARN",
+          "until": "04:49:30",
+          "limit": 20
+        },
+        "output": "2 match(es):\n#2297 2026-11-12T04:47:38Z WARN event-processor GC pause 696ms (G1 Old Gen), heap 68% after collection\n#2711 2026-11-12T04:49:20Z ERROR event-processor handler error for msg-263454 at offset 197049: invalid JSON payload (byte 1367 is NUL)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.85,
+              "evidenceLines": [
+                2711,
+                2713,
+                2900,
+                3164,
+                3321,
+                3539
+              ],
+              "reasoning": "The events.raw lag is on partition 0, and it is pinned to a single message, msg-263454 at offset 197049, whose body contains a NUL byte at position 1367. event-processor fails to parse it on every delivery (#2711, #3164, #3321, #3539). Its nack (#2713) says attempt 8 with no max-retries configured, so the message is redelivered forever and the partition stops advancing. Consumer lag then grows steadily (#3025 1309 msgs/85s, #3457, #3744 5215/300s, #4636 13870/570s). Consumer CPU is normal because the consumer is blocked on retries, not computing. Root cause: a malformed record with no dead-letter or max-retry handling.",
+              "recommendedAction": "Move msg-263454 (offset 197049, partition 0) to a dead-letter queue or skip it, then add a max-retry limit with DLQ routing for events.raw consumers. Separately, fix the upstream producer that emitted the NUL byte. Note the independent disk-full incident on postgres (#2749, #3055, #3319; order-service DiskFullError #2712, #3243) needs its own remediation: free WAL/space on the data volume (it grew to 99%, #2371)."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.3,
+              "evidenceLines": [
+                1580,
+                2371,
+                2749,
+                2712,
+                3243,
+                3055
+              ],
+              "reasoning": "Postgres data volume filled (95% then 99% with WAL growth, then 'No space left on device'). This breaks orders.insert in order-service and causes checkout 500s (#2937, #3379). It is a serious parallel incident, but it does not explain the events.raw partition-0 lag, which is pinned to one unparseable message. Ranked lower as a contributor to the alert, not its cause.",
+              "recommendedAction": "Free disk space on the postgres data volume (WAL archiving or cleanup) and monitor WAL growth. This is required to restore checkout, independent of the queue fix."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.85,
+              "evidenceLines": [
+                2711,
+                2713,
+                2900,
+                3164,
+                3321,
+                3539
+              ],
+              "reasoning": "The events.raw lag is on partition 0, and it is pinned to a single message, msg-263454 at offset 197049, whose body contains a NUL byte at position 1367. event-processor fails to parse it on every delivery (#2711, #3164, #3321, #3539). Its nack (#2713) says attempt 8 with no max-retries configured, so the message is redelivered forever and the partition stops advancing. Consumer lag then grows steadily (#3025 1309 msgs/85s, #3457, #3744 5215/300s, #4636 13870/570s). Consumer CPU is normal because the consumer is blocked on retries, not computing. Root cause: a malformed record with no dead-letter or max-retry handling.",
+              "recommendedAction": "Move msg-263454 (offset 197049, partition 0) to a dead-letter queue or skip it, then add a max-retry limit with DLQ routing for events.raw consumers. Separately, fix the upstream producer that emitted the NUL byte. Note the independent disk-full incident on postgres (#2749, #3055, #3319; order-service DiskFullError #2712, #3243) needs its own remediation: free WAL/space on the data volume (it grew to 99%, #2371)."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.3,
+              "evidenceLines": [
+                1580,
+                2371,
+                2749,
+                2712,
+                3243,
+                3055
+              ],
+              "reasoning": "Postgres data volume filled (95% then 99% with WAL growth, then 'No space left on device'). This breaks orders.insert in order-service and causes checkout 500s (#2937, #3379). It is a serious parallel incident, but it does not explain the events.raw partition-0 lag, which is pinned to one unparseable message. Ranked lower as a contributor to the alert, not its cause.",
+              "recommendedAction": "Free disk space on the postgres data volume (WAL archiving or cleanup) and monitor WAL growth. This is required to restore checkout, independent of the queue fix."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.85,
+              "evidenceLines": [
+                2711,
+                2713,
+                2900,
+                3164,
+                3321,
+                3539
+              ],
+              "reasoning": "The events.raw lag is on partition 0, and it is pinned to a single message, msg-263454 at offset 197049, whose body contains a NUL byte at position 1367. event-processor fails to parse it on every delivery (#2711, #3164, #3321, #3539). Its nack (#2713) says attempt 8 with no max-retries configured, so the message is redelivered forever and the partition stops advancing. Consumer lag then grows steadily (#3025 1309 msgs/85s, #3457, #3744 5215/300s, #4636 13870/570s). Consumer CPU is normal because the consumer is blocked on retries, not computing."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.3,
+              "evidenceLines": [
+                1580,
+                2371,
+                2749,
+                2712,
+                3243,
+                3055
+              ],
+              "reasoning": "Postgres data volume filled (95% then 99% with WAL growth, then 'No space left on device'). This breaks orders.insert in order-service and causes checkout 500s (#2937, #3379). It is a serious parallel incident but does not explain the events.raw partition-0 lag, which is pinned to one unparseable message. Ranked lower as a contributor to the alert, not its cause."
+            }
+          ],
+          "recommendedAction": "Move msg-263454 (offset 197049, partition 0) to a dead-letter queue or skip it, then add a max-retry limit with DLQ routing for events.raw consumers, and fix the upstream producer that emitted the NUL byte. Separately, free space on the postgres data volume (99% full, WAL growth; #2371, #2749, #3055) to restore order inserts and checkout, which is a parallel incident not causing the lag."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 2935,
+      "cacheReadTokens": 39675,
+      "cacheWriteTokens": 13707
+    },
+    "durationMs": 12877,
+    "stopReason": "tool_use"
+  }
+}

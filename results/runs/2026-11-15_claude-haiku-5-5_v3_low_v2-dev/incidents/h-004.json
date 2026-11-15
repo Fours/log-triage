@@ -1,0 +1,177 @@
+{
+  "score": {
+    "incidentId": "h-004",
+    "difficulty": "medium",
+    "scenario": "dependency_timeout/db-lock-wait",
+    "truth": "dependency_timeout",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.8,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 6,
+      "precision": 0.8571428571428571,
+      "recall": 0.6666666666666666,
+      "f1": 0.75
+    },
+    "herringsCited": 0,
+    "costUsd": 0.003079,
+    "durationMs": 11813,
+    "iterations": 5,
+    "toolCalls": 7,
+    "tokens": {
+      "input": 12,
+      "output": 2216,
+      "cacheRead": 30555,
+      "cacheWrite": 13314
+    }
+  },
+  "result": {
+    "incidentId": "h-004",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.8,
+          "evidenceLines": [
+            1553,
+            1653,
+            1664,
+            1783,
+            1667,
+            1793,
+            1847
+          ],
+          "reasoning": "Origin: at 03:19:31 catalog-db reports transaction 97844 (application_name=catalog-svc-reconciler) sitting 'idle in transaction' while holding RowExclusiveLock on products (#1553). It is never committed or released. From 03:20:22 UPDATE products statements from catalog-svc block on ShareLock behind that transaction (#1653, #1748). Those writes then hit statement_timeout and are cancelled (#1664, #1783, #1865). search-api's getBatch calls to catalog-svc time out at 15s (#1667, #1793). Downstream, search-api's connection pool to catalog-svc saturates (#1868, #1953) and pool checkouts time out (#2027). web-bff then returns 504s (#1847, #1978, #2307). The metrics-agent exporter queue overflow is a side effect of the load and is not causal. Before the lock, the vacuum and checkpoint activity on catalog-db looked normal. Index-worker's DLQ'd message (#502) is unrelated. The lock holder is a stuck session rather than a hung dependency, so this is a lock-wait timeout (classified as dependency_timeout), with some chance the session leak is better read as a config or client bug."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.15,
+          "evidenceLines": [
+            1868,
+            1953,
+            2027,
+            1978
+          ],
+          "reasoning": "Pool saturation in search-api (50/50 in use, 61 queued, checkout timeouts) amplifies the blocked catalog-svc calls into 504s at the edge. This is the amplification path, not the originating fault, so it is ranked lower."
+        }
+      ],
+      "recommendedAction": "Immediately terminate the idle-in-transaction session for application_name=catalog-svc-reconciler (transaction 97844) on catalog-db to release the ShareLock. Then fix the reconciler so it commits or rolls back promptly and sets idle_in_transaction_session_timeout. Add a statement timeout and alerting for long-idle transactions holding locks on products. Once the lock clears, search-api's connection pool should drain and the 504s should stop. Consider a catalog-db lock-wait alert, and review the reconciler code path that opened the transaction at 03:19:31. Re-drive the DLQ'd catalog.updates message (#502) after checking its schema."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "30 match(es):\n#502 2026-10-27T03:10:53Z WARN index-worker msg-980198 from catalog.updates failed schema validation (missing field \"version\"), moved to catalog.updates.dlq\n#742 2026-10-27T03:12:46Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 581 samples\n#1053 2026-10-27T03:15:24Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1818 samples\n#1266 2026-10-27T03:17:10Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1196 samples\n#1442 2026-10-27T03:18:37Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1273 samples\n#1651 2026-10-27T03:20:19Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1629 samples\n#1653 2026-10-27T03:20:22Z WARN catalog-db process 32677 still waiting for ShareLock on transaction 97844 after 1000.000 ms (UPDATE products SET ...)\n#1664 2026-10-27T03:20:31Z ERROR catalog-svc [t-2140] canceling UPDATE on products for p-9438 due to statement_timeout\n#1667 2026-10-27T03:20:36Z ERROR search-api [t-2140] CatalogClient.getBatch timed out after 15000ms calling catalog-svc GET /products/batch (p-9438)\n#1698 2026-10-27T03:21:03Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2304 samples\n#1748 2026-10-27T03:21:37Z WARN catalog-db process 14715 still waiting for ShareLock on transaction 97844 after 1000.000 ms (UPDATE products SET ...)\n#1783 2026-10-27T03:22:05Z ERROR catalog-svc [t-2183] db write products/p-9466 aborted: QueryCanceled after 10.0s\n#1793 2026-10-27T03:22:10Z ERROR search-api [t-2183] upstream request to catalog-svc failed: ReadTimeout (read timeout=15s) [p-9466]\n#1847 2026-10-27T03:22:53Z ERROR web-bff [t-2211] GET /search 504 11992ms: upstream search-api timed out\n#1865 2026-10-27T03:23:12Z ERROR catalog-svc [t-2217] query canceled: statement timeout 10000ms (UPDATE products WHERE id = p-9493)\n#1868 2026-10-27T03:23:15Z WARN search-api HTTP connection pool to catalog-svc at capacity (50/50 in use), 35 requests queued\n#1869 2026-10-27T03:23:17Z ERROR search-api [t-2217] GET /products/batch -> catalog-svc: context deadline exceeded after 15.0s (p-9493)\n#1892 2026-10-27T03:23:34Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1827 samples\n#1953 2026-10-27T03:24:23Z WARN search-api HTTP connection pool to catalog-svc at capacity (50/50 in use), 61 requests queued\n#1978 2026-10-27T03:24:39Z ERROR web-bff [t-2264] GET /search 504 25201ms: upstream search-api timed out\n#1987 2026-10-27T03:24:47Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 823 samples\n#2025 2026-10-27T03:25:23Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 919 samples\n#2027 2026-10-27T03:25:24Z ERROR search-api pool checkout timeout: no connection to catalog-svc available after 5000ms\n#2043 2026-10-27T03:25:39Z ERROR web-bff [t-2282] GET /search 504 24626ms: upstream search-api timed out\n#2069 2026-10-27T03:25:57Z ERROR web-bff [t-2296] GET /search 504 17676ms: upstream search-api timed out\n#2188 2026-10-27T03:27:41Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 587 samples\n#2190 2026-10-27T03:27:44Z ERROR web-bff [t-2343] GET /search 504 15309ms: upstream search-api timed out\n#2240 2026-10-27T03:28:29Z ERROR web-bff [t-2359] GET /search 504 19640ms: upstream search-api timed out\n#2307 2026-10-27T03:29:38Z ERROR web-bff [t-2376] GET /search 504 27478ms: upstream search-api timed out\n#2309 2026-10-27T03:29:39Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 559 samples"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "metrics-agent",
+          "level": "ERROR"
+        },
+        "output": "11 match(es):\n#742 2026-10-27T03:12:46Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 581 samples\n#1053 2026-10-27T03:15:24Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1818 samples\n#1266 2026-10-27T03:17:10Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1196 samples\n#1442 2026-10-27T03:18:37Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1273 samples\n#1651 2026-10-27T03:20:19Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1629 samples\n#1698 2026-10-27T03:21:03Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2304 samples\n#1892 2026-10-27T03:23:34Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1827 samples\n#1987 2026-10-27T03:24:47Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 823 samples\n#2025 2026-10-27T03:25:23Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 919 samples\n#2188 2026-10-27T03:27:41Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 587 samples\n#2309 2026-10-27T03:29:39Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 559 samples"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-db",
+          "until": "03:21:00",
+          "limit": 60
+        },
+        "output": "71 match(es), showing first 60:\n#16 2026-10-27T03:07:07Z INFO catalog-db checkpoint complete: wrote 450 buffers (1.7%)\n#40 2026-10-27T03:07:17Z INFO catalog-db checkpoint complete: wrote 963 buffers (7.1%)\n#56 2026-10-27T03:07:26Z INFO catalog-db checkpoint complete: wrote 613 buffers (5.8%)\n#83 2026-10-27T03:07:39Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 1\n#106 2026-10-27T03:07:49Z INFO catalog-db checkpoint complete: wrote 727 buffers (5.8%)\n#128 2026-10-27T03:07:59Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 4\n#156 2026-10-27T03:08:14Z INFO catalog-db checkpoint complete: wrote 1370 buffers (7.7%)\n#184 2026-10-27T03:08:28Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 32\n#206 2026-10-27T03:08:38Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 18\n#231 2026-10-27T03:08:47Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 37\n#260 2026-10-27T03:09:01Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 14\n#291 2026-10-27T03:09:16Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 9\n#321 2026-10-27T03:09:28Z INFO catalog-db checkpoint complete: wrote 1225 buffers (1.2%)\n#342 2026-10-27T03:09:38Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 15\n#367 2026-10-27T03:09:50Z INFO catalog-db checkpoint complete: wrote 1170 buffers (3.5%)\n#389 2026-10-27T03:10:01Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 14\n#416 2026-10-27T03:10:14Z INFO catalog-db checkpoint complete: wrote 688 buffers (2.8%)\n#441 2026-10-27T03:10:26Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 33\n#460 2026-10-27T03:10:36Z INFO catalog-db checkpoint complete: wrote 404 buffers (4.5%)\n#485 2026-10-27T03:10:45Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 19\n#515 2026-10-27T03:10:58Z INFO catalog-db checkpoint complete: wrote 472 buffers (3.4%)\n#545 2026-10-27T03:11:13Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 35\n#571 2026-10-27T03:11:25Z INFO catalog-db checkpoint complete: wrote 1360 buffers (6.3%)\n#595 2026-10-27T03:11:37Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 26\n#619 2026-10-27T03:11:48Z INFO catalog-db checkpoint complete: wrote 842 buffers (2.8%)\n#639 2026-10-27T03:11:57Z INFO catalog-db checkpoint complete: wrote 920 buffers (4.1%)\n#669 2026-10-27T03:12:12Z INFO catalog-db checkpoint complete: wrote 992 buffers (1.3%)\n#697 2026-10-27T03:12:24Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 14\n#717 2026-10-27T03:12:35Z INFO catalog-db checkpoint complete: wrote 491 buffers (7.6%)\n#744 2026-10-27T03:12:47Z INFO catalog-db checkpoint complete: wrote 1249 buffers (1.7%)\n#770 2026-10-27T03:13:01Z INFO catalog-db checkpoint complete: wrote 397 buffers (2.0%)\n#791 2026-10-27T03:13:12Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 13\n#818 2026-10-27T03:13:26Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 26\n#840 2026-10-27T03:13:35Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 38\n#873 2026-10-27T03:13:51Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 8\n#901 2026-10-27T03:14:05Z INFO catalog-db checkpoint complete: wrote 497 buffers (7.9%)\n#927 2026-10-27T03:14:19Z INFO catalog-db checkpoint complete: wrote 1067 buffers (2.5%)\n#950 2026-10-27T03:14:29Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 39\n#978 2026-10-27T03:14:45Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 38\n#997 2026-10-27T03:14:54Z INFO catalog-db checkpoint complete: wrote 1061 buffers (2.0%)\n#1015 2026-10-27T03:15:03Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 18\n#1031 2026-10-27T03:15:13Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 17\n#1050 2026-10-27T03:15:23Z INFO catalog-db checkpoint complete: wrote 643 buffers (2.3%)\n#1074 2026-10-27T03:15:33Z INFO catalog-db checkpoint complete: wrote 1039 buffers (1.4%)\n#1095 2026-10-27T03:15:45Z INFO catalog-db checkpoint complete: wrote 924 buffers (6.8%)\n#1121 2026-10-27T03:15:58Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 1\n#1145 2026-10-27T03:16:11Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 3\n#1173 2026-10-27T03:16:23Z INFO catalog-db checkpoint complete: wrote 1117 buffers (3.1%)\n#1206 2026-10-27T03:16:39Z INFO catalog-db checkpoint complete: wrote 1057 buffers (7.8%)\n#1236 2026-10-27T03:16:53Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 23\n#1253 2026-10-27T03:17:03Z INFO catalog-db checkpoint complete: wrote 1230 buffers (6.0%)\n#1272 2026-10-27T03:17:13Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 28\n#1294 2026-10-27T03:17:23Z INFO catalog-db checkpoint complete: wrote 768 buffers (2.1%)\n#1317 2026-10-27T03:17:35Z INFO catalog-db checkpoint complete: wrote 1035 buffers (7.3%)\n#1340 2026-10-27T03:17:46Z INFO catalog-db checkpoint complete: wrote 851 buffers (5.2%)\n#1362 2026-10-27T03:17:58Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 28\n#1395 2026-10-27T03:18:13Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 15\n#1422 2026-10-27T03:18:28Z INFO catalog-db checkpoint complete: wrote 1133 buffers (6.3%)\n#1452 2026-10-27T03:18:42Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 10\n#1472 2026-10-27T03:18:53Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 30"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "97844"
+        },
+        "output": "3 match(es):\n#1553 2026-10-27T03:19:31Z INFO catalog-db transaction 97844 (application_name=catalog-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"products\"\n#1653 2026-10-27T03:20:22Z WARN catalog-db process 32677 still waiting for ShareLock on transaction 97844 after 1000.000 ms (UPDATE products SET ...)\n#1748 2026-10-27T03:21:37Z WARN catalog-db process 14715 still waiting for ShareLock on transaction 97844 after 1000.000 ms (UPDATE products SET ...)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1553,
+          "before": 12,
+          "after": 4
+        },
+        "output": "#1541 2026-10-27T03:19:25Z INFO web-bff [t-2071] GET /search 200 85ms\n#1542 2026-10-27T03:19:25Z INFO metrics-agent flushed 8684 series to remote-write in 42ms\n#1543 2026-10-27T03:19:27Z INFO search-api [t-2073] product p-9381 accepted, calling catalog-svc GET /products/batch\n#1544 2026-10-27T03:19:27Z INFO web-bff [t-2073] GET /search 200 71ms\n#1545 2026-10-27T03:19:28Z INFO index-worker processed batch of 88 messages from catalog.updates (lag 237ms)\n#1546 2026-10-27T03:19:28Z INFO search-api [t-2076] product p-9384 accepted, calling catalog-svc GET /products/batch\n#1547 2026-10-27T03:19:28Z INFO catalog-svc [t-2076] GET /products/batch p-9384 ok 65ms\n#1548 2026-10-27T03:19:28Z INFO web-bff [t-2076] GET /search 200 133ms\n#1549 2026-10-27T03:19:29Z INFO redis-cache stats: hits=12813 misses=599 evicted=0 connected_clients=50\n#1550 2026-10-27T03:19:31Z INFO search-api [t-2080] product p-9386 accepted, calling catalog-svc GET /products/batch\n#1551 2026-10-27T03:19:31Z INFO catalog-svc [t-2080] GET /products/batch p-9386 ok 67ms\n#1552 2026-10-27T03:19:31Z INFO web-bff [t-2080] GET /search 200 93ms\n#1553 2026-10-27T03:19:31Z INFO catalog-db transaction 97844 (application_name=catalog-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"products\"\n#1554 2026-10-27T03:19:32Z DEBUG catalog-svc GC pause 25ms (young), heap 30%\n#1555 2026-10-27T03:19:32Z INFO index-worker processed batch of 34 messages from catalog.updates (lag 241ms)\n#1556 2026-10-27T03:19:32Z INFO search-api [t-2083] product p-9388 accepted, calling catalog-svc GET /products/batch\n#1557 2026-10-27T03:19:32Z INFO web-bff [t-2083] GET /search 200 71ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "reconciler",
+          "since": "03:07:00",
+          "until": "03:20:00",
+          "limit": 40
+        },
+        "output": "1 match(es):\n#1553 2026-10-27T03:19:31Z INFO catalog-db transaction 97844 (application_name=catalog-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"products\""
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-svc",
+          "until": "03:20:30",
+          "limit": 40
+        },
+        "output": "249 match(es), showing first 40:\n#4 2026-10-27T03:07:01Z INFO catalog-svc [t-1111] GET /products/batch p-8651 ok 79ms\n#10 2026-10-27T03:07:05Z INFO catalog-svc [t-1117] GET /products/batch p-8656 ok 74ms\n#21 2026-10-27T03:07:09Z DEBUG catalog-svc GC pause 23ms (young), heap 31%\n#22 2026-10-27T03:07:09Z INFO catalog-svc [t-1126] GET /products/batch p-8663 ok 62ms\n#26 2026-10-27T03:07:12Z INFO catalog-svc [t-1130] GET /products/batch p-8666 ok 29ms\n#31 2026-10-27T03:07:14Z INFO catalog-svc [t-1131] GET /products/batch p-8669 ok 54ms\n#38 2026-10-27T03:07:17Z INFO catalog-svc [t-1135] GET /products/batch p-8670 ok 54ms\n#44 2026-10-27T03:07:20Z DEBUG catalog-svc GC pause 23ms (young), heap 30%\n#58 2026-10-27T03:07:28Z INFO catalog-svc [t-1151] GET /products/batch p-8678 ok 21ms\n#67 2026-10-27T03:07:31Z INFO catalog-svc [t-1155] GET /products/batch p-8681 ok 36ms\n#71 2026-10-27T03:07:32Z INFO catalog-svc [t-1159] GET /products/batch p-8683 ok 42ms\n#76 2026-10-27T03:07:35Z INFO catalog-svc [t-1162] GET /products/batch p-8686 ok 82ms\n#78 2026-10-27T03:07:36Z DEBUG catalog-svc GC pause 9ms (young), heap 38%\n#80 2026-10-27T03:07:36Z INFO catalog-svc [t-1166] GET /products/batch p-8687 ok 64ms\n#85 2026-10-27T03:07:39Z INFO catalog-svc [t-1170] GET /products/batch p-8688 ok 51ms\n#92 2026-10-27T03:07:42Z INFO catalog-svc [t-1176] GET /products/batch p-8692 ok 86ms\n#98 2026-10-27T03:07:44Z INFO catalog-svc [t-1178] GET /products/batch p-8693 ok 83ms\n#108 2026-10-27T03:07:49Z DEBUG catalog-svc GC pause 13ms (young), heap 28%\n#112 2026-10-27T03:07:50Z INFO catalog-svc [t-1190] GET /products/batch p-8701 ok 74ms\n#119 2026-10-27T03:07:55Z INFO catalog-svc [t-1193] GET /products/batch p-8706 ok 63ms\n#126 2026-10-27T03:07:58Z INFO catalog-svc [t-1197] GET /products/batch p-8708 ok 75ms\n#132 2026-10-27T03:08:00Z INFO catalog-svc [t-1200] GET /products/batch p-8709 ok 89ms\n#143 2026-10-27T03:08:06Z INFO catalog-svc [t-1209] GET /products/batch p-8716 ok 48ms\n#146 2026-10-27T03:08:07Z DEBUG catalog-svc GC pause 10ms (young), heap 29%\n#163 2026-10-27T03:08:17Z INFO catalog-svc [t-1221] GET /products/batch p-8723 ok 78ms\n#165 2026-10-27T03:08:18Z DEBUG catalog-svc GC pause 11ms (young), heap 34%\n#171 2026-10-27T03:08:21Z INFO catalog-svc [t-1228] GET /products/batch p-8725 ok 29ms\n#175 2026-10-27T03:08:23Z INFO catalog-svc [t-1230] GET /products/batch p-8728 ok 44ms\n#188 2026-10-27T03:08:29Z DEBUG catalog-svc GC pause 4ms (young), heap 43%\n#190 2026-10-27T03:08:30Z INFO catalog-svc [t-1237] GET /products/batch p-8734 ok 25ms\n#193 2026-10-27T03:08:32Z INFO catalog-svc [t-1239] GET /products/batch p-8735 ok 25ms\n#201 2026-10-27T03:08:35Z INFO catalog-svc [t-1245] GET /products/batch p-8737 ok 63ms\n#209 2026-10-27T03:08:39Z INFO catalog-svc [t-1250] GET /products/batch p-8742 ok 37ms\n#213 2026-10-27T03:08:41Z DEBUG catalog-svc GC pause 11ms (young), heap 38%\n#220 2026-10-27T03:08:44Z INFO catalog-svc [t-1256] GET /products/batch p-8747 ok 25ms\n#223 2026-10-27T03:08:45Z INFO catalog-svc [t-1257] GET /products/batch p-8749 ok 85ms\n#227 2026-10-27T03:08:46Z INFO catalog-svc [t-1258] GET /products/batch p-8751 ok 87ms\n#233 2026-10-27T03:08:48Z INFO catalog-svc [t-1262] GET /products/batch p-8754 ok 67ms\n#238 2026-10-27T03:08:50Z INFO catalog-svc [t-1266] GET /products/batch p-8757 ok 36ms\n#242 2026-10-27T03:08:52Z INFO catalog-svc [t-1270] GET /products/batch p-8759 ok 80ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.8,
+              "evidenceLines": [
+                1553,
+                1653,
+                1664,
+                1783,
+                1667,
+                1793,
+                1847
+              ],
+              "reasoning": "Origin: at 03:19:31 catalog-db reports transaction 97844 (application_name=catalog-svc-reconciler) sitting 'idle in transaction' while holding RowExclusiveLock on products (#1553). It is never committed or released. From 03:20:22 UPDATE products statements from catalog-svc block on ShareLock behind that transaction (#1653, #1748). Those writes then hit statement_timeout and are cancelled (#1664, #1783, #1865). search-api's getBatch calls to catalog-svc time out at 15s (#1667, #1793). Downstream, search-api's connection pool to catalog-svc saturates (#1868, #1953) and pool checkouts time out (#2027). web-bff then returns 504s (#1847, #1978, #2307). The metrics-agent exporter queue overflow is a side effect of the load and is not causal. Before the lock, the vacuum and checkpoint activity on catalog-db looked normal. Index-worker's DLQ'd message (#502) is unrelated. The lock holder is a stuck session rather than a hung dependency, so this is a lock-wait timeout (classified as dependency_timeout), with some chance the session leak is better read as a config or client bug.",
+              "confidence_note": "Alternatives considered: resource_exhaustion (metrics-agent queue full, search-api pool at 50/50). Those are symptoms of the lock wait and not the origin. cascading_failure is also plausible for the retry/pool amplification."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.15,
+              "evidenceLines": [
+                1868,
+                1953,
+                2027,
+                1978
+              ],
+              "reasoning": "Pool saturation in search-api (50/50 in use, 61 queued, checkout timeouts) amplifies the blocked catalog-svc calls into 504s at the edge. This is the amplification path, not the originating fault, so it is ranked lower."
+            }
+          ],
+          "recommendedAction": "Immediately terminate the idle-in-transaction session for application_name=catalog-svc-reconciler (transaction 97844) on catalog-db to release the ShareLock. Then fix the reconciler so it commits or rolls back promptly and sets idle_in_transaction_session_timeout. Add a statement timeout and alerting for long-idle transactions holding locks on products. Once the lock clears, search-api's connection pool should drain and the 504s should stop. Consider a catalog-db lock-wait alert, and review the reconciler code path that opened the transaction at 03:19:31. Re-drive the DLQ'd catalog.updates message (#502) after checking its schema."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 7,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 2216,
+      "cacheReadTokens": 30555,
+      "cacheWriteTokens": 13314
+    },
+    "durationMs": 11813,
+    "stopReason": "tool_use"
+  }
+}

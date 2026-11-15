@@ -1,0 +1,160 @@
+{
+  "score": {
+    "incidentId": "h-012",
+    "difficulty": "medium",
+    "scenario": "resource_exhaustion/db-disk-full",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 8,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 3,
+    "costUsd": 0.002296,
+    "durationMs": 9355,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 1938,
+      "cacheRead": 17625,
+      "cacheWrite": 9198
+    }
+  },
+  "result": {
+    "incidentId": "h-012",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.9,
+          "evidenceLines": [
+            477,
+            910,
+            1254,
+            1257,
+            1347,
+            1378,
+            1468,
+            1469
+          ],
+          "reasoning": "accounts-db's data volume filled up. A disk-usage warning at 95% (#477, WAL/binlog growth 595MB/h) was followed by 99% (#910, growth 816MB/h). Once the disk was full, inserts into the accounts table began failing: account-svc logged 'could not extend file ... No space left on device' (#1254, #1347, #1468), and accounts-db reported the same error at the storage layer (#1257, #1378, #1469). Those failed inserts surface at the edge as POST /login 500s from account-svc (edge-proxy #1289, #1470, #1883). Reads stay healthy because they don't need new space. The disk fill is the origin; the 500s are downstream."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.15,
+          "evidenceLines": [
+            658,
+            823,
+            1146
+          ],
+          "reasoning": "billing-reconciler logs checksum constraint violations on invoice_archive rows in 2019 partitions starting around 13:34. They affect only the billing archive, not the login path, so this is a separate problem and not the cause of the login 500s."
+        }
+      ],
+      "recommendedAction": "Immediately free disk space on the accounts-db data volume (find and prune the WAL/binlog growth source) or extend the volume so inserts can resume. Then confirm account-svc inserts succeed and POST /login 500s drop. Add a disk-usage alert with earlier thresholds. Separately, investigate the billing-reconciler invoice_archive checksum violations in the 2019 partitions as a distinct data-integrity issue."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "since": "2026-10-22T13:29:00Z",
+          "until": "2026-10-22T13:33:00Z",
+          "limit": 60
+        },
+        "output": "1 match(es):\n#477 2026-10-22T13:32:54Z WARN accounts-db disk usage 95% on /var/lib/postgresql/data (WAL/binlog growth 595MB/h)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 60
+        },
+        "output": "28 match(es):\n#658 2026-10-22T13:34:19Z ERROR billing-reconciler invoice_archive row inv-921048 violates checksum constraint, skipping (archive partition 2019-Q1)\n#823 2026-10-22T13:35:38Z ERROR billing-reconciler invoice_archive row inv-481211 violates checksum constraint, skipping (archive partition 2019-Q1)\n#895 2026-10-22T13:36:11Z ERROR billing-reconciler invoice_archive row inv-560476 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1058 2026-10-22T13:37:32Z ERROR billing-reconciler invoice_archive row inv-400058 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1146 2026-10-22T13:38:14Z ERROR billing-reconciler invoice_archive row inv-262498 violates checksum constraint, skipping (archive partition 2019-Q1)\n#1254 2026-10-22T13:39:14Z ERROR account-svc [t-6494] insert into accounts failed for u-2024: could not extend file\n#1257 2026-10-22T13:39:16Z ERROR accounts-db could not extend file \"base/16384/25695\": No space left on device\n#1289 2026-10-22T13:39:39Z ERROR edge-proxy [t-6508] POST /login 500 27761ms: upstream account-svc returned 500 Internal Server Error\n#1310 2026-10-22T13:39:55Z ERROR billing-reconciler invoice_archive row inv-707605 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1347 2026-10-22T13:40:19Z ERROR account-svc [t-6544] could not save user u-2057: database rejected the write (disk full)\n#1360 2026-10-22T13:40:26Z ERROR billing-reconciler invoice_archive row inv-243665 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1378 2026-10-22T13:40:36Z ERROR accounts-db could not extend file \"base/16384/30820\": No space left on device\n#1462 2026-10-22T13:41:29Z ERROR billing-reconciler invoice_archive row inv-221651 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1468 2026-10-22T13:41:31Z ERROR account-svc [t-6609] accounts.insert(u-2109) -> DiskFullError\n#1469 2026-10-22T13:41:32Z ERROR accounts-db could not extend file \"base/16384/30138\": No space left on device\n#1470 2026-10-22T13:41:32Z ERROR edge-proxy [t-6612] POST /login 500 27946ms: upstream account-svc returned 500 Internal Server Error\n#1543 2026-10-22T13:42:19Z ERROR edge-proxy [t-6646] POST /login 500 23504ms: upstream account-svc returned 500 Internal Server Error\n#1586 2026-10-22T13:42:54Z ERROR billing-reconciler invoice_archive row inv-191849 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1652 2026-10-22T13:43:45Z ERROR billing-reconciler invoice_archive row inv-399738 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1660 2026-10-22T13:43:51Z ERROR edge-proxy [t-6699] POST /login 500 10861ms: upstream account-svc returned 500 Internal Server Error\n#1744 2026-10-22T13:44:52Z ERROR billing-reconciler invoice_archive row inv-772019 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1773 2026-10-22T13:45:09Z ERROR billing-reconciler invoice_archive row inv-399536 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1782 2026-10-22T13:45:18Z ERROR edge-proxy [t-6751] POST /login 500 8947ms: upstream account-svc returned 500 Internal Server Error\n#1883 2026-10-22T13:46:24Z ERROR edge-proxy [t-6804] POST /login 500 25468ms: upstream account-svc returned 500 Internal Server Error\n#1913 2026-10-22T13:46:48Z ERROR billing-reconciler invoice_archive row inv-384738 violates checksum constraint, skipping (archive partition 2019-Q1)\n#1964 2026-10-22T13:47:21Z ERROR billing-reconciler invoice_archive row inv-837625 violates checksum constraint, skipping (archive partition 2019-Q3)\n#2012 2026-10-22T13:48:02Z ERROR edge-proxy [t-6876] POST /login 500 9319ms: upstream account-svc returned 500 Internal Server Error\n#2044 2026-10-22T13:48:24Z ERROR billing-reconciler invoice_archive row inv-575479 violates checksum constraint, skipping (archive partition 2019-Q2)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "accounts-db",
+          "limit": 40
+        },
+        "output": "100 match(es), showing first 40:\n#26 2026-10-22T13:29:12Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 15\n#49 2026-10-22T13:29:24Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 27\n#79 2026-10-22T13:29:40Z INFO accounts-db checkpoint complete: wrote 1342 buffers (7.8%)\n#104 2026-10-22T13:29:52Z INFO accounts-db checkpoint complete: wrote 1091 buffers (6.5%)\n#135 2026-10-22T13:30:06Z INFO accounts-db checkpoint complete: wrote 224 buffers (4.5%)\n#154 2026-10-22T13:30:16Z INFO accounts-db checkpoint complete: wrote 1012 buffers (2.4%)\n#179 2026-10-22T13:30:27Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 25\n#197 2026-10-22T13:30:37Z INFO accounts-db checkpoint complete: wrote 922 buffers (2.6%)\n#223 2026-10-22T13:30:51Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 13\n#246 2026-10-22T13:31:02Z INFO accounts-db checkpoint complete: wrote 439 buffers (7.5%)\n#261 2026-10-22T13:31:12Z INFO accounts-db checkpoint complete: wrote 721 buffers (6.7%)\n#289 2026-10-22T13:31:25Z INFO accounts-db checkpoint complete: wrote 590 buffers (3.1%)\n#312 2026-10-22T13:31:36Z INFO accounts-db checkpoint complete: wrote 1305 buffers (6.7%)\n#339 2026-10-22T13:31:49Z INFO accounts-db checkpoint complete: wrote 1011 buffers (7.7%)\n#364 2026-10-22T13:32:00Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 36\n#383 2026-10-22T13:32:11Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 21\n#417 2026-10-22T13:32:25Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 0\n#442 2026-10-22T13:32:36Z INFO accounts-db checkpoint complete: wrote 818 buffers (6.7%)\n#471 2026-10-22T13:32:51Z INFO accounts-db checkpoint complete: wrote 921 buffers (6.2%)\n#477 2026-10-22T13:32:54Z WARN accounts-db disk usage 95% on /var/lib/postgresql/data (WAL/binlog growth 595MB/h)\n#487 2026-10-22T13:33:00Z INFO accounts-db checkpoint complete: wrote 970 buffers (7.0%)\n#514 2026-10-22T13:33:12Z INFO accounts-db checkpoint complete: wrote 421 buffers (6.1%)\n#542 2026-10-22T13:33:24Z INFO accounts-db checkpoint complete: wrote 1393 buffers (2.8%)\n#569 2026-10-22T13:33:38Z INFO accounts-db checkpoint complete: wrote 985 buffers (1.5%)\n#594 2026-10-22T13:33:49Z INFO accounts-db checkpoint complete: wrote 734 buffers (5.4%)\n#623 2026-10-22T13:34:02Z INFO accounts-db checkpoint complete: wrote 1336 buffers (2.6%)\n#651 2026-10-22T13:34:16Z INFO accounts-db checkpoint complete: wrote 440 buffers (3.9%)\n#675 2026-10-22T13:34:26Z INFO accounts-db checkpoint complete: wrote 258 buffers (4.0%)\n#710 2026-10-22T13:34:41Z INFO accounts-db checkpoint complete: wrote 774 buffers (5.7%)\n#738 2026-10-22T13:34:56Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 10\n#764 2026-10-22T13:35:10Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 16\n#799 2026-10-22T13:35:25Z INFO accounts-db checkpoint complete: wrote 304 buffers (8.0%)\n#829 2026-10-22T13:35:41Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 30\n#854 2026-10-22T13:35:52Z INFO accounts-db checkpoint complete: wrote 1248 buffers (7.7%)\n#888 2026-10-22T13:36:08Z INFO accounts-db checkpoint complete: wrote 1232 buffers (6.7%)\n#910 2026-10-22T13:36:18Z WARN accounts-db disk usage 99% on /var/lib/postgresql/data (WAL/binlog growth 816MB/h)\n#913 2026-10-22T13:36:19Z INFO accounts-db checkpoint complete: wrote 700 buffers (1.5%)\n#941 2026-10-22T13:36:32Z INFO accounts-db checkpoint complete: wrote 643 buffers (4.5%)\n#963 2026-10-22T13:36:47Z INFO accounts-db checkpoint complete: wrote 1234 buffers (7.8%)\n#992 2026-10-22T13:36:59Z INFO accounts-db checkpoint complete: wrote 1058 buffers (4.5%)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1257,
+          "before": 4,
+          "after": 2
+        },
+        "output": "#1253 2026-10-22T13:39:13Z INFO audit-consumer processed batch of 48 messages from audit.events (lag 146ms)\n#1254 2026-10-22T13:39:14Z ERROR account-svc [t-6494] insert into accounts failed for u-2024: could not extend file\n#1255 2026-10-22T13:39:15Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 23\n#1256 2026-10-22T13:39:16Z INFO session-cache stats: hits=17220 misses=726 evicted=0 connected_clients=59\n#1257 2026-10-22T13:39:16Z ERROR accounts-db could not extend file \"base/16384/25695\": No space left on device\n#1258 2026-10-22T13:39:17Z INFO flag-sync synced 121 feature flags from flag service (etag 4170df8)\n#1259 2026-10-22T13:39:17Z INFO account-svc [t-6496] user u-2025 accepted, calling auth-svc POST /tokens"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"resource_exhaustion\",\"confidence\":0.9,\"evidenceLines\":[477,910,1254,1257,1347,1378,1468,1469],\"reasoning\":\"accounts-db's data volume filled up. A disk-usage warning at 95% (#477, WAL/binlog growth 595MB/h) was followed by 99% (#910, growth 816MB/h). Once the disk was full, inserts into the accounts table began failing: account-svc logged 'could not extend file ... No space left on device' (#1254, #1347, #1468), and accounts-db reported the same error at the storage layer (#1257, #1378, #1469). Those failed inserts surface at the edge as POST /login 500s from account-svc (edge-proxy #1289, #1470, #1883). Reads stay healthy because they don't need new space. The disk fill is the origin; the 500s are downstream. Recommended action: free disk on accounts-db now (identify what is driving WAL/binlog growth, archive or prune it, expand the volume), then add disk alerts with headroom and check WAL retention settings.\",\"},{\"rootCause\":\"data_integrity\",\"confidence\":0.15,\"evidenceLines\":[658,823,1146],\"reasoning\":\"billing-reconciler is logging checksum constraint violations on invoice_archive rows in the 2019 partitions. These start around 13:34, after the disk warning, and they affect only the billing archive, not the login path, so they look like a separate, unrelated data problem. Worth a follow-up ticket but not the cause of the login 500s.\"}]",
+          "recommendedAction": "Immediately free disk space on the accounts-db data volume (the WAL/binlog growth source) or extend the volume so inserts can resume, then confirm account-svc inserts succeed and POST /login 500s drop. Add a disk-usage alert with earlier thresholds. Separately, investigate the billing-reconciler invoice_archive checksum violations in the 2019 partitions as a distinct data-integrity issue."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.9,
+              "evidenceLines": [
+                477,
+                910,
+                1254,
+                1257,
+                1347,
+                1378,
+                1468,
+                1469
+              ],
+              "reasoning": "accounts-db's data volume filled up. A disk-usage warning at 95% (#477, WAL/binlog growth 595MB/h) was followed by 99% (#910, growth 816MB/h). Once the disk was full, inserts into the accounts table began failing: account-svc logged 'could not extend file ... No space left on device' (#1254, #1347, #1468), and accounts-db reported the same error at the storage layer (#1257, #1378, #1469). Those failed inserts surface at the edge as POST /login 500s from account-svc (edge-proxy #1289, #1470, #1883). Reads stay healthy because they don't need new space. The disk fill is the origin; the 500s are downstream."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.15,
+              "evidenceLines": [
+                658,
+                823,
+                1146
+              ],
+              "reasoning": "billing-reconciler logs checksum constraint violations on invoice_archive rows in 2019 partitions starting around 13:34. They affect only the billing archive, not the login path, so this is a separate problem and not the cause of the login 500s."
+            }
+          ],
+          "recommendedAction": "Immediately free disk space on the accounts-db data volume (find and prune the WAL/binlog growth source) or extend the volume so inserts can resume. Then confirm account-svc inserts succeed and POST /login 500s drop. Add a disk-usage alert with earlier thresholds. Separately, investigate the billing-reconciler invoice_archive checksum violations in the 2019 partitions as a distinct data-integrity issue."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1938,
+      "cacheReadTokens": 17625,
+      "cacheWriteTokens": 9198
+    },
+    "durationMs": 9355,
+    "stopReason": "tool_use"
+  }
+}

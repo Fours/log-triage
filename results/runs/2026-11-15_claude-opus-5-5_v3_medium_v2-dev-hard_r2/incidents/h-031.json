@@ -1,0 +1,170 @@
+{
+  "score": {
+    "incidentId": "h-031",
+    "difficulty": "hard",
+    "scenario": "data_integrity/partial-migration",
+    "truth": "data_integrity",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.93,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 5,
+      "precision": 0.625,
+      "recall": 0.7142857142857143,
+      "f1": 0.6666666666666666
+    },
+    "herringsCited": 0,
+    "secondaryCited": 2,
+    "costUsd": 0.08737239999999999,
+    "durationMs": 11899,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 1228,
+      "cacheRead": 23112,
+      "cacheWrite": 11630
+    }
+  },
+  "result": {
+    "incidentId": "h-031",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.93,
+          "evidenceLines": [
+            3296,
+            3302,
+            3370,
+            3526,
+            3529,
+            3707,
+            3731,
+            4003
+          ],
+          "reasoning": "At 18:02:46 account-svc started migration 0125_add_tenant_id. Step 1 renamed accounts.tenant_id to tenant_id_old (#3302). Step 2 then failed on a lock timeout, and because the DDL is non-transactional, step 1 was not rolled back (#3370). That left the schema half-migrated. From 18:03:52 on, account-svc queries fail with 'column tenant_id does not exist' (#3526, #3731, #4003), and accounts-db rejects the same column (#3529, #3707). The edge-proxy POST /login 500s from account-svc start right after (18:04:24 onward), so the timing fits the alert. Other errors look like unrelated noise: flag-sync unknown-flag messages run through the whole window, the report-cron pandas deploy breaks only that batch job, and S3 500s hit only the enrichment/ingest path."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.04,
+          "evidenceLines": [
+            3296,
+            3370
+          ],
+          "reasoning": "The migration may have shipped with an account-svc release. Even so, the fault is the broken schema it left behind, which falls under data_integrity."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.02,
+          "evidenceLines": [
+            3188,
+            3486
+          ],
+          "reasoning": "S3 returned 500/503 errors, but these affect only enrichment-svc and ingest, not the login path."
+        }
+      ],
+      "recommendedAction": "Fix the accounts schema: rename accounts.tenant_id_old back to tenant_id, or finish migration 0125's remaining steps during a quiet window with the lock contention cleared. Make sure account-svc queries succeed again. After that, make migrations transactional or restartable/idempotent so a failed step can't leave a partial rename in place."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 80
+        },
+        "output": "72 match(es):\n#1312 2026-10-18T17:54:31Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#1500 2026-10-18T17:55:16Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#1834 2026-10-18T17:56:39Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#2042 2026-10-18T17:57:32Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2216 2026-10-18T17:58:14Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2552 2026-10-18T17:59:38Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2686 2026-10-18T18:00:11Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#3146 2026-10-18T18:02:02Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#3176 2026-10-18T18:02:13Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#3188 2026-10-18T18:02:17Z ERROR enrichment-svc [t-4313] aws-sdk PutObjectCommand failed for key e-4844.json: InternalError (HTTP 500), requestId=5816849\n#3297 2026-10-18T18:02:46Z ERROR ingest-gateway [t-4371] POST /v1/events 500 7504ms: upstream ingest-api returned 500 Internal Server Error\n#3403 2026-10-18T18:03:15Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3486 2026-10-18T18:03:36Z ERROR enrichment-svc [t-4478] PutObject s3://ingest-artifacts-prod/e-4981.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id E18EC69)\n#3489 2026-10-18T18:03:37Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3526 2026-10-18T18:03:52Z ERROR account-svc [t-4499] query on accounts failed for u-4997: column \"tenant_id\" does not exist\n#3529 2026-10-18T18:03:54Z ERROR accounts-db column \"tenant_id\" of relation \"accounts\" does not exist at character 86\n#3545 2026-10-18T18:04:02Z ERROR ingest-gateway [t-4506] POST /v1/events 500 25214ms: upstream ingest-api returned 500 Internal Server Error\n#3552 2026-10-18T18:04:06Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#3582 2026-10-18T18:04:21Z ERROR ingest-api [t-4522] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#3592 2026-10-18T18:04:24Z ERROR edge-proxy [t-4527] POST /login 500 23690ms: upstream account-svc returned 500 Internal Server Error\n#3599 2026-10-18T18:04:28Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#3617 2026-10-18T18:04:39Z ERROR enrichment-svc [t-4541] S3 upload of e-5019.json returned 500 InternalError (us-east-1, 572B829)\n#3626 2026-10-18T18:04:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3657 2026-10-18T18:05:05Z ERROR edge-proxy [t-4552] POST /login 500 20892ms: upstream account-svc returned 500 Internal Server Error\n#3697 2026-10-18T18:05:28Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#3701 2026-10-18T18:05:31Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3703 2026-10-18T18:05:32Z ERROR edge-proxy [t-4564] POST /login 500 10837ms: upstream account-svc returned 500 Internal Server Error\n#3707 2026-10-18T18:05:34Z ERROR accounts-db ERROR:  column accounts.tenant_id does not exist (SQLSTATE 42703)\n#3729 2026-10-18T18:05:45Z ERROR enrichment-svc [t-4575] aws-sdk PutObjectCommand failed for key e-5040.json: InternalError (HTTP 500), requestId=406D6A8\n#3731 2026-10-18T18:05:46Z ERROR account-svc [t-4578] query on accounts failed for u-5041: column \"tenant_id\" does not exist\n#3735 2026-10-18T18:05:47Z ERROR accounts-db statement failed: undefined_column, no attribute tenant_id on accounts\n#3777 2026-10-18T18:06:07Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3842 2026-10-18T18:06:40Z ERROR edge-proxy [t-4615] POST /login 500 21513ms: upstream account-svc returned 500 Internal Server Error\n#3865 2026-10-18T18:06:54Z ERROR ingest-api [t-4622] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#3870 2026-10-18T18:06:56Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3881 2026-10-18T18:07:00Z ERROR ingest-gateway [t-4632] POST /v1/events 500 29989ms: upstream ingest-api returned 500 Internal Server Error\n#3887 2026-10-18T18:07:04Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3908 2026-10-18T18:07:15Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3925 2026-10-18T18:07:22Z ERROR accounts-db query referencing accounts.tenant_id rejected: the column is not in the current schema\n#3975 2026-10-18T18:07:51Z ERROR edge-proxy [t-4656] POST /login 500 6972ms: upstream account-svc returned 500 Internal Server Error\n#3986 2026-10-18T18:07:59Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4003 2026-10-18T18:08:09Z ERROR account-svc [t-4664] query on accounts failed for u-5104: column \"tenant_id\" does not exist\n#4005 2026-10-18T18:08:10Z ERROR edge-proxy [t-4668] POST /login 500 16294ms: upstream account-svc returned 500 Internal Server Error\n#4007 2026-10-18T18:08:11Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#4026 2026-10-18T18:08:18Z ERROR ingest-gateway [t-4679] POST /v1/events 500 29947ms: upstream ingest-api returned 500 Internal Server Error\n#4055 2026-10-18T18:08:35Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4102 2026-10-18T18:09:01Z ERROR ingest-api [t-4701] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#4103 2026-10-18T18:09:01Z ERROR account-svc [t-4702] query on accounts failed for u-5129: column \"tenant_id\" does not exist\n#4141 2026-10-18T18:09:25Z ERROR edge-proxy [t-4709] POST /login 500 12028ms: upstream account-svc returned 500 Internal Server Error\n#4142 2026-10-18T18:09:26Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#4174 2026-10-18T18:09:44Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4191 2026-10-18T18:09:56Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4207 2026-10-18T18:10:04Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#4208 2026-10-18T18:10:05Z ERROR edge-proxy [t-4730] POST /login 500 8015ms: upstream account-svc returned 500 Internal Server Error\n#4230 2026-10-18T18:10:22Z ERROR ingest-gateway [t-4738] POST /v1/events 500 16520ms: upstream ingest-api returned 500 Internal Server Error\n#4276 2026-10-18T18:10:47Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4302 2026-10-18T18:11:02Z ERROR account-svc [t-4764] query on accounts failed for u-5169: column \"tenant_id\" does not exist\n#4335 2026-10-18T18:11:17Z ERROR ingest-gateway [t-4779] POST /v1/events 500 26172ms: upstream ingest-api returned 500 Internal Server Error\n#4337 2026-10-18T18:11:18Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4340 2026-10-18T18:11:20Z ERROR edge-proxy [t-4780] POST /login 500 9090ms: upstream account-svc returned 500 Internal Server Error\n#4358 2026-10-18T18:11:29Z ERROR edge-proxy [t-4787] POST /login 500 21529ms: upstream account-svc returned 500 Internal Server Error\n#4366 2026-10-18T18:11:36Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#4400 2026-10-18T18:11:59Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4430 2026-10-18T18:12:18Z ERROR edge-proxy [t-4800] POST /login 500 17898ms: upstream account-svc returned 500 Internal Server Error\n#4437 2026-10-18T18:12:21Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#4440 2026-10-18T18:12:23Z ERROR ingest-api [t-4804] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#4446 2026-10-18T18:12:29Z ERROR ingest-gateway [t-4805] POST /v1/events 500 12301ms: upstream ingest-api returned 500 Internal Server Error\n#4504 2026-10-18T18:13:00Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4518 2026-10-18T18:13:10Z ERROR account-svc [t-4825] query on accounts failed for u-5213: column \"tenant_id\" does not exist\n#4539 2026-10-18T18:13:26Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#4553 2026-10-18T18:13:34Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4576 2026-10-18T18:13:48Z ERROR edge-proxy [t-4833] POST /login 500 5779ms: upstream account-svc returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "migration",
+          "limit": 30
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "account-svc",
+          "level": "WARN",
+          "limit": 30
+        },
+        "output": "6 match(es):\n#3526 2026-10-18T18:03:52Z ERROR account-svc [t-4499] query on accounts failed for u-4997: column \"tenant_id\" does not exist\n#3731 2026-10-18T18:05:46Z ERROR account-svc [t-4578] query on accounts failed for u-5041: column \"tenant_id\" does not exist\n#4003 2026-10-18T18:08:09Z ERROR account-svc [t-4664] query on accounts failed for u-5104: column \"tenant_id\" does not exist\n#4103 2026-10-18T18:09:01Z ERROR account-svc [t-4702] query on accounts failed for u-5129: column \"tenant_id\" does not exist\n#4302 2026-10-18T18:11:02Z ERROR account-svc [t-4764] query on accounts failed for u-5169: column \"tenant_id\" does not exist\n#4518 2026-10-18T18:13:10Z ERROR account-svc [t-4825] query on accounts failed for u-5213: column \"tenant_id\" does not exist"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "17:59:00",
+          "until": "18:04:00",
+          "query": "account",
+          "limit": 60
+        },
+        "output": "29 match(es):\n#2407 2026-10-18T17:59:01Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#2409 2026-10-18T17:59:01Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 32\n#2485 2026-10-18T17:59:20Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#2525 2026-10-18T17:59:30Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 11\n#2546 2026-10-18T17:59:37Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#2567 2026-10-18T17:59:41Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 4\n#2607 2026-10-18T17:59:51Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#2652 2026-10-18T18:00:02Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 35\n#2679 2026-10-18T18:00:10Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#2736 2026-10-18T18:00:24Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#2810 2026-10-18T18:00:43Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#2811 2026-10-18T18:00:43Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 37\n#2875 2026-10-18T18:00:59Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#2934 2026-10-18T18:01:12Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#2999 2026-10-18T18:01:26Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#3019 2026-10-18T18:01:31Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 9\n#3055 2026-10-18T18:01:41Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#3138 2026-10-18T18:02:01Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#3200 2026-10-18T18:02:19Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#3263 2026-10-18T18:02:35Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#3296 2026-10-18T18:02:46Z INFO account-svc migrate: applying 0125_add_tenant_id (3 steps) to accounts-db\n#3302 2026-10-18T18:02:48Z INFO account-svc migrate: 0125_add_tenant_id step 1/3 ok: renamed column accounts.tenant_id -> tenant_id_old\n#3330 2026-10-18T18:02:54Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#3370 2026-10-18T18:03:05Z INFO account-svc migrate: 0125_add_tenant_id step 2/3 failed: lock timeout on accounts; step 1 already committed (non-transactional DDL), not rolled back\n#3412 2026-10-18T18:03:16Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#3469 2026-10-18T18:03:32Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#3526 2026-10-18T18:03:52Z ERROR account-svc [t-4499] query on accounts failed for u-4997: column \"tenant_id\" does not exist\n#3529 2026-10-18T18:03:54Z ERROR accounts-db column \"tenant_id\" of relation \"accounts\" does not exist at character 86\n#3534 2026-10-18T18:03:56Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 24"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.93,
+              "evidenceLines": [
+                3296,
+                3302,
+                3370,
+                3526,
+                3529,
+                3707,
+                3731,
+                4003
+              ],
+              "reasoning": "At 18:02:46 account-svc started migration 0125_add_tenant_id. Step 1 renamed accounts.tenant_id to tenant_id_old (#3302). Step 2 then failed on a lock timeout, and because the DDL is non-transactional, step 1 was not rolled back (#3370). That left the schema half-migrated. From 18:03:52 on, account-svc queries fail with 'column tenant_id does not exist' (#3526, #3731, #4003), and accounts-db rejects the same column (#3529, #3707). The edge-proxy POST /login 500s from account-svc start right after (18:04:24 onward), so the timing fits the alert. Other errors look like unrelated noise: flag-sync unknown-flag messages run through the whole window, the report-cron pandas deploy breaks only that batch job, and S3 500s hit only the enrichment/ingest path."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.04,
+              "evidenceLines": [
+                3296,
+                3370
+              ],
+              "reasoning": "The migration may have shipped with an account-svc release. Even so, the fault is the broken schema it left behind, which falls under data_integrity."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.02,
+              "evidenceLines": [
+                3188,
+                3486
+              ],
+              "reasoning": "S3 returned 500/503 errors, but these affect only enrichment-svc and ingest, not the login path."
+            }
+          ],
+          "recommendedAction": "Fix the accounts schema: rename accounts.tenant_id_old back to tenant_id, or finish migration 0125's remaining steps during a quiet window with the lock contention cleared. Make sure account-svc queries succeed again. After that, make migrations transactional or restartable/idempotent so a failed step can't leave a partial rename in place."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1228,
+      "cacheReadTokens": 23112,
+      "cacheWriteTokens": 11630
+    },
+    "durationMs": 11899,
+    "stopReason": "tool_use"
+  }
+}

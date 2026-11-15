@@ -1,0 +1,265 @@
+{
+  "score": {
+    "incidentId": "h-044",
+    "difficulty": "easy",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 10,
+      "correct": 6,
+      "precision": 0.6,
+      "recall": 1,
+      "f1": 0.7499999999999999
+    },
+    "herringsCited": 5,
+    "costUsd": 0.004002005,
+    "durationMs": 14691,
+    "iterations": 7,
+    "toolCalls": 7,
+    "tokens": {
+      "input": 16,
+      "output": 3234,
+      "cacheRead": 57928,
+      "cacheWrite": 14433
+    }
+  },
+  "result": {
+    "incidentId": "h-044",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.85,
+          "evidenceLines": [
+            531,
+            783,
+            949,
+            950,
+            1089,
+            1090,
+            981,
+            1190,
+            1342,
+            1433
+          ],
+          "reasoning": "ingest-api heap climbs from ~17:01: after full GC the old generation is not reclaimed (#531 at 78%, GC overhead 20%), and this worsens to 87% with 35% GC overhead by 17:04 (#783). The heap is exhausted: worker-4 throws OutOfMemoryError (#949), ingest-api-2 is OOMKilled (#950), and later ingest-api-0 is OOMKilled at the 2Gi limit, with the OOM stack at eventCache.put (#1089, #1090). Each restart leaves the gateway with no healthy upstream, so it returns 502s after long waits (#981, #1190, #1342, #1433). The 502s are the symptom; the origin is ingest-api memory growth, most likely unbounded eventCache retention. The 429s from analytics-ingest (#391 onward) and the slow audit_log seq scan (#556) are downstream or unrelated noise. No deploy line was found, so the cause of the leak is unconfirmed."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.15,
+          "evidenceLines": [
+            391,
+            551,
+            734,
+            864,
+            927
+          ],
+          "reasoning": "Analytics-forwarder retries against analytics-ingest with 429s and drops batches. This is a secondary pressure path and does not explain the ingest-api heap growth that precedes the 502s."
+        }
+      ],
+      "recommendedAction": "Restart the ingest-api pods to restore capacity now. Then inspect eventCache for missing eviction or TTL, and heap-dump or profile ingest-api. Add a heap alert at 70%. Raise the memory limit only as a temporary measure. Separately, review the analytics-ingest 429 rate limiting and the audit_log sequential scan."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "21 match(es):\n#391 2026-10-27T16:59:20Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 361 events (attempt 1/5, then dropped)\n#531 2026-10-27T17:01:14Z WARN ingest-api heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#551 2026-10-27T17:01:30Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 394 events (attempt 2/5, then dropped)\n#556 2026-10-27T17:01:34Z WARN events-db slow query 1457ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#734 2026-10-27T17:04:01Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 147 events (attempt 3/5, then dropped)\n#783 2026-10-27T17:04:39Z WARN ingest-api heap usage 87% after full GC (old gen not reclaimed), GC overhead 35%\n#864 2026-10-27T17:05:45Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 349 events (attempt 4/5, then dropped)\n#927 2026-10-27T17:06:33Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 154 events (attempt 5/5, then dropped)\n#949 2026-10-27T17:06:52Z FATAL ingest-api Exception in thread \"worker-4\" java.lang.OutOfMemoryError: Java heap space\n#950 2026-10-27T17:06:53Z ERROR ingest-api kubelet: ingest-api-2 terminated (reason OOMKilled, exit code 137), restarts=1\n#981 2026-10-27T17:07:30Z ERROR ingest-gateway [t-6056] POST /v1/events 502 28150ms: upstream ingest-api connection reset (no healthy upstream)\n#1049 2026-10-27T17:08:55Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 143 events (attempt 1/5, then dropped)\n#1089 2026-10-27T17:09:42Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)\n#1090 2026-10-27T17:09:43Z ERROR ingest-api container ingest-api-0 killed: OOMKilled (memory limit 2Gi), restart count 2\n#1138 2026-10-27T17:10:32Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 72 events (attempt 2/5, then dropped)\n#1190 2026-10-27T17:11:28Z ERROR ingest-gateway [t-6111] POST /v1/events 502 11594ms: upstream ingest-api connection reset (no healthy upstream)\n#1219 2026-10-27T17:11:53Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 315 events (attempt 3/5, then dropped)\n#1342 2026-10-27T17:14:13Z ERROR ingest-gateway [t-6157] POST /v1/events 502 23870ms: upstream ingest-api connection reset (no healthy upstream)\n#1376 2026-10-27T17:14:58Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 176 events (attempt 4/5, then dropped)\n#1422 2026-10-27T17:15:53Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 55 events (attempt 5/5, then dropped)\n#1433 2026-10-27T17:16:07Z ERROR ingest-gateway [t-6184] POST /v1/events 502 20826ms: upstream ingest-api connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "analytics-forwarder",
+          "level": "ERROR"
+        },
+        "output": "10 match(es):\n#391 2026-10-27T16:59:20Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 361 events (attempt 1/5, then dropped)\n#551 2026-10-27T17:01:30Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 394 events (attempt 2/5, then dropped)\n#734 2026-10-27T17:04:01Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 147 events (attempt 3/5, then dropped)\n#864 2026-10-27T17:05:45Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 349 events (attempt 4/5, then dropped)\n#927 2026-10-27T17:06:33Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 154 events (attempt 5/5, then dropped)\n#1049 2026-10-27T17:08:55Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 143 events (attempt 1/5, then dropped)\n#1138 2026-10-27T17:10:32Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 72 events (attempt 2/5, then dropped)\n#1219 2026-10-27T17:11:53Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 315 events (attempt 3/5, then dropped)\n#1376 2026-10-27T17:14:58Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 176 events (attempt 4/5, then dropped)\n#1422 2026-10-27T17:15:53Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 55 events (attempt 5/5, then dropped)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "since": "16:54:00",
+          "until": "17:02:00",
+          "limit": 60
+        },
+        "output": "133 match(es), showing first 60:\n#3 2026-10-27T16:54:01Z INFO ingest-api [t-5632] event e-3825 accepted, calling enrichment-svc POST /enrich\n#11 2026-10-27T16:54:08Z INFO ingest-api [t-5633] event e-3827 accepted, calling enrichment-svc POST /enrich\n#13 2026-10-27T16:54:11Z INFO ingest-api [t-5635] event e-3830 accepted, calling enrichment-svc POST /enrich\n#18 2026-10-27T16:54:14Z INFO ingest-api [t-5636] event e-3831 accepted, calling enrichment-svc POST /enrich\n#22 2026-10-27T16:54:18Z INFO ingest-api [t-5637] event e-3833 accepted, calling enrichment-svc POST /enrich\n#29 2026-10-27T16:54:22Z DEBUG ingest-api GC pause 24ms (young), heap 33%\n#30 2026-10-27T16:54:23Z INFO ingest-api [t-5639] event e-3836 accepted, calling enrichment-svc POST /enrich\n#36 2026-10-27T16:54:28Z INFO ingest-api [t-5640] event e-3838 accepted, calling enrichment-svc POST /enrich\n#41 2026-10-27T16:54:33Z INFO ingest-api [t-5642] event e-3839 accepted, calling enrichment-svc POST /enrich\n#44 2026-10-27T16:54:36Z DEBUG ingest-api GC pause 19ms (young), heap 43%\n#47 2026-10-27T16:54:37Z INFO ingest-api [t-5645] event e-3840 accepted, calling enrichment-svc POST /enrich\n#52 2026-10-27T16:54:41Z INFO ingest-api [t-5648] event e-3843 accepted, calling enrichment-svc POST /enrich\n#56 2026-10-27T16:54:46Z INFO ingest-api [t-5651] event e-3844 accepted, calling enrichment-svc POST /enrich\n#62 2026-10-27T16:54:49Z DEBUG ingest-api GC pause 5ms (young), heap 31%\n#63 2026-10-27T16:54:51Z INFO ingest-api [t-5652] event e-3845 accepted, calling enrichment-svc POST /enrich\n#69 2026-10-27T16:54:55Z INFO ingest-api [t-5655] event e-3848 accepted, calling enrichment-svc POST /enrich\n#75 2026-10-27T16:55:00Z INFO ingest-api [t-5657] event e-3849 accepted, calling enrichment-svc POST /enrich\n#79 2026-10-27T16:55:03Z INFO ingest-api [t-5661] event e-3850 accepted, calling enrichment-svc POST /enrich\n#84 2026-10-27T16:55:06Z DEBUG ingest-api GC pause 12ms (young), heap 39%\n#86 2026-10-27T16:55:07Z INFO ingest-api [t-5662] event e-3853 accepted, calling enrichment-svc POST /enrich\n#88 2026-10-27T16:55:10Z INFO ingest-api [t-5666] event e-3854 accepted, calling enrichment-svc POST /enrich\n#92 2026-10-27T16:55:14Z INFO ingest-api [t-5668] event e-3856 accepted, calling enrichment-svc POST /enrich\n#99 2026-10-27T16:55:20Z INFO ingest-api [t-5672] event e-3857 accepted, calling enrichment-svc POST /enrich\n#102 2026-10-27T16:55:22Z INFO ingest-api [t-5673] event e-3860 accepted, calling enrichment-svc POST /enrich\n#106 2026-10-27T16:55:25Z INFO ingest-api [t-5674] event e-3861 accepted, calling enrichment-svc POST /enrich\n#111 2026-10-27T16:55:30Z DEBUG ingest-api GC pause 23ms (young), heap 44%\n#112 2026-10-27T16:55:31Z INFO ingest-api [t-5676] event e-3863 accepted, calling enrichment-svc POST /enrich\n#118 2026-10-27T16:55:37Z INFO ingest-api [t-5677] event e-3865 accepted, calling enrichment-svc POST /enrich\n#123 2026-10-27T16:55:43Z INFO ingest-api [t-5680] event e-3866 accepted, calling enrichment-svc POST /enrich\n#124 2026-10-27T16:55:43Z DEBUG ingest-api GC pause 5ms (young), heap 48%\n#129 2026-10-27T16:55:45Z INFO ingest-api [t-5681] event e-3869 accepted, calling enrichment-svc POST /enrich\n#135 2026-10-27T16:55:50Z INFO ingest-api [t-5682] event e-3870 accepted, calling enrichment-svc POST /enrich\n#141 2026-10-27T16:55:54Z INFO ingest-api [t-5683] event e-3872 accepted, calling enrichment-svc POST /enrich\n#145 2026-10-27T16:55:57Z DEBUG ingest-api GC pause 20ms (young), heap 32%\n#146 2026-10-27T16:55:58Z INFO ingest-api [t-5685] event e-3873 accepted, calling enrichment-svc POST /enrich\n#150 2026-10-27T16:56:01Z INFO ingest-api [t-5687] event e-3875 accepted, calling enrichment-svc POST /enrich\n#160 2026-10-27T16:56:06Z INFO ingest-api [t-5690] event e-3877 accepted, calling enrichment-svc POST /enrich\n#164 2026-10-27T16:56:11Z INFO ingest-api [t-5694] event e-3878 accepted, calling enrichment-svc POST /enrich\n#171 2026-10-27T16:56:17Z INFO ingest-api [t-5695] event e-3880 accepted, calling enrichment-svc POST /enrich\n#175 2026-10-27T16:56:19Z DEBUG ingest-api GC pause 5ms (young), heap 42%\n#178 2026-10-27T16:56:23Z INFO ingest-api [t-5698] event e-3881 accepted, calling enrichment-svc POST /enrich\n#183 2026-10-27T16:56:25Z INFO ingest-api [t-5700] event e-3884 accepted, calling enrichment-svc POST /enrich\n#189 2026-10-27T16:56:30Z INFO ingest-api [t-5703] event e-3885 accepted, calling enrichment-svc POST /enrich\n#195 2026-10-27T16:56:36Z INFO ingest-api [t-5706] event e-3886 accepted, calling enrichment-svc POST /enrich\n#199 2026-10-27T16:56:41Z DEBUG ingest-api GC pause 13ms (young), heap 36%\n#200 2026-10-27T16:56:42Z INFO ingest-api [t-5710] event e-3888 accepted, calling enrichment-svc POST /enrich\n#205 2026-10-27T16:56:45Z INFO ingest-api [t-5711] event e-3889 accepted, calling enrichment-svc POST /enrich\n#209 2026-10-27T16:56:48Z INFO ingest-api [t-5715] event e-3891 accepted, calling enrichment-svc POST /enrich\n#215 2026-10-27T16:56:54Z INFO ingest-api [t-5718] event e-3894 accepted, calling enrichment-svc POST /enrich\n#217 2026-10-27T16:56:54Z DEBUG ingest-api GC pause 12ms (young), heap 39%\n#219 2026-10-27T16:56:57Z INFO ingest-api [t-5720] event e-3897 accepted, calling enrichment-svc POST /enrich\n#224 2026-10-27T16:57:00Z INFO ingest-api [t-5722] event e-3899 accepted, calling enrichment-svc POST /enrich\n#228 2026-10-27T16:57:04Z INFO ingest-api [t-5724] event e-3901 accepted, calling enrichment-svc POST /enrich\n#234 2026-10-27T16:57:07Z DEBUG ingest-api GC pause 21ms (young), heap 30%\n#238 2026-10-27T16:57:10Z INFO ingest-api [t-5725] event e-3902 accepted, calling enrichment-svc POST /enrich\n#244 2026-10-27T16:57:16Z INFO ingest-api [t-5729] event e-3905 accepted, calling enrichment-svc POST /enrich\n#250 2026-10-27T16:57:23Z INFO ingest-api [t-5732] event e-3906 accepted, calling enrichment-svc POST /enrich\n#254 2026-10-27T16:57:24Z DEBUG ingest-api GC pause 25ms (young), heap 46%\n#258 2026-10-27T16:57:28Z INFO ingest-api [t-5736] event e-3908 accepted, calling enrichment-svc POST /enrich\n#260 2026-10-27T16:57:31Z INFO ingest-api [t-5737] event e-3909 accepted, calling enrichment-svc POST /enrich"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "eventCache",
+          "limit": 20
+        },
+        "output": "1 match(es):\n#1089 2026-10-27T17:09:42Z FATAL ingest-api java.lang.OutOfMemoryError: Java heap space (at eventCache.put)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "since": "17:00:00",
+          "until": "17:02:00",
+          "limit": 60
+        },
+        "output": "35 match(es):\n#437 2026-10-27T17:00:00Z INFO ingest-api [t-5824] event e-3967 accepted, calling enrichment-svc POST /enrich\n#439 2026-10-27T17:00:00Z DEBUG ingest-api GC pause 17ms (young), heap 41%\n#441 2026-10-27T17:00:04Z INFO ingest-api [t-5828] event e-3968 accepted, calling enrichment-svc POST /enrich\n#447 2026-10-27T17:00:08Z INFO ingest-api [t-5830] event e-3969 accepted, calling enrichment-svc POST /enrich\n#454 2026-10-27T17:00:13Z INFO ingest-api [t-5833] event e-3972 accepted, calling enrichment-svc POST /enrich\n#459 2026-10-27T17:00:18Z INFO ingest-api [t-5834] event e-3973 accepted, calling enrichment-svc POST /enrich\n#462 2026-10-27T17:00:20Z DEBUG ingest-api GC pause 24ms (young), heap 36%\n#465 2026-10-27T17:00:23Z INFO ingest-api [t-5835] event e-3976 accepted, calling enrichment-svc POST /enrich\n#469 2026-10-27T17:00:26Z INFO ingest-api [t-5836] event e-3978 accepted, calling enrichment-svc POST /enrich\n#473 2026-10-27T17:00:30Z INFO ingest-api [t-5840] event e-3979 accepted, calling enrichment-svc POST /enrich\n#480 2026-10-27T17:00:35Z INFO ingest-api [t-5841] event e-3982 accepted, calling enrichment-svc POST /enrich\n#484 2026-10-27T17:00:37Z DEBUG ingest-api GC pause 4ms (young), heap 40%\n#486 2026-10-27T17:00:39Z INFO ingest-api [t-5844] event e-3985 accepted, calling enrichment-svc POST /enrich\n#494 2026-10-27T17:00:45Z INFO ingest-api [t-5846] event e-3988 accepted, calling enrichment-svc POST /enrich\n#498 2026-10-27T17:00:49Z INFO ingest-api [t-5847] event e-3989 accepted, calling enrichment-svc POST /enrich\n#504 2026-10-27T17:00:53Z INFO ingest-api [t-5849] event e-3991 accepted, calling enrichment-svc POST /enrich\n#508 2026-10-27T17:00:56Z INFO ingest-api [t-5851] event e-3993 accepted, calling enrichment-svc POST /enrich\n#511 2026-10-27T17:00:59Z INFO ingest-api [t-5852] event e-3996 accepted, calling enrichment-svc POST /enrich\n#516 2026-10-27T17:01:01Z DEBUG ingest-api GC pause 13ms (young), heap 47%\n#519 2026-10-27T17:01:04Z INFO ingest-api [t-5855] event e-3997 accepted, calling enrichment-svc POST /enrich\n#524 2026-10-27T17:01:09Z INFO ingest-api [t-5859] event e-3999 accepted, calling enrichment-svc POST /enrich\n#528 2026-10-27T17:01:12Z INFO ingest-api [t-5863] event e-4002 accepted, calling enrichment-svc POST /enrich\n#531 2026-10-27T17:01:14Z WARN ingest-api heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#534 2026-10-27T17:01:17Z INFO ingest-api [t-5864] event e-4004 accepted, calling enrichment-svc POST /enrich\n#538 2026-10-27T17:01:20Z DEBUG ingest-api GC pause 12ms (young), heap 33%\n#542 2026-10-27T17:01:23Z INFO ingest-api [t-5865] event e-4005 accepted, calling enrichment-svc POST /enrich\n#545 2026-10-27T17:01:25Z INFO ingest-api [t-5869] event e-4008 accepted, calling enrichment-svc POST /enrich\n#553 2026-10-27T17:01:31Z INFO ingest-api [t-5871] event e-4010 accepted, calling enrichment-svc POST /enrich\n#560 2026-10-27T17:01:37Z INFO ingest-api [t-5874] event e-4012 accepted, calling enrichment-svc POST /enrich\n#563 2026-10-27T17:01:38Z DEBUG ingest-api GC pause 7ms (young), heap 40%\n#565 2026-10-27T17:01:41Z INFO ingest-api [t-5877] event e-4013 accepted, calling enrichment-svc POST /enrich\n#569 2026-10-27T17:01:44Z INFO ingest-api [t-5880] event e-4014 accepted, calling enrichment-svc POST /enrich\n#573 2026-10-27T17:01:48Z INFO ingest-api [t-5884] event e-4017 accepted, calling enrichment-svc POST /enrich\n#579 2026-10-27T17:01:52Z INFO ingest-api [t-5887] event e-4018 accepted, calling enrichment-svc POST /enrich\n#585 2026-10-27T17:01:58Z INFO ingest-api [t-5890] event e-4019 accepted, calling enrichment-svc POST /enrich"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 949,
+          "before": 12,
+          "after": 3
+        },
+        "output": "#937 2026-10-27T17:06:43Z DEBUG enrichment-svc GC pause 16ms (young), heap 38%\n#938 2026-10-27T17:06:45Z INFO report-cron scheduler heartbeat: 12 jobs registered, next run in 89s\n#939 2026-10-27T17:06:45Z INFO ingest-api [t-6049] event e-4145 accepted, calling enrichment-svc POST /enrich\n#940 2026-10-27T17:06:45Z INFO ingest-gateway [t-6049] POST /v1/events 200 49ms\n#941 2026-10-27T17:06:45Z INFO analytics-forwarder forwarded 2845 events to analytics-ingest\n#942 2026-10-27T17:06:47Z INFO event-processor processed batch of 113 messages from events.raw (lag 320ms)\n#943 2026-10-27T17:06:48Z INFO geo-cache stats: hits=13846 misses=664 evicted=0 connected_clients=45\n#944 2026-10-27T17:06:49Z DEBUG ingest-api GC pause 7ms (young), heap 41%\n#945 2026-10-27T17:06:49Z INFO ingest-api [t-6050] event e-4148 accepted, calling enrichment-svc POST /enrich\n#946 2026-10-27T17:06:50Z INFO enrichment-svc [t-6050] POST /enrich e-4148 ok 80ms\n#947 2026-10-27T17:06:50Z INFO ingest-gateway [t-6050] POST /v1/events 200 94ms\n#948 2026-10-27T17:06:51Z INFO event-processor processed batch of 42 messages from events.raw (lag 256ms)\n#949 2026-10-27T17:06:52Z FATAL ingest-api Exception in thread \"worker-4\" java.lang.OutOfMemoryError: Java heap space\n#950 2026-10-27T17:06:53Z ERROR ingest-api kubelet: ingest-api-2 terminated (reason OOMKilled, exit code 137), restarts=1\n#951 2026-10-27T17:06:53Z INFO ingest-api [t-6052] event e-4151 accepted, calling enrichment-svc POST /enrich\n#952 2026-10-27T17:06:53Z INFO ingest-gateway [t-6052] POST /v1/events 200 67ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 20
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.85,
+              "evidenceLines": [
+                531,
+                783,
+                949,
+                950,
+                1089,
+                1090,
+                981,
+                1190,
+                1342,
+                1433
+              ],
+              "reasoning": "ingest-api heap climbs from ~17:01: after full GC the old generation is not reclaimed (#531 at 78%, GC overhead 20%), and this worsens to 87% with 35% GC overhead by 17:04 (#783). The heap is exhausted: worker-4 throws OutOfMemoryError (#949), ingest-api-2 is OOMKilled (#950), and later ingest-api-0 is OOMKilled at the 2Gi limit, with the OOM stack at eventCache.put (#1089, #1090). Each restart leaves the gateway with no healthy upstream, so it returns 502s after long waits (#981, #1190, #1342, #1433). The 502s are the symptom; the origin is ingest-api memory growth, most likely unbounded eventCache retention. The 429s from analytics-ingest (#391 onward) and the slow audit_log seq scan (#556) are downstream or unrelated noise. No deploy line was found to explain the leak, so the cause of the leak itself is unconfirmed.",
+              "recommendedAction": "Restart the ingest-api pods to restore capacity now. Then inspect eventCache for missing eviction or TTL, and heap-dump or profile ingest-api. Add a heap alert at 70% and raise the memory limit only as a temporary measure. Separately, look at the analytics-ingest 429 rate limiting and the audit_log sequential scan."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.15,
+              "evidenceLines": [
+                391,
+                551,
+                734,
+                864,
+                927
+              ],
+              "reasoning": "Analytics-forwarder retries against analytics-ingest with 429s and drops batches. This is a secondary pressure path and does not explain the ingest-api heap growth that precedes the 502s.",
+              "recommendedAction": "Review analytics-ingest rate limits and the forwarder's retry and backoff policy."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.85,
+              "evidenceLines": [
+                531,
+                783,
+                949,
+                950,
+                1089,
+                1090,
+                981,
+                1190,
+                1342,
+                1433
+              ],
+              "reasoning": "ingest-api heap climbs from ~17:01: after full GC the old generation is not reclaimed (#531 at 78%, GC overhead 20%), and this worsens to 87% with 35% GC overhead by 17:04 (#783). The heap is exhausted: worker-4 throws OutOfMemoryError (#949), ingest-api-2 is OOMKilled (#950), and later ingest-api-0 is OOMKilled at the 2Gi limit, with the OOM stack at eventCache.put (#1089, #1090). Each restart leaves the gateway with no healthy upstream, so it returns 502s after long waits (#981, #1190, #1342, #1433). The 502s are the symptom; the origin is ingest-api memory growth, most likely unbounded eventCache retention. The 429s from analytics-ingest (#391 onward) and the slow audit_log seq scan (#556) are downstream or unrelated noise. No deploy line was found to explain the leak, so the cause of the leak itself is unconfirmed.",
+              "recommendedAction": "Restart the ingest-api pods to restore capacity now. Then inspect eventCache for missing eviction or TTL, and heap-dump or profile ingest-api. Add a heap alert at 70% and raise the memory limit only as a temporary measure. Separately, look at the analytics-ingest 429 rate limiting and the audit_log sequential scan."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.15,
+              "evidenceLines": [
+                391,
+                551,
+                734,
+                864,
+                927
+              ],
+              "reasoning": "Analytics-forwarder retries against analytics-ingest with 429s and drops batches. This is a secondary pressure path and does not explain the ingest-api heap growth that precedes the 502s.",
+              "recommendedAction": "Review analytics-ingest rate limits and the forwarder's retry and backoff policy."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.85,
+              "evidenceLines": [
+                531,
+                783,
+                949,
+                950,
+                1089,
+                1090,
+                981,
+                1190,
+                1342,
+                1433
+              ],
+              "reasoning": "ingest-api heap climbs from ~17:01: after full GC the old generation is not reclaimed (#531 at 78%, GC overhead 20%), and this worsens to 87% with 35% GC overhead by 17:04 (#783). The heap is exhausted: worker-4 throws OutOfMemoryError (#949), ingest-api-2 is OOMKilled (#950), and later ingest-api-0 is OOMKilled at the 2Gi limit, with the OOM stack at eventCache.put (#1089, #1090). Each restart leaves the gateway with no healthy upstream, so it returns 502s after long waits (#981, #1190, #1342, #1433). The 502s are the symptom; the origin is ingest-api memory growth, most likely unbounded eventCache retention. The 429s from analytics-ingest (#391 onward) and the slow audit_log seq scan (#556) are downstream or unrelated noise. No deploy line was found, so the cause of the leak is unconfirmed."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.15,
+              "evidenceLines": [
+                391,
+                551,
+                734,
+                864,
+                927
+              ],
+              "reasoning": "Analytics-forwarder retries against analytics-ingest with 429s and drops batches. This is a secondary pressure path and does not explain the ingest-api heap growth that precedes the 502s."
+            }
+          ],
+          "recommendedAction": "Restart the ingest-api pods to restore capacity now. Then inspect eventCache for missing eviction or TTL, and heap-dump or profile ingest-api. Add a heap alert at 70%. Raise the memory limit only as a temporary measure. Separately, review the analytics-ingest 429 rate limiting and the audit_log sequential scan."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 7,
+    "toolCalls": 7,
+    "usage": {
+      "inputTokens": 16,
+      "outputTokens": 3234,
+      "cacheReadTokens": 57928,
+      "cacheWriteTokens": 14433
+    },
+    "durationMs": 14691,
+    "stopReason": "tool_use"
+  }
+}

@@ -2,8 +2,9 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { strict as assert } from "node:assert";
-import { DATASETS, DEFAULT_SEED, QUIETABLE, SCENARIOS, TEST_SET, generateDataset, generateDatasetFor, type GeneratedIncident } from "../src/generator/index.js";
-import { quietAtMedium } from "../src/generator/hardness.js";
+import { DATASETS, DEFAULT_SEED, QUIETABLE, SCENARIOS, SCENARIO_KEYS, TEST_SET, generateDataset, generateDatasetFor, type GeneratedIncident } from "../src/generator/index.js";
+import { CONCURRENT, DECOY_PLAN, lookalikeOn, quietAtMedium } from "../src/generator/hardness.js";
+import { LOOKALIKES } from "../src/generator/lookalikes.js";
 import { DECOYS } from "../src/generator/decoys.js";
 import { TOPOLOGIES, servicesOf } from "../src/generator/topologies.js";
 import { buildManifest } from "../src/generator/manifest.js";
@@ -352,24 +353,60 @@ check("the overview misleads: the top service by errors is a decoy, never a serv
   }
 });
 
-check("decoys stay off the path, are labeled herrings, and start before onset and keep going after", () => {
+/**
+ * Onset isn't in the log, so use the fault's first direct failure: the first ERROR/FATAL evidence line,
+ * or (retry storms log no errors) the first evidence line that isn't an originating one. Some
+ * evidence, like disk usage creeping up, deliberately predates onset.
+ */
+const firstFailureOf = (g: GeneratedIncident) => {
+  const { logs, label } = g.incident;
+  const direct = label.evidenceLines.filter((n) => isErr(logs[n - 1].level));
+  return direct.length ? Math.min(...direct) : Math.min(...label.evidenceLines.filter((n) => !g.info.origins.includes(n)));
+};
+const tsOf = (g: GeneratedIncident, n: number) => Date.parse(g.incident.logs[n - 1].ts);
+
+check("decoys stay off the path and are labeled herrings; chronic ones start before the fault, timed ones just after it", () => {
   for (const g of v2All) {
     const { logs, label } = g.incident;
     const herrings = new Set(label.herringLines);
     const onPath = new Set([...label.evidenceLines].map((n) => logs[n - 1].service));
-    // Onset isn't in the log, so use the fault's first direct failure: the first ERROR/FATAL evidence line,
-    // or (retry storms log no errors) the first evidence line that isn't an originating one. Some
-    // evidence, like disk usage creeping up, deliberately predates onset.
-    const direct = label.evidenceLines.filter((n) => isErr(logs[n - 1].level));
-    const firstFailure = direct.length ? Math.min(...direct) : Math.min(...label.evidenceLines.filter((n) => !g.info.origins.includes(n)));
+    const firstFailure = firstFailureOf(g);
+    const firstEvidence = Math.min(...label.evidenceLines);
     for (const svc of g.info.decoyServices) {
       assert.ok(!onPath.has(svc), `${g.incident.id}: ${svc} has cause lines`);
       const errs = logs.filter((l) => l.service === svc && isErr(l.level));
       for (const l of errs) assert.ok(herrings.has(l.n), `${g.incident.id}: decoy line ${l.n} isn't a labeled herring`);
-      assert.ok(errs[0].n < firstFailure, `${g.incident.id}: ${svc} starts after the fault's first failure`);
       assert.ok(errs.at(-1)!.n > firstFailure, `${g.incident.id}: ${svc} stops before the incident`);
+      if (g.info.timedDecoyServices.includes(svc)) {
+        // The fault shows itself first, and the flood starts with the incident, not minutes away from it.
+        assert.ok(errs[0].n > firstEvidence, `${g.incident.id}: timed decoy ${svc} starts before the fault's first sign`);
+        const gap = Math.abs(Date.parse(errs[0].ts) - tsOf(g, firstFailure)) / 1000;
+        assert.ok(gap <= 180, `${g.incident.id}: timed decoy ${svc} starts ${gap}s from the first failure`);
+      } else {
+        assert.ok(errs[0].n < firstFailure, `${g.incident.id}: ${svc} starts after the fault's first failure`);
+      }
     }
     assert.match(label.explanation, /Loud decoy: /);
+  }
+});
+
+check("decoy mix follows the plan: easy 1 chronic, medium 1 timed, hard 1 chronic + 1 timed", () => {
+  for (const g of v2All) {
+    const plan = DECOY_PLAN[g.incident.label.difficulty];
+    assert.equal(g.info.timedDecoyServices.length, plan.timed, g.incident.id);
+    assert.equal(g.info.decoyServices.length - g.info.timedDecoyServices.length, plan.chronic, g.incident.id);
+  }
+});
+
+check("timed decoys are off every failing request's path: no trace with an evidence or symptom line touches them", () => {
+  for (const g of v2All) {
+    const { logs, label } = g.incident;
+    const evidence = new Set(label.evidenceLines);
+    const pathTraces = new Set(logs.filter((l) => l.traceId && (evidence.has(l.n) || isErr(l.level))).map((l) => l.traceId!));
+    for (const svc of g.info.decoyServices) {
+      const touched = logs.filter((l) => l.service === svc && l.traceId && pathTraces.has(l.traceId));
+      assert.deepEqual(touched.map((l) => l.n), [], `${g.incident.id}: ${svc} shares a trace with the failing path`);
+    }
   }
 });
 
@@ -385,12 +422,12 @@ check("'the first ERROR line is evidence' is now rarely true", () => {
 
 console.log("\nGenerator v2: concurrent incidents (T4)");
 
-const v2Hard = v2All.filter((g) => g.incident.label.difficulty === "hard");
+const v2Hard = v2All.filter((g) => CONCURRENT[g.incident.label.difficulty]);
 
-check("every v2 hard incident has a second fault; nothing else does (v1 labels don't even have the field)", () => {
+check("every v2 medium and hard incident has a second fault; easy doesn't (v1 labels don't even have the field)", () => {
   for (const g of v2All) {
     const has = !!g.incident.label.secondaryLines?.length;
-    assert.equal(has, g.incident.label.difficulty === "hard", g.incident.id);
+    assert.equal(has, CONCURRENT[g.incident.label.difficulty], g.incident.id);
     assert.equal(g.info.onsets.secondary !== undefined, has, g.incident.id);
   }
   for (const g of [...dataset, ...generateDataset(TEST_SET.seed, TEST_SET)]) {
@@ -426,6 +463,59 @@ check("it can't explain the alert: other services only, never named in the alert
   }
 });
 
+console.log("\nGenerator v2: lookalike events on the path (T6)");
+
+check("lookalikes: none at easy or in v1, half the scenarios at medium (the same in both sets), all at hard", () => {
+  for (const g of v2All) {
+    const want = lookalikeOn(g.incident.label.difficulty, g.incident.label.scenario!, SCENARIO_KEYS);
+    assert.equal(g.info.lookalike !== null, want, g.incident.id);
+  }
+  const medium = SCENARIO_KEYS.filter((k) => lookalikeOn("medium", k, SCENARIO_KEYS));
+  assert.equal(medium.length, SCENARIO_KEYS.length / 2);
+  for (const g of dataset) assert.equal(g.info.lookalike, null);
+});
+
+check("a lookalike never mimics the root cause or an acceptable answer, and prefers a confusable category", () => {
+  let confusable = 0;
+  const withOne = v2All.filter((g) => g.info.lookalike);
+  for (const g of withOne) {
+    const { label } = g.incident;
+    const mimics = g.info.lookalike!.mimics;
+    assert.notEqual(mimics, label.rootCause, g.incident.id);
+    assert.ok(!label.acceptableCauses.includes(mimics as never), `${g.incident.id}: lookalike mimics acceptable ${mimics}`);
+    if (scenarioByKey.get(label.scenario!)!.confusableWith.includes(mimics as never)) confusable++;
+  }
+  assert.ok(confusable >= withOne.length * 0.8, `${confusable}/${withOne.length} mimic a confusable category`);
+});
+
+check("a lookalike is on the path, labeled herring, 2–6 minutes before the fault, with healthy traffic on its service in between", () => {
+  for (const g of v2All.filter((x) => x.info.lookalike)) {
+    const { logs, label } = g.incident;
+    const la = g.info.lookalike!;
+    const t = TOPOLOGIES.find((x) => x.key === g.meta.topology)!;
+    assert.ok(servicesOf(t).includes(la.service), `${g.incident.id}: ${la.service} isn't on the paged topology`);
+    const herrings = new Set(label.herringLines);
+    for (const n of la.lines) assert.ok(herrings.has(n), `${g.incident.id}: lookalike line ${n} isn't a herring`);
+    const firstEvidence = Math.min(...label.evidenceLines);
+    const last = Math.max(...la.lines);
+    assert.ok(last < firstEvidence, `${g.incident.id}: lookalike (line ${last}) isn't before the fault's first sign (line ${firstEvidence})`);
+    const lead = (tsOf(g, firstEvidence) - tsOf(g, Math.min(...la.lines))) / 1000;
+    assert.ok(lead >= 60 && lead <= 400, `${g.incident.id}: lookalike leads the fault by ${lead}s`);
+    const healthy = logs.filter((l) => l.n > last && l.n < firstEvidence && l.service === la.service && (l.level === "INFO" || l.level === "DEBUG") && !herrings.has(l.n));
+    assert.ok(healthy.length >= 3, `${g.incident.id}: only ${healthy.length} healthy ${la.service} lines between the lookalike and the fault`);
+    assert.match(label.explanation, /Lookalike: /);
+  }
+});
+
+check("every lookalike kind a scenario can prefer is used, and each one's lines stay below ERROR", () => {
+  const used = new Set(v2All.map((g) => g.info.lookalike?.key).filter(Boolean));
+  const preferable = new Set(Object.values(SCENARIOS).flat().flatMap((sc) => sc.confusableWith));
+  for (const l of LOOKALIKES.filter((x) => preferable.has(x.mimics))) assert.ok(used.has(l.key), `lookalike ${l.key} never used`);
+  for (const g of v2All.filter((x) => x.info.lookalike)) {
+    for (const n of g.info.lookalike!.lines) assert.ok(!isErr(g.incident.logs[n - 1].level), `${g.incident.id}: lookalike line ${n} is ${g.incident.logs[n - 1].level}`);
+  }
+});
+
 console.log("\nGenerator v2: long haystacks and fairness (T5)");
 
 check("sizes land near ~1,500 / ~2,500 / ~4,000 lines (easy / medium / hard)", () => {
@@ -440,7 +530,8 @@ check("sizes land near ~1,500 / ~2,500 / ~4,000 lines (easy / medium / hard)", (
  * Lines an agent can reach without knowing the answer, using only label-free
  * queries (first 200 results each, as search_logs allows):
  *   WARN+ and ERROR+, overall and per service;
- *   per service, a 2-minute window around any line found that way (since/until);
+ *   per service, a window from 5 minutes before to 2 minutes after any line found that way (since/until;
+ *   T6 widened the lookback from 1 minute, matching how the pilot agents search the lead-up to a failure);
  *   correlate_trace on any trace those lines carry;
  * and anything within get_context range (±50 lines) of all of the above.
  */
@@ -458,7 +549,7 @@ function reachable(g: GeneratedIncident): Set<number> {
   const windows = [...new Set(anchors.map((l) => Math.floor(time(l.ts) / 60_000)))];
   const byService = new Map(services.map((svc) => [svc, logs.filter((l) => l.service === svc)]));
   for (const minute of windows) {
-    const [from, to] = [(minute - 1) * 60_000, (minute + 2) * 60_000];
+    const [from, to] = [(minute - 5) * 60_000, (minute + 2) * 60_000];
     for (const lines of byService.values()) take(lines.filter((l) => time(l.ts) >= from && time(l.ts) < to));
   }
   for (const trace of new Set(anchors.map((l) => l.traceId).filter(Boolean))) take(logs.filter((l) => l.traceId === trace));

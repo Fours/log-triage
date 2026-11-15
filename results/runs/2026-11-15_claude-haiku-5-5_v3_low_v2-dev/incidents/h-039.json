@@ -1,0 +1,138 @@
+{
+  "score": {
+    "incidentId": "h-039",
+    "difficulty": "medium",
+    "scenario": "data_integrity/sequence-collision",
+    "truth": "data_integrity",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 5,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.001808435,
+    "durationMs": 7777,
+    "iterations": 4,
+    "toolCalls": 3,
+    "tokens": {
+      "input": 10,
+      "output": 1526,
+      "cacheRead": 15831,
+      "cacheWrite": 7089
+    }
+  },
+  "result": {
+    "incidentId": "h-039",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.9,
+          "evidenceLines": [
+            1567,
+            1697,
+            1787,
+            1896,
+            2025
+          ],
+          "reasoning": "At 06:46:19Z a restore reloaded the orders table from a snapshot (1,834,296 rows) but left sequence orders_id_seq at 1826037, behind the max existing id. Subsequent inserts pull sequence values that already exist, so Postgres rejects them with unique violations on orders_pkey (#1697, #1787, #1896, #2025). Order-service maps these to 409/500, and api-gateway returns 500s on POST /checkout (e.g. #1779, #1915, #2946), which is the 'could not save' symptom. Payment succeeded before the failures, so the fault is in order persistence, not payment. The legacy-inventory healthcheck timeouts in status-poller and the slow audit_log seq scan are unrelated noise. Alternatives considered: dependency_timeout (no hanging dependency seen in the failing path) and bad_deploy (no release line found at onset)."
+        }
+      ],
+      "recommendedAction": "Reset orders_id_seq to above max(orders.id) (setval to MAX(id)+1 or higher), confirm the restore procedure's sequence handling, and verify checkout succeeds. Then check for any orders whose payment succeeded but which were not persisted, and reconcile them. Optionally silence the legacy-inventory healthcheck, which is deprecated."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "28 match(es):\n#345 2026-10-05T06:36:41Z WARN postgres slow query 2401ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#1046 2026-10-05T06:42:14Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1138 2026-10-05T06:42:57Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1491 2026-10-05T06:45:48Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1567 2026-10-05T06:46:19Z WARN postgres restore: table orders reloaded from snapshot (1834296 rows); sequence orders_id_seq left at 1826037\n#1697 2026-10-05T06:47:28Z ERROR postgres duplicate key value violates unique constraint \"orders_pkey\" DETAIL: Key (id)=(1830302) already exists.\n#1771 2026-10-05T06:48:16Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1779 2026-10-05T06:48:22Z ERROR api-gateway [t-6556] POST /checkout 500 17735ms: upstream order-service returned 500 (create failed)\n#1787 2026-10-05T06:48:27Z ERROR postgres ERROR: 23505 unique_violation on orders (id 1830304 is already present)\n#1850 2026-10-05T06:49:12Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1896 2026-10-05T06:49:43Z ERROR postgres insert into orders rejected: primary key 1830308 is taken\n#1915 2026-10-05T06:49:56Z ERROR api-gateway [t-6616] POST /checkout 500 11051ms: upstream order-service returned 500 (create failed)\n#1924 2026-10-05T06:50:00Z ERROR order-service [t-6622] create order failed: unique violation on orders.id, returning 409\n#1994 2026-10-05T06:50:57Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2025 2026-10-05T06:51:23Z ERROR postgres duplicate key value violates unique constraint \"orders_pkey\" DETAIL: Key (id)=(1830313) already exists.\n#2153 2026-10-05T06:52:56Z ERROR order-service [t-6723] create order failed: unique violation on orders.id, returning 409\n#2186 2026-10-05T06:53:20Z ERROR api-gateway [t-6741] POST /checkout 500 8437ms: upstream order-service returned 500 (create failed)\n#2264 2026-10-05T06:54:18Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2271 2026-10-05T06:54:22Z ERROR api-gateway [t-6767] POST /checkout 500 10474ms: upstream order-service returned 500 (create failed)\n#2321 2026-10-05T06:54:56Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2361 2026-10-05T06:55:20Z ERROR order-service [t-6814] create order failed: unique violation on orders.id, returning 409\n#2478 2026-10-05T06:56:34Z ERROR api-gateway [t-6869] POST /checkout 500 11972ms: upstream order-service returned 500 (create failed)\n#2509 2026-10-05T06:56:59Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2685 2026-10-05T06:58:59Z ERROR api-gateway [t-6969] POST /checkout 500 22662ms: upstream order-service returned 500 (create failed)\n#2801 2026-10-05T07:00:29Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2803 2026-10-05T07:00:29Z ERROR order-service [t-7022] create order failed: unique violation on orders.id, returning 409\n#2938 2026-10-05T07:02:13Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2946 2026-10-05T07:02:19Z ERROR api-gateway [t-7075] POST /checkout 500 20915ms: upstream order-service returned 500 (create failed)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "postgres",
+          "level": "ERROR"
+        },
+        "output": "4 match(es):\n#1697 2026-10-05T06:47:28Z ERROR postgres duplicate key value violates unique constraint \"orders_pkey\" DETAIL: Key (id)=(1830302) already exists.\n#1787 2026-10-05T06:48:27Z ERROR postgres ERROR: 23505 unique_violation on orders (id 1830304 is already present)\n#1896 2026-10-05T06:49:43Z ERROR postgres insert into orders rejected: primary key 1830308 is taken\n#2025 2026-10-05T06:51:23Z ERROR postgres duplicate key value violates unique constraint \"orders_pkey\" DETAIL: Key (id)=(1830313) already exists."
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1567,
+          "before": 6,
+          "after": 3
+        },
+        "output": "#1561 2026-10-05T06:46:17Z INFO order-service [t-6430] order o-6601 accepted, calling payment-svc POST /charge\n#1562 2026-10-05T06:46:17Z INFO api-gateway [t-6430] POST /checkout 200 191ms\n#1563 2026-10-05T06:46:18Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 2\n#1564 2026-10-05T06:46:19Z INFO order-service [t-6431] order o-6602 accepted, calling payment-svc POST /charge\n#1565 2026-10-05T06:46:19Z INFO payment-svc [t-6431] POST /charge o-6602 ok 64ms\n#1566 2026-10-05T06:46:19Z INFO api-gateway [t-6431] POST /checkout 200 110ms\n#1567 2026-10-05T06:46:19Z WARN postgres restore: table orders reloaded from snapshot (1834296 rows); sequence orders_id_seq left at 1826037\n#1568 2026-10-05T06:46:20Z DEBUG order-service GC pause 9ms (young), heap 39%\n#1569 2026-10-05T06:46:21Z INFO report-cron scheduler heartbeat: 7 jobs registered, next run in 30s\n#1570 2026-10-05T06:46:21Z INFO order-service [t-6433] order o-6605 accepted, calling payment-svc POST /charge"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                1567,
+                1697,
+                1787,
+                1896,
+                2025
+              ],
+              "reasoning": "At 06:46:19Z a restore reloaded the orders table from a snapshot (1,834,296 rows) but left sequence orders_id_seq at 1826037, behind the max existing id. Subsequent inserts pull sequence values that already exist, so Postgres rejects them with unique violations on orders_pkey (#1697, #1787, #1896, #2025). Order-service maps these to 409/500, and api-gateway returns 500s on POST /checkout (e.g. #1779, #1915, #2946), which is the 'could not save' symptom. Payment succeeded before the failures, so the fault is in order persistence, not payment. The legacy-inventory healthcheck timeouts in status-poller and the slow audit_log seq scan are unrelated noise. Alternatives considered: dependency_timeout (no hanging dependency seen in the failing path) and bad_deploy (no release line found at onset).",
+              "recommendedAction": "Reset orders_id_seq to above max(orders.id) (setval to MAX(id)+1 or higher), confirm the restore procedure's sequence handling, and verify checkout succeeds. Then check for any orders whose payment succeeded but which were not persisted, and reconcile them. Optionally silence the legacy-inventory healthcheck, which is deprecated."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                1567,
+                1697,
+                1787,
+                1896,
+                2025
+              ],
+              "reasoning": "At 06:46:19Z a restore reloaded the orders table from a snapshot (1,834,296 rows) but left sequence orders_id_seq at 1826037, behind the max existing id. Subsequent inserts pull sequence values that already exist, so Postgres rejects them with unique violations on orders_pkey (#1697, #1787, #1896, #2025). Order-service maps these to 409/500, and api-gateway returns 500s on POST /checkout (e.g. #1779, #1915, #2946), which is the 'could not save' symptom. Payment succeeded before the failures, so the fault is in order persistence, not payment. The legacy-inventory healthcheck timeouts in status-poller and the slow audit_log seq scan are unrelated noise. Alternatives considered: dependency_timeout (no hanging dependency seen in the failing path) and bad_deploy (no release line found at onset).",
+              "recommendedAction": "Reset orders_id_seq to above max(orders.id) (setval to MAX(id)+1 or higher), confirm the restore procedure's sequence handling, and verify checkout succeeds. Then check for any orders whose payment succeeded but which were not persisted, and reconcile them. Optionally silence the legacy-inventory healthcheck, which is deprecated."
+            }
+          ],
+          "recommendedAction": "Reset orders_id_seq to above max(orders.id) (setval to MAX(id)+1 or higher), confirm the restore procedure's sequence handling, and verify checkout succeeds. Then check for any orders whose payment succeeded but which were not persisted, and reconcile them. Optionally silence the legacy-inventory healthcheck, which is deprecated."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 3,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1526,
+      "cacheReadTokens": 15831,
+      "cacheWriteTokens": 7089
+    },
+    "durationMs": 7777,
+    "stopReason": "tool_use"
+  }
+}

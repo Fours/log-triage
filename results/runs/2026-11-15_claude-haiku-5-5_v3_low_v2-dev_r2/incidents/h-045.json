@@ -1,0 +1,166 @@
+{
+  "score": {
+    "incidentId": "h-045",
+    "difficulty": "hard",
+    "scenario": "bad_deploy/dependency-contract-change",
+    "truth": "bad_deploy",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.9,
+    "top1": false,
+    "top1Lenient": false,
+    "top3": true,
+    "rank": 2,
+    "evidence": {
+      "cited": 7,
+      "correct": 0,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0
+    },
+    "herringsCited": 0,
+    "secondaryCited": 5,
+    "costUsd": 0.002514855,
+    "durationMs": 10583,
+    "iterations": 4,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 10,
+      "output": 2199,
+      "cacheRead": 20048,
+      "cacheWrite": 9711
+    }
+  },
+  "result": {
+    "incidentId": "h-045",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.9,
+          "evidenceLines": [
+            2778,
+            2794,
+            2837,
+            3032,
+            3123,
+            3145,
+            3407
+          ],
+          "reasoning": "Account-svc migration 0071_add_currency_code ran three steps against accounts-db. Step 1 renamed accounts.currency_code to currency_code_old and committed. Step 2 then failed with a lock timeout. The migration tool does not roll back non-transactional DDL, so the schema was left half-applied with no currency_code column. From 11:57:49 onward, every query that reads currency_code fails with SQLSTATE 42703 at accounts-db (#3032, #3145, #3196, #3389), and account-svc surfaces the same error on user lookups (#3123, #3407, #3561, #3797). Those account-svc failures are what the gateway sees as 502s on POST /v1/events. The billing-reconciler and flag-sync errors are downstream of this. Ruled out: the events-db index migration at 11:52 (#1705, #1839) applied cleanly, and the routine vacuum and checkpoint INFO lines are normal noise. The alternative reading is bad_deploy, since the release that shipped migration 0071 is the trigger, but the fault is the broken schema state the migration left behind."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.1,
+          "evidenceLines": [
+            2778,
+            2837
+          ],
+          "reasoning": "The account-svc release that carried migration 0071 is the trigger. This is a weaker fit because the fault is in the schema state the migration left behind, not in the release code itself."
+        }
+      ],
+      "recommendedAction": "Restore the accounts.currency_code column: rename currency_code_old back to currency_code, or re-run migration 0071 steps 2 and 3 once the lock contention is cleared, then verify with a test query. Pause account-svc migrations and make migration 0071 transactional or idempotent. Replay the rejected POST /v1/events requests and the billing-reconciler and flag-sync work that failed during the window."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "since": "11:45:00",
+          "until": "11:47:00",
+          "limit": 60
+        },
+        "output": "tool error: since (11:45:00) is after until (11:47:00)",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "accounts-db",
+          "limit": 60
+        },
+        "output": "59 match(es):\n#102 2026-10-13T11:45:25Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 11\n#190 2026-10-13T11:45:47Z INFO accounts-db checkpoint complete: wrote 398 buffers (1.2%)\n#264 2026-10-13T11:46:06Z INFO accounts-db checkpoint complete: wrote 288 buffers (4.2%)\n#370 2026-10-13T11:46:31Z INFO accounts-db checkpoint complete: wrote 1322 buffers (1.9%)\n#455 2026-10-13T11:46:52Z INFO accounts-db checkpoint complete: wrote 935 buffers (1.3%)\n#523 2026-10-13T11:47:09Z INFO accounts-db checkpoint complete: wrote 1070 buffers (6.0%)\n#615 2026-10-13T11:47:32Z INFO accounts-db checkpoint complete: wrote 419 buffers (6.5%)\n#706 2026-10-13T11:47:56Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 35\n#780 2026-10-13T11:48:13Z INFO accounts-db checkpoint complete: wrote 391 buffers (6.2%)\n#887 2026-10-13T11:48:41Z INFO accounts-db checkpoint complete: wrote 1278 buffers (1.9%)\n#983 2026-10-13T11:49:07Z INFO accounts-db checkpoint complete: wrote 272 buffers (6.1%)\n#1070 2026-10-13T11:49:27Z INFO accounts-db checkpoint complete: wrote 764 buffers (3.2%)\n#1176 2026-10-13T11:49:52Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 9\n#1280 2026-10-13T11:50:16Z INFO accounts-db checkpoint complete: wrote 580 buffers (1.2%)\n#1379 2026-10-13T11:50:42Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 28\n#1473 2026-10-13T11:51:05Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 29\n#1543 2026-10-13T11:51:25Z INFO accounts-db checkpoint complete: wrote 887 buffers (7.1%)\n#1634 2026-10-13T11:51:46Z INFO accounts-db checkpoint complete: wrote 1214 buffers (2.2%)\n#1733 2026-10-13T11:52:09Z INFO accounts-db checkpoint complete: wrote 1202 buffers (7.7%)\n#1838 2026-10-13T11:52:35Z INFO accounts-db checkpoint complete: wrote 773 buffers (3.4%)\n#1944 2026-10-13T11:53:00Z INFO accounts-db checkpoint complete: wrote 1065 buffers (3.1%)\n#2037 2026-10-13T11:53:22Z INFO accounts-db checkpoint complete: wrote 842 buffers (5.5%)\n#2150 2026-10-13T11:53:51Z INFO accounts-db checkpoint complete: wrote 871 buffers (6.0%)\n#2214 2026-10-13T11:54:08Z INFO accounts-db checkpoint complete: wrote 1257 buffers (7.3%)\n#2289 2026-10-13T11:54:27Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 7\n#2356 2026-10-13T11:54:43Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 10\n#2416 2026-10-13T11:54:59Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 27\n#2492 2026-10-13T11:55:18Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 15\n#2572 2026-10-13T11:55:39Z INFO accounts-db checkpoint complete: wrote 1318 buffers (2.7%)\n#2657 2026-10-13T11:56:00Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 37\n#2742 2026-10-13T11:56:20Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 26\n#2823 2026-10-13T11:56:38Z INFO accounts-db checkpoint complete: wrote 1209 buffers (6.2%)\n#2921 2026-10-13T11:57:01Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 19\n#2996 2026-10-13T11:57:29Z INFO accounts-db checkpoint complete: wrote 720 buffers (4.3%)\n#3032 2026-10-13T11:57:49Z ERROR accounts-db ERROR:  column accounts.currency_code does not exist (SQLSTATE 42703)\n#3039 2026-10-13T11:57:55Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 22\n#3083 2026-10-13T11:58:15Z INFO accounts-db checkpoint complete: wrote 751 buffers (2.7%)\n#3127 2026-10-13T11:58:42Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 23\n#3145 2026-10-13T11:58:49Z ERROR accounts-db statement failed: undefined_column, no attribute currency_code on accounts\n#3181 2026-10-13T11:59:06Z INFO accounts-db checkpoint complete: wrote 378 buffers (1.3%)\n#3196 2026-10-13T11:59:12Z ERROR accounts-db column \"currency_code\" of relation \"accounts\" does not exist at character 74\n#3229 2026-10-13T11:59:31Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 21\n#3281 2026-10-13T11:59:58Z INFO accounts-db checkpoint complete: wrote 1132 buffers (7.3%)\n#3326 2026-10-13T12:00:22Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 22\n#3376 2026-10-13T12:00:47Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 6\n#3389 2026-10-13T12:00:52Z ERROR accounts-db ERROR:  column accounts.currency_code does not exist (SQLSTATE 42703)\n#3418 2026-10-13T12:01:10Z INFO accounts-db checkpoint complete: wrote 422 buffers (2.7%)\n#3459 2026-10-13T12:01:33Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 13\n#3490 2026-10-13T12:01:50Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 12\n#3531 2026-10-13T12:02:12Z INFO accounts-db checkpoint complete: wrote 729 buffers (3.3%)\n#3582 2026-10-13T12:02:39Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 10\n#3611 2026-10-13T12:02:57Z INFO accounts-db checkpoint complete: wrote 1081 buffers (3.0%)\n#3641 2026-10-13T12:03:16Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 28\n#3696 2026-10-13T12:03:44Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 18\n#3739 2026-10-13T12:04:07Z INFO accounts-db checkpoint complete: wrote 250 buffers (4.8%)\n#3787 2026-10-13T12:04:36Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 2\n#3827 2026-10-13T12:05:00Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 0\n#3854 2026-10-13T12:05:19Z INFO accounts-db checkpoint complete: wrote 771 buffers (7.6%)\n#3884 2026-10-13T12:05:37Z INFO accounts-db checkpoint complete: wrote 317 buffers (7.5%)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "migration",
+          "limit": 30
+        },
+        "output": "2 match(es):\n#1705 2026-10-13T11:52:02Z INFO events-db schema migration 2026_11_08_add_index_events_created_at started: ALTER TABLE events ADD INDEX idx_events_created_at (created_at), ALGORITHM=INPLACE, LOCK=NONE\n#1839 2026-10-13T11:52:35Z INFO events-db schema migration 2026_11_08_add_index_events_created_at applied in 11s; 0 pending"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "currency_code",
+          "limit": 40
+        },
+        "output": "11 match(es):\n#2778 2026-10-13T11:56:29Z INFO account-svc migrate: applying 0071_add_currency_code (3 steps) to accounts-db\n#2794 2026-10-13T11:56:31Z INFO account-svc migrate: 0071_add_currency_code step 1/3 ok: renamed column accounts.currency_code -> currency_code_old\n#2837 2026-10-13T11:56:41Z INFO account-svc migrate: 0071_add_currency_code step 2/3 failed: lock timeout on accounts; step 1 already committed (non-transactional DDL), not rolled back\n#3032 2026-10-13T11:57:49Z ERROR accounts-db ERROR:  column accounts.currency_code does not exist (SQLSTATE 42703)\n#3123 2026-10-13T11:58:39Z ERROR account-svc [t-8372] query on accounts failed for u-7941: column \"currency_code\" does not exist\n#3145 2026-10-13T11:58:49Z ERROR accounts-db statement failed: undefined_column, no attribute currency_code on accounts\n#3196 2026-10-13T11:59:12Z ERROR accounts-db column \"currency_code\" of relation \"accounts\" does not exist at character 74\n#3389 2026-10-13T12:00:52Z ERROR accounts-db ERROR:  column accounts.currency_code does not exist (SQLSTATE 42703)\n#3407 2026-10-13T12:01:03Z ERROR account-svc [t-8488] query on accounts failed for u-8016: column \"currency_code\" does not exist\n#3561 2026-10-13T12:02:23Z ERROR account-svc [t-8551] query on accounts failed for u-8054: column \"currency_code\" does not exist\n#3797 2026-10-13T12:04:43Z ERROR account-svc [t-8616] query on accounts failed for u-8104: column \"currency_code\" does not exist"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "account-svc",
+          "level": "ERROR",
+          "limit": 20
+        },
+        "output": "4 match(es):\n#3123 2026-10-13T11:58:39Z ERROR account-svc [t-8372] query on accounts failed for u-7941: column \"currency_code\" does not exist\n#3407 2026-10-13T12:01:03Z ERROR account-svc [t-8488] query on accounts failed for u-8016: column \"currency_code\" does not exist\n#3561 2026-10-13T12:02:23Z ERROR account-svc [t-8551] query on accounts failed for u-8054: column \"currency_code\" does not exist\n#3797 2026-10-13T12:04:43Z ERROR account-svc [t-8616] query on accounts failed for u-8104: column \"currency_code\" does not exist"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"data_integrity\",\"confidence\":0.9,\"evidenceLines\":[2778,2794,2837,3032,3123,3145,3407],\"reasoning\":\"Account-svc migration 0071_add_currency_code ran three steps against accounts-db. Step 1 renamed accounts.currency_code to currency_code_old and committed. Step 2 then failed with a lock timeout. The migration tool does not roll back non-transactional DDL, so the schema was left half-applied with no currency_code column. From 11:57:49 onward, every query that reads currency_code fails with SQLSTATE 42703 at accounts-db (#3032, #3145, #3196, #3389), and account-svc surfaces the same error on user lookups (#3123, #3407, #3561, #3797). Those account-svc failures are what the gateway sees as 502s on POST /v1/events. The 502 rate and the billing-reconciler and flag-sync errors are downstream of this. Ruled out: the events-db index migration at 11:52 (#1705, #1839) applied cleanly, and the routine vacuum and checkpoint INFO lines are normal noise.\",\"Alternative: a bad_deploy of account-svc that shipped migration 0071. The failure mode is the same, but the root fault is the non-atomic migration leaving the schema broken, so data_integrity ranks first.\"},{\"rootCause\":\"bad_deploy\",\"confidence\":0.1,\"evidenceLines\":[2778,2837],\"reasoning\":\"The account-svc release that carried migration 0071 is the trigger. This is a weaker fit because the fault is in the schema state the migration left behind, not in the release code itself.\"}]",
+          "recommendedAction": "Restore the accounts.currency_code column: rename currency_code_old back to currency_code (or re-run migration 0071 steps 2 and 3 once the lock contention is cleared), and verify the column with a test query. Then roll back or pause account-svc migrations and make migration 0071 transactional or idempotent. Replay the rejected POST /v1/events requests and the billing-reconciler and flag-sync work that failed during the window."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                2778,
+                2794,
+                2837,
+                3032,
+                3123,
+                3145,
+                3407
+              ],
+              "reasoning": "Account-svc migration 0071_add_currency_code ran three steps against accounts-db. Step 1 renamed accounts.currency_code to currency_code_old and committed. Step 2 then failed with a lock timeout. The migration tool does not roll back non-transactional DDL, so the schema was left half-applied with no currency_code column. From 11:57:49 onward, every query that reads currency_code fails with SQLSTATE 42703 at accounts-db (#3032, #3145, #3196, #3389), and account-svc surfaces the same error on user lookups (#3123, #3407, #3561, #3797). Those account-svc failures are what the gateway sees as 502s on POST /v1/events. The billing-reconciler and flag-sync errors are downstream of this. Ruled out: the events-db index migration at 11:52 (#1705, #1839) applied cleanly, and the routine vacuum and checkpoint INFO lines are normal noise. The alternative reading is bad_deploy, since the release that shipped migration 0071 is the trigger, but the fault is the broken schema state the migration left behind."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.1,
+              "evidenceLines": [
+                2778,
+                2837
+              ],
+              "reasoning": "The account-svc release that carried migration 0071 is the trigger. This is a weaker fit because the fault is in the schema state the migration left behind, not in the release code itself."
+            }
+          ],
+          "recommendedAction": "Restore the accounts.currency_code column: rename currency_code_old back to currency_code, or re-run migration 0071 steps 2 and 3 once the lock contention is cleared, then verify with a test query. Pause account-svc migrations and make migration 0071 transactional or idempotent. Replay the rejected POST /v1/events requests and the billing-reconciler and flag-sync work that failed during the window."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 2199,
+      "cacheReadTokens": 20048,
+      "cacheWriteTokens": 9711
+    },
+    "durationMs": 10583,
+    "stopReason": "tool_use"
+  }
+}

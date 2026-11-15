@@ -1,0 +1,140 @@
+{
+  "score": {
+    "incidentId": "h-039",
+    "difficulty": "medium",
+    "scenario": "data_integrity/sequence-collision",
+    "truth": "data_integrity",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "data_integrity",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 4,
+      "precision": 0.8,
+      "recall": 0.8,
+      "f1": 0.8000000000000002
+    },
+    "herringsCited": 0,
+    "secondaryCited": 4,
+    "costUsd": 0.001942225,
+    "durationMs": 6239,
+    "iterations": 3,
+    "toolCalls": 3,
+    "tokens": {
+      "input": 8,
+      "output": 1119,
+      "cacheRead": 13205,
+      "cacheWrite": 9999
+    }
+  },
+  "result": {
+    "incidentId": "h-039",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.9,
+          "evidenceLines": [
+            1634,
+            1746,
+            1820,
+            1909,
+            1924
+          ],
+          "reasoning": "At 06:46:19Z postgres logged a restore that reloaded the orders table from a snapshot (1,834,296 rows) but left sequence orders_id_seq at 1,826,037. The sequence is about 8,259 values behind the table's max id, so new inserts get ids that already exist. From 06:47:28Z onward postgres throws unique_violation on orders_pkey (ids 1830302, 1830304, 1830308), order-service converts these to 409/500 on create, and api-gateway returns 500 on POST /checkout. The gateway 5xx and the ingest 502s are downstream symptoms and were not cited. The geo-IP 401s in enrichment-svc (#1697, #1771, #1841) are a real but separate config/credential problem: they affect the ingest path only and do not explain checkout failures. The legacy-inventory healthcheck timeouts in status-poller are also unrelated noise."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.3,
+          "evidenceLines": [
+            1697,
+            1771,
+            1841,
+            1906
+          ],
+          "reasoning": "Geo-IP provider rejects the API key with 401, so enrichment-svc fails and ingest-api gets 502s. This is a genuine misconfiguration, but it is on the ingest-events path, not the checkout order-create path that the alert covers."
+        }
+      ],
+      "recommendedAction": "Immediately resync the orders_id_seq sequence to above max(orders.id) (for example setval to max(id)+1 or more) so new inserts stop colliding, then verify checkout succeeds. Add a post-restore check that compares sequences with table maxima. Separately, rotate the geo-IP API key that the provider is rejecting (401) to fix the ingest-api/enrichment failures. Clean up the deprecated legacy-inventory healthcheck in status-poller."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "47 match(es):\n#355 2026-10-05T06:36:41Z WARN postgres slow query 2401ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#1634 2026-10-05T06:46:19Z WARN postgres restore: table orders reloaded from snapshot (1834296 rows); sequence orders_id_seq left at 1826037\n#1697 2026-10-05T06:46:58Z ERROR enrichment-svc [t-6562] geo-IP provider auth failed: HTTP 401, credentials not accepted by api.geoip.example\n#1709 2026-10-05T06:47:04Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1746 2026-10-05T06:47:28Z ERROR postgres duplicate key value violates unique constraint \"orders_pkey\" DETAIL: Key (id)=(1830302) already exists.\n#1771 2026-10-05T06:47:48Z ERROR enrichment-svc [t-6591] geo-IP provider rejected request: 401 Unauthorized (invalid API key) POST https://api.geoip.example/v1/lookup\n#1775 2026-10-05T06:47:51Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1813 2026-10-05T06:48:22Z ERROR api-gateway [t-6611] POST /checkout 500 17735ms: upstream order-service returned 500 (create failed)\n#1815 2026-10-05T06:48:24Z ERROR ingest-api [t-6615] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#1820 2026-10-05T06:48:27Z ERROR postgres ERROR: 23505 unique_violation on orders (id 1830304 is already present)\n#1831 2026-10-05T06:48:34Z ERROR ingest-gateway [t-6623] POST /v1/events 502 28296ms: upstream ingest-api returned 502 Bad Gateway\n#1841 2026-10-05T06:48:40Z ERROR enrichment-svc [t-6630] POST /v1/lookup -> 401 {\"error\":\"invalid_api_key\"}\n#1894 2026-10-05T06:49:33Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1906 2026-10-05T06:49:43Z ERROR enrichment-svc [t-6652] geo-IP provider auth failed: HTTP 401, credentials not accepted by api.geoip.example\n#1909 2026-10-05T06:49:43Z ERROR postgres insert into orders rejected: primary key 1830308 is taken\n#1920 2026-10-05T06:49:56Z ERROR api-gateway [t-6657] POST /checkout 500 11051ms: upstream order-service returned 500 (create failed)\n#1924 2026-10-05T06:50:00Z ERROR order-service [t-6660] create order failed: unique violation on orders.id, returning 409\n#1935 2026-10-05T06:50:09Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1949 2026-10-05T06:50:21Z ERROR ingest-gateway [t-6669] POST /v1/events 502 10755ms: upstream ingest-api returned 502 Bad Gateway\n#2018 2026-10-05T06:51:23Z ERROR postgres duplicate key value violates unique constraint \"orders_pkey\" DETAIL: Key (id)=(1830313) already exists.\n#2021 2026-10-05T06:51:24Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2031 2026-10-05T06:51:32Z ERROR ingest-api [t-6701] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#2081 2026-10-05T06:52:02Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2133 2026-10-05T06:52:52Z ERROR ingest-gateway [t-6744] POST /v1/events 502 23007ms: upstream ingest-api returned 502 Bad Gateway\n#2138 2026-10-05T06:52:56Z ERROR order-service [t-6750] create order failed: unique violation on orders.id, returning 409\n#2162 2026-10-05T06:53:18Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2165 2026-10-05T06:53:20Z ERROR api-gateway [t-6755] POST /checkout 500 8437ms: upstream order-service returned 500 (create failed)\n#2228 2026-10-05T06:54:17Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2231 2026-10-05T06:54:22Z ERROR api-gateway [t-6777] POST /checkout 500 10474ms: upstream order-service returned 500 (create failed)\n#2284 2026-10-05T06:55:10Z ERROR ingest-gateway [t-6789] POST /v1/events 502 27162ms: upstream ingest-api returned 502 Bad Gateway\n#2292 2026-10-05T06:55:20Z ERROR order-service [t-6791] create order failed: unique violation on orders.id, returning 409\n#2337 2026-10-05T06:56:02Z ERROR ingest-gateway [t-6801] POST /v1/events 502 10904ms: upstream ingest-api returned 502 Bad Gateway\n#2341 2026-10-05T06:56:05Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2380 2026-10-05T06:56:34Z ERROR api-gateway [t-6819] POST /checkout 500 11972ms: upstream order-service returned 500 (create failed)\n#2393 2026-10-05T06:56:46Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2481 2026-10-05T06:57:59Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2516 2026-10-05T06:58:26Z ERROR ingest-api [t-6863] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#2548 2026-10-05T06:58:59Z ERROR api-gateway [t-6872] POST /checkout 500 22662ms: upstream order-service returned 500 (create failed)\n#2554 2026-10-05T06:59:02Z ERROR ingest-api [t-6879] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#2581 2026-10-05T06:59:24Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2606 2026-10-05T06:59:42Z ERROR ingest-gateway [t-6905] POST /v1/events 502 21459ms: upstream ingest-api returned 502 Bad Gateway\n#2650 2026-10-05T07:00:24Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2655 2026-10-05T07:00:29Z ERROR order-service [t-6922] create order failed: unique violation on orders.id, returning 409\n#2712 2026-10-05T07:01:17Z ERROR ingest-gateway [t-6946] POST /v1/events 502 24618ms: upstream ingest-api returned 502 Bad Gateway\n#2717 2026-10-05T07:01:27Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2781 2026-10-05T07:02:19Z ERROR api-gateway [t-6968] POST /checkout 500 20915ms: upstream order-service returned 500 (create failed)\n#2808 2026-10-05T07:02:43Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "postgres",
+          "limit": 40
+        },
+        "output": "82 match(es), showing first 40:\n#27 2026-10-05T06:34:15Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 13\n#83 2026-10-05T06:34:42Z INFO postgres checkpoint complete: wrote 705 buffers (5.6%)\n#145 2026-10-05T06:35:07Z INFO postgres checkpoint complete: wrote 532 buffers (4.6%)\n#179 2026-10-05T06:35:24Z INFO postgres checkpoint complete: wrote 860 buffers (4.0%)\n#249 2026-10-05T06:35:52Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 17\n#310 2026-10-05T06:36:21Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 40\n#355 2026-10-05T06:36:41Z WARN postgres slow query 2401ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#376 2026-10-05T06:36:49Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 22\n#431 2026-10-05T06:37:13Z INFO postgres checkpoint complete: wrote 730 buffers (6.5%)\n#483 2026-10-05T06:37:38Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 8\n#520 2026-10-05T06:37:55Z INFO postgres checkpoint complete: wrote 545 buffers (3.1%)\n#561 2026-10-05T06:38:14Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 37\n#605 2026-10-05T06:38:35Z INFO postgres checkpoint complete: wrote 534 buffers (2.0%)\n#648 2026-10-05T06:38:55Z INFO postgres checkpoint complete: wrote 809 buffers (1.1%)\n#703 2026-10-05T06:39:20Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 30\n#759 2026-10-05T06:39:45Z INFO postgres checkpoint complete: wrote 708 buffers (4.6%)\n#800 2026-10-05T06:40:05Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 31\n#868 2026-10-05T06:40:33Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 38\n#925 2026-10-05T06:40:59Z INFO postgres checkpoint complete: wrote 1181 buffers (2.8%)\n#987 2026-10-05T06:41:25Z INFO postgres checkpoint complete: wrote 859 buffers (2.3%)\n#1034 2026-10-05T06:41:48Z INFO postgres checkpoint complete: wrote 570 buffers (2.8%)\n#1085 2026-10-05T06:42:09Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 3\n#1134 2026-10-05T06:42:33Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 37\n#1182 2026-10-05T06:42:52Z INFO postgres checkpoint complete: wrote 496 buffers (1.5%)\n#1227 2026-10-05T06:43:13Z INFO postgres checkpoint complete: wrote 267 buffers (1.3%)\n#1268 2026-10-05T06:43:36Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 25\n#1322 2026-10-05T06:44:00Z INFO postgres checkpoint complete: wrote 1146 buffers (4.6%)\n#1382 2026-10-05T06:44:25Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 22\n#1442 2026-10-05T06:44:53Z INFO postgres checkpoint complete: wrote 1009 buffers (5.6%)\n#1499 2026-10-05T06:45:18Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 7\n#1550 2026-10-05T06:45:40Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 20\n#1614 2026-10-05T06:46:09Z INFO postgres checkpoint complete: wrote 905 buffers (3.5%)\n#1634 2026-10-05T06:46:19Z WARN postgres restore: table orders reloaded from snapshot (1834296 rows); sequence orders_id_seq left at 1826037\n#1666 2026-10-05T06:46:35Z INFO postgres checkpoint complete: wrote 334 buffers (1.1%)\n#1700 2026-10-05T06:47:00Z INFO postgres checkpoint complete: wrote 342 buffers (7.0%)\n#1732 2026-10-05T06:47:18Z INFO postgres checkpoint complete: wrote 1169 buffers (3.0%)\n#1746 2026-10-05T06:47:28Z ERROR postgres duplicate key value violates unique constraint \"orders_pkey\" DETAIL: Key (id)=(1830302) already exists.\n#1753 2026-10-05T06:47:35Z INFO postgres checkpoint complete: wrote 1055 buffers (2.4%)\n#1780 2026-10-05T06:47:56Z INFO postgres checkpoint complete: wrote 1338 buffers (6.0%)\n#1810 2026-10-05T06:48:18Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 4"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1634,
+          "before": 4,
+          "after": 4
+        },
+        "output": "#1630 2026-10-05T06:46:17Z INFO order-service [t-6525] order o-6668 accepted, calling payment-svc POST /charge\n#1631 2026-10-05T06:46:17Z INFO payment-svc [t-6525] POST /charge o-6668 ok 53ms\n#1632 2026-10-05T06:46:17Z INFO api-gateway [t-6525] POST /checkout 200 143ms\n#1633 2026-10-05T06:46:19Z DEBUG payment-svc GC pause 24ms (young), heap 36%\n#1634 2026-10-05T06:46:19Z WARN postgres restore: table orders reloaded from snapshot (1834296 rows); sequence orders_id_seq left at 1826037\n#1635 2026-10-05T06:46:19Z INFO order-service [t-6526] order o-6671 accepted, calling payment-svc POST /charge\n#1636 2026-10-05T06:46:19Z INFO payment-svc [t-6526] POST /charge o-6671 ok 44ms\n#1637 2026-10-05T06:46:20Z INFO api-gateway [t-6526] POST /checkout 200 112ms\n#1638 2026-10-05T06:46:20Z INFO status-poller poll cycle complete: 25 targets checked in 370ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.9,
+              "evidenceLines": [
+                1634,
+                1746,
+                1820,
+                1909,
+                1924
+              ],
+              "reasoning": "At 06:46:19Z postgres logged a restore that reloaded the orders table from a snapshot (1,834,296 rows) but left sequence orders_id_seq at 1,826,037. The sequence is about 8,259 values behind the table's max id, so new inserts get ids that already exist. From 06:47:28Z onward postgres throws unique_violation on orders_pkey (ids 1830302, 1830304, 1830308), order-service converts these to 409/500 on create, and api-gateway returns 500 on POST /checkout. The gateway 5xx and the ingest 502s are downstream symptoms and were not cited. The geo-IP 401s in enrichment-svc (#1697, #1771, #1841) are a real but separate config/credential problem: they affect the ingest path only and do not explain checkout failures. The legacy-inventory healthcheck timeouts in status-poller are also unrelated noise.",
+              "reasoning_short": "Sequence drift after snapshot restore"
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.3,
+              "evidenceLines": [
+                1697,
+                1771,
+                1841,
+                1906
+              ],
+              "reasoning": "Geo-IP provider rejects the API key with 401, so enrichment-svc fails and ingest-api gets 502s. This is a genuine misconfiguration, but it is on the ingest-events path, not the checkout order-create path that the alert covers.",
+              "reasoning_short": "Expired geo-IP API key, secondary issue"
+            }
+          ],
+          "recommendedAction": "Immediately resync the orders_id_seq sequence to above max(orders.id) (for example setval to max(id)+1 or more) so new inserts stop colliding, then verify checkout succeeds. Add a post-restore check that compares sequences with table maxima. Separately, rotate the geo-IP API key that the provider is rejecting (401) to fix the ingest-api/enrichment failures. Clean up the deprecated legacy-inventory healthcheck in status-poller."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 3,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 1119,
+      "cacheReadTokens": 13205,
+      "cacheWriteTokens": 9999
+    },
+    "durationMs": 6239,
+    "stopReason": "tool_use"
+  }
+}

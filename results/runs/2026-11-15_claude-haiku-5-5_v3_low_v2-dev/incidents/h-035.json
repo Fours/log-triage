@@ -1,0 +1,254 @@
+{
+  "score": {
+    "incidentId": "h-035",
+    "difficulty": "medium",
+    "scenario": "poison_message/redelivery-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "poison_message",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 6,
+      "precision": 0.75,
+      "recall": 1,
+      "f1": 0.8571428571428571
+    },
+    "herringsCited": 5,
+    "costUsd": 0.004028405,
+    "durationMs": 17177,
+    "iterations": 7,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 16,
+      "output": 4030,
+      "cacheRead": 50343,
+      "cacheWrite": 12067
+    }
+  },
+  "result": {
+    "incidentId": "h-035",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.88,
+          "evidenceLines": [
+            1884,
+            1886,
+            2043,
+            2044,
+            2241,
+            2351,
+            2226,
+            2671
+          ],
+          "reasoning": "audit-consumer partition 2 is stuck on msg-440333 at offset 836959. The payload has a NUL byte at position 1323, so JSON parsing fails every time. The consumer nacks and redelivers it (attempt 4 at #1886, attempt 13 at #2044) with no max-retries configured, which jams the partition. Lag grows steadily (858 msgs at #2226, 6412 at #3292). CPU stays normal because the consumer is blocked on retries. The account-svc confirmation timeouts (#2387, #2708, #2884, #3189) are downstream symptoms of audit confirmations not being processed. The billing-reconciler checksum errors are a separate data issue and do not explain the audit lag."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.25,
+          "evidenceLines": [
+            376,
+            832,
+            1156,
+            2249,
+            3344
+          ],
+          "reasoning": "Secondary and unrelated to the audit lag: billing-reconciler repeatedly reports invoice_archive rows violating a checksum constraint in 2019 archive partitions and skips them. Worth tracking, but it does not block audit.events consumption."
+        }
+      ],
+      "recommendedAction": "Move msg-440333 (partition 2, offset 836959) to a dead-letter queue or skip it so the partition resumes. Add a max-retry limit and DLQ to audit-consumer so one malformed message cannot block the partition again. Find the producer that wrote the NUL byte into the audit payload and fix its serialization. Replay the DLQ message after the fix. Separately, investigate the invoice_archive checksum violations in billing-reconciler (2019 partitions)."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "28 match(es):\n#376 2026-11-10T07:42:02Z ERROR billing-reconciler invoice_archive row inv-314092 violates checksum constraint, skipping (archive partition 2019-Q4)\n#474 2026-11-10T07:42:47Z WARN edge-proxy [t-5567] POST /login 400 8ms: request validation failed: field \"email\" is not a valid address\n#832 2026-11-10T07:45:35Z ERROR billing-reconciler invoice_archive row inv-568685 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1156 2026-11-10T07:48:10Z ERROR billing-reconciler invoice_archive row inv-106706 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1329 2026-11-10T07:49:37Z ERROR billing-reconciler invoice_archive row inv-601063 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1456 2026-11-10T07:50:40Z ERROR billing-reconciler invoice_archive row inv-189633 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1884 2026-11-10T07:54:01Z ERROR audit-consumer handler error for msg-440333 at offset 836959: invalid JSON payload (byte 1323 is NUL)\n#1964 2026-11-10T07:54:45Z ERROR billing-reconciler invoice_archive row inv-696847 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2043 2026-11-10T07:55:24Z ERROR audit-consumer failed to process msg-440333 (partition 2, offset 836959): JSON parse error: unexpected token '\\u0000' at position 1323\n#2084 2026-11-10T07:55:45Z ERROR billing-reconciler invoice_archive row inv-278440 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2226 2026-11-10T07:57:02Z WARN audit-consumer consumer lag on audit.events partition 2: 858 messages behind (56s)\n#2241 2026-11-10T07:57:10Z ERROR audit-consumer SyntaxError: Unexpected token \\u0000 in JSON at position 1323 (message msg-440333, audit.events[2]@836959)\n#2249 2026-11-10T07:57:14Z ERROR billing-reconciler invoice_archive row inv-247647 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2313 2026-11-10T07:57:49Z WARN audit-consumer consumer lag on audit.events partition 2: 1538 messages behind (144s)\n#2351 2026-11-10T07:58:11Z ERROR audit-consumer handler error for msg-440333 at offset 836959: invalid JSON payload (byte 1323 is NUL)\n#2387 2026-11-10T07:58:33Z ERROR account-svc [t-6779] user u-8494 timed out waiting for downstream confirmation (120s), marked failed\n#2458 2026-11-10T07:59:13Z WARN audit-consumer consumer lag on audit.events partition 2: 2622 messages behind (150s)\n#2591 2026-11-10T08:00:26Z ERROR billing-reconciler invoice_archive row inv-758602 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2671 2026-11-10T08:01:09Z WARN audit-consumer consumer lag on audit.events partition 2: 4168 messages behind (260s)\n#2708 2026-11-10T08:01:30Z ERROR account-svc [t-7033] user u-8673 timed out waiting for downstream confirmation (120s), marked failed\n#2789 2026-11-10T08:02:13Z ERROR billing-reconciler invoice_archive row inv-833974 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2884 2026-11-10T08:03:06Z ERROR account-svc [t-7175] user u-8765 timed out waiting for downstream confirmation (120s), marked failed\n#3014 2026-11-10T08:04:16Z WARN audit-consumer consumer lag on audit.events partition 2: 4390 messages behind (410s)\n#3090 2026-11-10T08:04:55Z ERROR billing-reconciler invoice_archive row inv-734330 violates checksum constraint, skipping (archive partition 2019-Q2)\n#3115 2026-11-10T08:05:09Z WARN audit-consumer consumer lag on audit.events partition 2: 5154 messages behind (264s)\n#3189 2026-11-10T08:05:50Z ERROR account-svc [t-7392] user u-8931 timed out waiting for downstream confirmation (120s), marked failed\n#3292 2026-11-10T08:06:48Z WARN audit-consumer consumer lag on audit.events partition 2: 6412 messages behind (301s)\n#3344 2026-11-10T08:07:20Z ERROR billing-reconciler invoice_archive row inv-994281 violates checksum constraint, skipping (archive partition 2019-Q3)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "audit-consumer",
+          "limit": 40
+        },
+        "output": "224 match(es), showing first 40:\n#7 2026-11-10T07:39:03Z INFO audit-consumer processed batch of 53 messages from audit.events (lag 176ms)\n#18 2026-11-10T07:39:08Z INFO audit-consumer processed batch of 27 messages from audit.events (lag 114ms)\n#28 2026-11-10T07:39:13Z INFO audit-consumer processed batch of 89 messages from audit.events (lag 166ms)\n#36 2026-11-10T07:39:18Z INFO audit-consumer processed batch of 98 messages from audit.events (lag 62ms)\n#47 2026-11-10T07:39:23Z INFO audit-consumer processed batch of 100 messages from audit.events (lag 63ms)\n#54 2026-11-10T07:39:28Z INFO audit-consumer processed batch of 28 messages from audit.events (lag 190ms)\n#65 2026-11-10T07:39:33Z INFO audit-consumer processed batch of 119 messages from audit.events (lag 85ms)\n#72 2026-11-10T07:39:36Z INFO audit-consumer processed batch of 76 messages from audit.events (lag 331ms)\n#82 2026-11-10T07:39:41Z INFO audit-consumer processed batch of 102 messages from audit.events (lag 265ms)\n#94 2026-11-10T07:39:47Z INFO audit-consumer processed batch of 39 messages from audit.events (lag 273ms)\n#103 2026-11-10T07:39:51Z INFO audit-consumer processed batch of 115 messages from audit.events (lag 135ms)\n#110 2026-11-10T07:39:56Z INFO audit-consumer processed batch of 42 messages from audit.events (lag 377ms)\n#120 2026-11-10T07:39:59Z INFO audit-consumer processed batch of 62 messages from audit.events (lag 47ms)\n#127 2026-11-10T07:40:02Z INFO audit-consumer processed batch of 52 messages from audit.events (lag 50ms)\n#133 2026-11-10T07:40:07Z INFO audit-consumer processed batch of 38 messages from audit.events (lag 98ms)\n#145 2026-11-10T07:40:11Z INFO audit-consumer processed batch of 89 messages from audit.events (lag 371ms)\n#155 2026-11-10T07:40:16Z INFO audit-consumer processed batch of 103 messages from audit.events (lag 145ms)\n#167 2026-11-10T07:40:21Z INFO audit-consumer processed batch of 120 messages from audit.events (lag 77ms)\n#175 2026-11-10T07:40:25Z INFO audit-consumer processed batch of 27 messages from audit.events (lag 119ms)\n#179 2026-11-10T07:40:29Z INFO audit-consumer processed batch of 105 messages from audit.events (lag 125ms)\n#192 2026-11-10T07:40:33Z INFO audit-consumer processed batch of 53 messages from audit.events (lag 243ms)\n#199 2026-11-10T07:40:36Z INFO audit-consumer processed batch of 97 messages from audit.events (lag 179ms)\n#207 2026-11-10T07:40:40Z INFO audit-consumer processed batch of 24 messages from audit.events (lag 145ms)\n#214 2026-11-10T07:40:43Z INFO audit-consumer processed batch of 80 messages from audit.events (lag 161ms)\n#221 2026-11-10T07:40:47Z INFO audit-consumer processed batch of 97 messages from audit.events (lag 176ms)\n#229 2026-11-10T07:40:51Z INFO audit-consumer processed batch of 70 messages from audit.events (lag 190ms)\n#241 2026-11-10T07:40:56Z INFO audit-consumer processed batch of 36 messages from audit.events (lag 200ms)\n#252 2026-11-10T07:41:01Z INFO audit-consumer processed batch of 73 messages from audit.events (lag 282ms)\n#260 2026-11-10T07:41:07Z INFO audit-consumer processed batch of 32 messages from audit.events (lag 173ms)\n#268 2026-11-10T07:41:11Z INFO audit-consumer processed batch of 104 messages from audit.events (lag 250ms)\n#275 2026-11-10T07:41:14Z INFO audit-consumer processed batch of 40 messages from audit.events (lag 166ms)\n#286 2026-11-10T07:41:19Z INFO audit-consumer processed batch of 112 messages from audit.events (lag 188ms)\n#290 2026-11-10T07:41:22Z INFO audit-consumer processed batch of 60 messages from audit.events (lag 211ms)\n#299 2026-11-10T07:41:25Z INFO audit-consumer processed batch of 31 messages from audit.events (lag 386ms)\n#313 2026-11-10T07:41:30Z INFO audit-consumer processed batch of 55 messages from audit.events (lag 108ms)\n#321 2026-11-10T07:41:34Z INFO audit-consumer processed batch of 93 messages from audit.events (lag 81ms)\n#325 2026-11-10T07:41:38Z INFO audit-consumer processed batch of 49 messages from audit.events (lag 192ms)\n#334 2026-11-10T07:41:42Z INFO audit-consumer processed batch of 36 messages from audit.events (lag 157ms)\n#342 2026-11-10T07:41:46Z INFO audit-consumer processed batch of 68 messages from audit.events (lag 230ms)\n#352 2026-11-10T07:41:49Z INFO audit-consumer processed batch of 97 messages from audit.events (lag 291ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "msg-440333",
+          "limit": 50
+        },
+        "output": "6 match(es):\n#1884 2026-11-10T07:54:01Z ERROR audit-consumer handler error for msg-440333 at offset 836959: invalid JSON payload (byte 1323 is NUL)\n#1886 2026-11-10T07:54:01Z INFO audit-consumer nack msg-440333, redelivering (attempt 4, no max-retries configured)\n#2043 2026-11-10T07:55:24Z ERROR audit-consumer failed to process msg-440333 (partition 2, offset 836959): JSON parse error: unexpected token '\\u0000' at position 1323\n#2044 2026-11-10T07:55:25Z INFO audit-consumer nack msg-440333, redelivering (attempt 13, no max-retries configured)\n#2241 2026-11-10T07:57:10Z ERROR audit-consumer SyntaxError: Unexpected token \\u0000 in JSON at position 1323 (message msg-440333, audit.events[2]@836959)\n#2351 2026-11-10T07:58:11Z ERROR audit-consumer handler error for msg-440333 at offset 836959: invalid JSON payload (byte 1323 is NUL)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "NUL",
+          "limit": 30
+        },
+        "output": "2 match(es):\n#1884 2026-11-10T07:54:01Z ERROR audit-consumer handler error for msg-440333 at offset 836959: invalid JSON payload (byte 1323 is NUL)\n#2351 2026-11-10T07:58:11Z ERROR audit-consumer handler error for msg-440333 at offset 836959: invalid JSON payload (byte 1323 is NUL)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1884,
+          "before": 6,
+          "after": 4
+        },
+        "output": "#1878 2026-11-10T07:53:59Z INFO auth-svc [t-6418] POST /tokens u-8200 ok 72ms\n#1879 2026-11-10T07:53:59Z INFO edge-proxy [t-6418] POST /login 200 96ms\n#1880 2026-11-10T07:53:59Z INFO session-cache stats: hits=8542 misses=205 evicted=0 connected_clients=58\n#1881 2026-11-10T07:54:00Z INFO account-svc [t-6421] user u-8202 accepted, calling auth-svc POST /tokens\n#1882 2026-11-10T07:54:00Z INFO auth-svc [t-6421] POST /tokens u-8202 ok 71ms\n#1883 2026-11-10T07:54:00Z INFO edge-proxy [t-6421] POST /login 200 154ms\n#1884 2026-11-10T07:54:01Z ERROR audit-consumer handler error for msg-440333 at offset 836959: invalid JSON payload (byte 1323 is NUL)\n#1885 2026-11-10T07:54:01Z INFO status-poller poll cycle complete: 19 targets checked in 571ms\n#1886 2026-11-10T07:54:01Z INFO audit-consumer nack msg-440333, redelivering (attempt 4, no max-retries configured)\n#1887 2026-11-10T07:54:02Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 7\n#1888 2026-11-10T07:54:03Z INFO account-svc [t-6423] user u-8205 accepted, calling auth-svc POST /tokens"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "audit-consumer",
+          "since": "07:39:00",
+          "until": "07:54:00",
+          "level": "WARN",
+          "limit": 20
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.88,
+              "evidenceLines": [
+                1884,
+                1886,
+                2043,
+                2044,
+                2241,
+                2351,
+                2226,
+                2671
+              ],
+              "reasoning": "audit-consumer partition 2 is stuck on msg-440333 at offset 836959. The payload contains a NUL byte at position 1323, so JSON parsing fails every time. The consumer nacks and redelivers it (attempt 4 at #1886, attempt 13 at #2044) with no max-retries configured, so the partition is jammed behind it. Lag then grows steadily (858 msgs at #2226, 6412 at #3292). CPU stays normal because the consumer is blocked on retries, not computing. The later account-svc 'timed out waiting for downstream confirmation' errors (#2387, #2708, #2884, #3189) are downstream: audit confirmations never arrive because the partition is stuck. The billing-reconciler checksum errors on invoice_archive (2019 partitions) are a separate data problem and do not explain the audit lag.",
+              "recommendedAction": "Move msg-440333 (partition 2, offset 836959) to a dead-letter queue or skip it so the partition resumes. Configure a max-retry limit and DLQ for audit-consumer so one malformed message cannot block the partition again. Find the producer that wrote the NUL byte into the audit payload and fix its serialization/sanitization. Replay the DLQ message after repair. Separately, investigate the invoice_archive checksum violations in billing-reconciler (2019 partitions) as a data-integrity follow-up."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.25,
+              "evidenceLines": [
+                376,
+                832,
+                1156,
+                2249,
+                3344
+              ],
+              "reasoning": "Secondary, unrelated to the audit lag: billing-reconciler repeatedly reports invoice_archive rows violating a checksum constraint in the 2019 archive partitions and skips them. This is a real data-integrity issue to track, but it does not block audit.events consumption."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.88,
+              "evidenceLines": [
+                1884,
+                1886,
+                2043,
+                2044,
+                2241,
+                2351,
+                2226,
+                2671
+              ],
+              "reasoning": "audit-consumer partition 2 is stuck on msg-440333 at offset 836959. The payload contains a NUL byte at position 1323, so JSON parsing fails every time. The consumer nacks and redelivers it (attempt 4 at #1886, attempt 13 at #2044) with no max-retries configured, so the partition is jammed behind it. Lag then grows steadily (858 msgs at #2226, 6412 at #3292). CPU stays normal because the consumer is blocked on retries, not computing. The later account-svc 'timed out waiting for downstream confirmation' errors (#2387, #2708, #2884, #3189) are downstream: audit confirmations never arrive because the partition is stuck. The billing-reconciler checksum errors on invoice_archive (2019 partitions) are a separate data problem and do not explain the audit lag.",
+              "recommendedAction": "Move msg-440333 (partition 2, offset 836959) to a dead-letter queue or skip it so the partition resumes. Configure a max-retry limit and DLQ for audit-consumer so one malformed message cannot block the partition again. Find the producer that wrote the NUL byte into the audit payload and fix its serialization/sanitization. Replay the DLQ message after repair. Separately, investigate the invoice_archive checksum violations in billing-reconciler (2019 partitions) as a data-integrity follow-up."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.25,
+              "evidenceLines": [
+                376,
+                832,
+                1156,
+                2249,
+                3344
+              ],
+              "reasoning": "Secondary, unrelated to the audit lag: billing-reconciler repeatedly reports invoice_archive rows violating a checksum constraint in the 2019 archive partitions and skips them. This is a real data-integrity issue to track, but it does not block audit.events consumption."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\": \"poison_message\", \"confidence\": 0.88, \"evidenceLines\": [1884, 1886, 2043, 2044, 2241, 2351, 2226, 2671], \"reasoning\": \"audit-consumer partition 2 is stuck on msg-440333 at offset 836959. The payload contains a NUL byte at position 1323, so JSON parsing fails every time. The consumer nacks and redelivers it (attempt 4 at #1886, attempt 13 at #2044) with no max-retries configured, so the partition is jammed behind it. Lag then grows steadily (858 msgs at #2226, 6412 at #3292). CPU stays normal because the consumer is blocked on retries, not computing. The later account-svc 'timed out waiting for downstream confirmation' errors (#2387, #2708, #2884, #3189) are downstream: audit confirmations never arrive because the partition is stuck. The billing-reconciler checksum errors on invoice_archive (2019 partitions) are a separate data problem and do not explain the audit lag.\"}, {\"rootCause\": \"data_integrity\", \"confidence\": 0.25, \"evidenceLines\": [376, 832, 1156, 2249, 3344], \"reasoning\": \"Secondary, unrelated to the audit lag: billing-reconciler repeatedly reports invoice_archive rows violating a checksum constraint in the 2019 archive partitions and skips them. This is a real data-integrity issue to track, but it does not block audit.events consumption.\"}], \"recommendedAction\": \"Move msg-440333 (partition 2, offset 836959) to a dead-letter queue or skip it so the partition resumes. Configure a max-retry limit and DLQ for audit-consumer so one malformed message cannot block the partition again. Find the producer that wrote the NUL byte into the audit payload and fix its serialization/sanitization. Replay the DLQ message after repair. Separately, investigate the invoice_archive checksum violations in billing-reconciler (2019 partitions) as a data-integrity follow-up.\"}"
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string; recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.88,
+              "evidenceLines": [
+                1884,
+                1886,
+                2043,
+                2044,
+                2241,
+                2351,
+                2226,
+                2671
+              ],
+              "reasoning": "audit-consumer partition 2 is stuck on msg-440333 at offset 836959. The payload has a NUL byte at position 1323, so JSON parsing fails every time. The consumer nacks and redelivers it (attempt 4 at #1886, attempt 13 at #2044) with no max-retries configured, which jams the partition. Lag grows steadily (858 msgs at #2226, 6412 at #3292). CPU stays normal because the consumer is blocked on retries. The account-svc confirmation timeouts (#2387, #2708, #2884, #3189) are downstream symptoms of audit confirmations not being processed. The billing-reconciler checksum errors are a separate data issue and do not explain the audit lag."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.25,
+              "evidenceLines": [
+                376,
+                832,
+                1156,
+                2249,
+                3344
+              ],
+              "reasoning": "Secondary and unrelated to the audit lag: billing-reconciler repeatedly reports invoice_archive rows violating a checksum constraint in 2019 archive partitions and skips them. Worth tracking, but it does not block audit.events consumption."
+            }
+          ],
+          "recommendedAction": "Move msg-440333 (partition 2, offset 836959) to a dead-letter queue or skip it so the partition resumes. Add a max-retry limit and DLQ to audit-consumer so one malformed message cannot block the partition again. Find the producer that wrote the NUL byte into the audit payload and fix its serialization. Replay the DLQ message after the fix. Separately, investigate the invoice_archive checksum violations in billing-reconciler (2019 partitions)."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 7,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 16,
+      "outputTokens": 4030,
+      "cacheReadTokens": 50343,
+      "cacheWriteTokens": 12067
+    },
+    "durationMs": 17177,
+    "stopReason": "tool_use"
+  }
+}

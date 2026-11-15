@@ -1,0 +1,197 @@
+{
+  "score": {
+    "incidentId": "h-027",
+    "difficulty": "easy",
+    "scenario": "dependency_timeout/external-hang",
+    "truth": "dependency_timeout",
+    "acceptable": [
+      "external_outage"
+    ],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 6,
+      "precision": 0.8571428571428571,
+      "recall": 1,
+      "f1": 0.923076923076923
+    },
+    "herringsCited": 0,
+    "costUsd": 0.003504755,
+    "durationMs": 13757,
+    "iterations": 7,
+    "toolCalls": 8,
+    "tokens": {
+      "input": 16,
+      "output": 2817,
+      "cacheRead": 49053,
+      "cacheWrite": 12833
+    }
+  },
+  "result": {
+    "incidentId": "h-027",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.85,
+          "evidenceLines": [
+            638,
+            671,
+            685,
+            687,
+            768,
+            769,
+            796
+          ],
+          "reasoning": "The origin is the external identity provider (idp.example/oauth2/token). Its latency climbs from about 2s at 22:04:41 (#638, 4271ms) to 11.9s at 22:05:23 (#671). auth-svc then aborts calls with no response in 30s (#685) and later fails with upstream timeouts (#768). Those hung calls hold auth-svc workers. account-svc's AuthClient calls to auth-svc time out (#687, #769), its connection pool to auth-svc saturates (50/50, 28 queued, #845) and pool checkout times out (#903). edge-proxy then returns 503s on POST /login (#796, #924, #948, #1022). The pool saturation and 5xx lines are downstream spread, so they are described rather than cited. The analytics-forwarder 429s (#242 onward) are a separate issue that does not sit on the login path. I did not find an earlier IdP anomaly, and auth-svc logs are normal before 22:04:41. Caveat: the IdP's internal cause is not visible in these logs."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.25,
+          "evidenceLines": [
+            638,
+            671,
+            768
+          ],
+          "reasoning": "The identity provider could be down rather than slow. The auth-svc failures are upstream timeouts after 30s, which fits a degraded or down third party. The hang-versus-fail-fast distinction points to dependency_timeout, so this is the less likely reading."
+        }
+      ],
+      "recommendedAction": "Escalate to the identity provider owner about token endpoint latency (idp.example/oauth2/token). Meanwhile, lower the auth-svc IdP call timeout well below 30s and add a circuit breaker so workers free up quickly. Bound the account-svc to auth-svc pool and fail fast on checkout. Separately, investigate the analytics-ingest 429 rate limiting, which is unrelated to login but is dropping events."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "23 match(es):\n#242 2026-11-19T21:59:10Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 274 events (attempt 1/5, then dropped)\n#349 2026-11-19T22:00:43Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 53 events (attempt 2/5, then dropped)\n#453 2026-11-19T22:02:07Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 332 events (attempt 3/5, then dropped)\n#562 2026-11-19T22:03:36Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 369 events (attempt 4/5, then dropped)\n#638 2026-11-19T22:04:41Z WARN auth-svc [t-5009] identity provider call slow: 4271ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#666 2026-11-19T22:05:17Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 287 events (attempt 5/5, then dropped)\n#671 2026-11-19T22:05:23Z WARN auth-svc [t-5015] identity provider call slow: 11910ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#685 2026-11-19T22:05:36Z ERROR auth-svc [t-5023] call to the identity provider aborted: no response within 30s\n#687 2026-11-19T22:05:36Z ERROR account-svc [t-5023] AuthClient.issueToken timed out after 30000ms calling auth-svc POST /tokens (u-4462)\n#708 2026-11-19T22:06:09Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 371 events (attempt 1/5, then dropped)\n#754 2026-11-19T22:07:11Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 348 events (attempt 2/5, then dropped)\n#768 2026-11-19T22:07:29Z ERROR auth-svc [t-5037] identity provider call FAILED: upstream timeout after 30000ms POST https://idp.example/oauth2/token\n#769 2026-11-19T22:07:29Z ERROR account-svc [t-5037] upstream request to auth-svc failed: ReadTimeout (read timeout=30s) [u-4472]\n#796 2026-11-19T22:08:03Z ERROR edge-proxy [t-5045] POST /login 503 19036ms: upstream account-svc returned 503 Service Unavailable\n#831 2026-11-19T22:08:49Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 212 events (attempt 3/5, then dropped)\n#845 2026-11-19T22:09:08Z WARN account-svc HTTP connection pool to auth-svc at capacity (50/50 in use), 28 requests queued\n#903 2026-11-19T22:10:19Z ERROR account-svc pool checkout timeout: no connection to auth-svc available after 5000ms\n#908 2026-11-19T22:10:23Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 379 events (attempt 4/5, then dropped)\n#924 2026-11-19T22:10:40Z ERROR edge-proxy [t-5077] POST /login 503 22435ms: upstream account-svc returned 503 Service Unavailable\n#948 2026-11-19T22:11:16Z ERROR edge-proxy [t-5084] POST /login 503 12329ms: upstream account-svc returned 503 Service Unavailable\n#992 2026-11-19T22:12:03Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 116 events (attempt 5/5, then dropped)\n#1022 2026-11-19T22:12:43Z ERROR edge-proxy [t-5109] POST /login 503 5083ms: upstream account-svc returned 503 Service Unavailable\n#1070 2026-11-19T22:13:47Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 272 events (attempt 1/5, then dropped)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "analytics-forwarder",
+          "level": "ERROR"
+        },
+        "output": "11 match(es):\n#242 2026-11-19T21:59:10Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 274 events (attempt 1/5, then dropped)\n#349 2026-11-19T22:00:43Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 53 events (attempt 2/5, then dropped)\n#453 2026-11-19T22:02:07Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 332 events (attempt 3/5, then dropped)\n#562 2026-11-19T22:03:36Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 369 events (attempt 4/5, then dropped)\n#666 2026-11-19T22:05:17Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 287 events (attempt 5/5, then dropped)\n#708 2026-11-19T22:06:09Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 371 events (attempt 1/5, then dropped)\n#754 2026-11-19T22:07:11Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 348 events (attempt 2/5, then dropped)\n#831 2026-11-19T22:08:49Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 212 events (attempt 3/5, then dropped)\n#908 2026-11-19T22:10:23Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 379 events (attempt 4/5, then dropped)\n#992 2026-11-19T22:12:03Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 116 events (attempt 5/5, then dropped)\n#1070 2026-11-19T22:13:47Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 272 events (attempt 1/5, then dropped)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "identity provider",
+          "since": "21:56:00Z",
+          "until": "22:06:00Z",
+          "limit": 50
+        },
+        "output": "tool error: can't read time \"21:56:00Z\": use an ISO timestamp like 2026-11-19T21:56:00Z or HH:MM:SS",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "idp.example",
+          "limit": 50
+        },
+        "output": "3 match(es):\n#638 2026-11-19T22:04:41Z WARN auth-svc [t-5009] identity provider call slow: 4271ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#671 2026-11-19T22:05:23Z WARN auth-svc [t-5015] identity provider call slow: 11910ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#768 2026-11-19T22:07:29Z ERROR auth-svc [t-5037] identity provider call FAILED: upstream timeout after 30000ms POST https://idp.example/oauth2/token"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "since": "2026-11-19T21:56:00Z",
+          "until": "2026-11-19T22:05:00Z",
+          "limit": 60
+        },
+        "output": "90 match(es), showing first 60:\n#12 2026-11-19T21:56:08Z INFO auth-svc [t-4715] POST /tokens u-4223 ok 27ms\n#16 2026-11-19T21:56:14Z INFO auth-svc [t-4719] POST /tokens u-4224 ok 33ms\n#19 2026-11-19T21:56:16Z DEBUG auth-svc GC pause 17ms (young), heap 34%\n#25 2026-11-19T21:56:21Z INFO auth-svc [t-4724] POST /tokens u-4227 ok 72ms\n#33 2026-11-19T21:56:24Z INFO auth-svc [t-4728] POST /tokens u-4229 ok 54ms\n#40 2026-11-19T21:56:32Z INFO auth-svc [t-4733] POST /tokens u-4232 ok 59ms\n#48 2026-11-19T21:56:38Z INFO auth-svc [t-4734] POST /tokens u-4235 ok 90ms\n#52 2026-11-19T21:56:39Z DEBUG auth-svc GC pause 21ms (young), heap 41%\n#55 2026-11-19T21:56:43Z INFO auth-svc [t-4737] POST /tokens u-4237 ok 42ms\n#61 2026-11-19T21:56:46Z INFO auth-svc [t-4739] POST /tokens u-4240 ok 68ms\n#67 2026-11-19T21:56:51Z INFO auth-svc [t-4742] POST /tokens u-4241 ok 25ms\n#71 2026-11-19T21:56:54Z INFO auth-svc [t-4745] POST /tokens u-4243 ok 48ms\n#79 2026-11-19T21:57:02Z DEBUG auth-svc GC pause 12ms (young), heap 39%\n#87 2026-11-19T21:57:07Z INFO auth-svc [t-4753] POST /tokens u-4247 ok 47ms\n#92 2026-11-19T21:57:11Z INFO auth-svc [t-4756] POST /tokens u-4249 ok 49ms\n#108 2026-11-19T21:57:25Z DEBUG auth-svc GC pause 21ms (young), heap 36%\n#110 2026-11-19T21:57:27Z INFO auth-svc [t-4762] POST /tokens u-4256 ok 35ms\n#120 2026-11-19T21:57:35Z INFO auth-svc [t-4770] POST /tokens u-4260 ok 43ms\n#127 2026-11-19T21:57:40Z INFO auth-svc [t-4773] POST /tokens u-4263 ok 53ms\n#133 2026-11-19T21:57:42Z INFO auth-svc [t-4775] POST /tokens u-4264 ok 75ms\n#139 2026-11-19T21:57:47Z DEBUG auth-svc GC pause 10ms (young), heap 34%\n#142 2026-11-19T21:57:51Z INFO auth-svc [t-4778] POST /tokens u-4269 ok 68ms\n#150 2026-11-19T21:57:57Z INFO auth-svc [t-4779] POST /tokens u-4270 ok 88ms\n#160 2026-11-19T21:58:06Z INFO auth-svc [t-4784] POST /tokens u-4275 ok 62ms\n#162 2026-11-19T21:58:07Z DEBUG auth-svc GC pause 18ms (young), heap 43%\n#165 2026-11-19T21:58:10Z INFO auth-svc [t-4787] POST /tokens u-4277 ok 72ms\n#174 2026-11-19T21:58:17Z INFO auth-svc [t-4788] POST /tokens u-4280 ok 38ms\n#177 2026-11-19T21:58:21Z DEBUG auth-svc GC pause 20ms (young), heap 39%\n#180 2026-11-19T21:58:22Z INFO auth-svc [t-4789] POST /tokens u-4281 ok 67ms\n#187 2026-11-19T21:58:25Z INFO auth-svc [t-4793] POST /tokens u-4284 ok 55ms\n#192 2026-11-19T21:58:31Z INFO auth-svc [t-4797] POST /tokens u-4286 ok 63ms\n#209 2026-11-19T21:58:45Z DEBUG auth-svc GC pause 25ms (young), heap 42%\n#219 2026-11-19T21:58:54Z INFO auth-svc [t-4809] POST /tokens u-4294 ok 51ms\n#226 2026-11-19T21:58:59Z DEBUG auth-svc GC pause 11ms (young), heap 41%\n#228 2026-11-19T21:58:59Z INFO auth-svc [t-4812] POST /tokens u-4296 ok 80ms\n#232 2026-11-19T21:59:05Z INFO auth-svc [t-4813] POST /tokens u-4298 ok 64ms\n#237 2026-11-19T21:59:08Z INFO auth-svc [t-4817] POST /tokens u-4300 ok 63ms\n#244 2026-11-19T21:59:11Z INFO auth-svc [t-4820] POST /tokens u-4302 ok 40ms\n#247 2026-11-19T21:59:14Z DEBUG auth-svc GC pause 12ms (young), heap 40%\n#270 2026-11-19T21:59:35Z DEBUG auth-svc GC pause 17ms (young), heap 41%\n#285 2026-11-19T21:59:50Z DEBUG auth-svc GC pause 6ms (young), heap 29%\n#288 2026-11-19T21:59:52Z INFO auth-svc [t-4842] POST /tokens u-4321 ok 71ms\n#295 2026-11-19T21:59:57Z INFO auth-svc [t-4843] POST /tokens u-4324 ok 37ms\n#302 2026-11-19T22:00:03Z INFO auth-svc [t-4847] POST /tokens u-4326 ok 40ms\n#305 2026-11-19T22:00:08Z DEBUG auth-svc GC pause 24ms (young), heap 29%\n#331 2026-11-19T22:00:30Z DEBUG auth-svc GC pause 10ms (young), heap 39%\n#333 2026-11-19T22:00:30Z INFO auth-svc [t-4857] POST /tokens u-4339 ok 76ms\n#346 2026-11-19T22:00:40Z INFO auth-svc [t-4863] POST /tokens u-4342 ok 71ms\n#350 2026-11-19T22:00:43Z DEBUG auth-svc GC pause 17ms (young), heap 42%\n#353 2026-11-19T22:00:47Z INFO auth-svc [t-4865] POST /tokens u-4344 ok 29ms\n#356 2026-11-19T22:00:49Z INFO auth-svc [t-4866] POST /tokens u-4346 ok 71ms\n#374 2026-11-19T22:01:04Z DEBUG auth-svc GC pause 23ms (young), heap 30%\n#379 2026-11-19T22:01:08Z INFO auth-svc [t-4876] POST /tokens u-4358 ok 43ms\n#386 2026-11-19T22:01:14Z INFO auth-svc [t-4880] POST /tokens u-4360 ok 24ms\n#400 2026-11-19T22:01:28Z DEBUG auth-svc GC pause 25ms (young), heap 38%\n#413 2026-11-19T22:01:38Z INFO auth-svc [t-4897] POST /tokens u-4370 ok 36ms\n#425 2026-11-19T22:01:48Z DEBUG auth-svc GC pause 23ms (young), heap 42%\n#427 2026-11-19T22:01:48Z INFO auth-svc [t-4904] POST /tokens u-4374 ok 24ms\n#433 2026-11-19T22:01:54Z INFO auth-svc [t-4905] POST /tokens u-4375 ok 85ms\n#441 2026-11-19T22:02:00Z INFO auth-svc [t-4912] POST /tokens u-4379 ok 90ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "since": "2026-11-19T22:02:00Z",
+          "until": "2026-11-19T22:05:40Z",
+          "level": "INFO",
+          "limit": 60
+        },
+        "output": "25 match(es):\n#441 2026-11-19T22:02:00Z INFO auth-svc [t-4912] POST /tokens u-4379 ok 90ms\n#450 2026-11-19T22:02:06Z INFO auth-svc [t-4916] POST /tokens u-4381 ok 58ms\n#455 2026-11-19T22:02:08Z INFO auth-svc [t-4919] POST /tokens u-4384 ok 42ms\n#471 2026-11-19T22:02:22Z INFO auth-svc [t-4927] POST /tokens u-4390 ok 45ms\n#478 2026-11-19T22:02:27Z INFO auth-svc [t-4930] POST /tokens u-4392 ok 22ms\n#485 2026-11-19T22:02:34Z INFO auth-svc [t-4934] POST /tokens u-4395 ok 26ms\n#490 2026-11-19T22:02:37Z INFO auth-svc [t-4936] POST /tokens u-4397 ok 30ms\n#499 2026-11-19T22:02:44Z INFO auth-svc [t-4942] POST /tokens u-4402 ok 35ms\n#503 2026-11-19T22:02:46Z INFO auth-svc [t-4945] POST /tokens u-4405 ok 37ms\n#530 2026-11-19T22:03:11Z INFO auth-svc [t-4960] POST /tokens u-4414 ok 59ms\n#537 2026-11-19T22:03:17Z INFO auth-svc [t-4963] POST /tokens u-4416 ok 76ms\n#541 2026-11-19T22:03:20Z INFO auth-svc [t-4966] POST /tokens u-4419 ok 73ms\n#546 2026-11-19T22:03:22Z INFO auth-svc [t-4969] POST /tokens u-4420 ok 23ms\n#565 2026-11-19T22:03:37Z INFO auth-svc [t-4980] POST /tokens u-4428 ok 80ms\n#579 2026-11-19T22:03:52Z INFO auth-svc [t-4988] POST /tokens u-4434 ok 69ms\n#588 2026-11-19T22:03:59Z INFO auth-svc [t-4992] POST /tokens u-4435 ok 58ms\n#593 2026-11-19T22:04:04Z INFO auth-svc [t-4993] POST /tokens u-4438 ok 58ms\n#601 2026-11-19T22:04:10Z INFO auth-svc [t-5001] POST /tokens u-4441 ok 28ms\n#621 2026-11-19T22:04:25Z INFO auth-svc [t-5006] POST /tokens u-4448 ok 80ms\n#628 2026-11-19T22:04:29Z INFO auth-svc [t-5008] POST /tokens u-4451 ok 47ms\n#638 2026-11-19T22:04:41Z WARN auth-svc [t-5009] identity provider call slow: 4271ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#663 2026-11-19T22:05:15Z INFO auth-svc [t-5014] POST /tokens u-4455 ok 71ms\n#671 2026-11-19T22:05:23Z WARN auth-svc [t-5015] identity provider call slow: 11910ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#673 2026-11-19T22:05:23Z INFO auth-svc [t-5017] POST /tokens u-4456 ok 36ms\n#685 2026-11-19T22:05:36Z ERROR auth-svc [t-5023] call to the identity provider aborted: no response within 30s"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-5023"
+        },
+        "output": "2 line(s) for t-5023:\n#685 2026-11-19T22:05:36Z ERROR auth-svc [t-5023] call to the identity provider aborted: no response within 30s\n#687 2026-11-19T22:05:36Z ERROR account-svc [t-5023] AuthClient.issueToken timed out after 30000ms calling auth-svc POST /tokens (u-4462)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 638,
+          "before": 3,
+          "after": 3
+        },
+        "output": "#635 2026-11-19T22:04:37Z DEBUG auth-svc GC pause 18ms (young), heap 31%\n#636 2026-11-19T22:04:38Z INFO audit-consumer processed batch of 21 messages from audit.events (lag 176ms)\n#637 2026-11-19T22:04:40Z INFO metrics-agent flushed 5140 series to remote-write in 166ms\n#638 2026-11-19T22:04:41Z WARN auth-svc [t-5009] identity provider call slow: 4271ms (soft threshold 2000ms) POST https://idp.example/oauth2/token\n#639 2026-11-19T22:04:41Z INFO account-svc [t-5013] user u-4452 accepted, calling auth-svc POST /tokens\n#640 2026-11-19T22:04:41Z INFO edge-proxy [t-5013] POST /login 200 126ms\n#641 2026-11-19T22:04:43Z INFO audit-consumer processed batch of 62 messages from audit.events (lag 116ms)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"dependency_timeout\",\"confidence\":0.85,\"evidenceLines\":[638,671,685,687,768,769,796],\"reasoning\":\"The origin is the external identity provider (idp.example/oauth2/token). Its latency climbs from about 2s at 22:04:41 (#638, 4271ms) to 11.9s at 22:05:23 (#671). auth-svc then aborts calls with no response in 30s (#685) and later fails with upstream timeouts (#768). Those hung calls hold auth-svc workers. account-svc's AuthClient calls to auth-svc time out (#687, #769), its connection pool to auth-svc saturates (50/50, 28 queued, #845) and pool checkout times out (#903). edge-proxy then returns 503s on POST /login (#796, #924, #948, #1022). The pool saturation and 5xx lines are downstream spread, so they are described rather than cited. The analytics-forwarder 429s (#242 onward) are a separate issue that does not sit on the login path. I did not find an earlier IdP anomaly, and auth-svc logs are normal before 22:04:41. Caveat: the logs show the IdP's own slowness only through auth-svc's view, so the IdP's internal cause is not visible here.\",\"}, {\"rootCause\":\"external_outage\",\"confidence\":0.25,\"evidenceLines\":[638,671,768],\"reasoning\":\"The identity provider could be down rather than slow. The auth-svc failures are upstream timeouts after 30s, which fits a degraded or down third party. The hang-versus-fail-fast distinction points to dependency_timeout, so this is the less likely reading.\"}]",
+          "recommendedAction": "Escalate to the identity provider owner about the token endpoint latency (idp.example/oauth2/token). In the meantime, lower the auth-svc IdP call timeout well below 30s and add a circuit breaker so workers are freed quickly. Raise or bound the account-svc to auth-svc pool and fail fast on checkout. Separately, look into the analytics-ingest 429 rate limiting, which is unrelated to login but drops events."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.85,
+              "evidenceLines": [
+                638,
+                671,
+                685,
+                687,
+                768,
+                769,
+                796
+              ],
+              "reasoning": "The origin is the external identity provider (idp.example/oauth2/token). Its latency climbs from about 2s at 22:04:41 (#638, 4271ms) to 11.9s at 22:05:23 (#671). auth-svc then aborts calls with no response in 30s (#685) and later fails with upstream timeouts (#768). Those hung calls hold auth-svc workers. account-svc's AuthClient calls to auth-svc time out (#687, #769), its connection pool to auth-svc saturates (50/50, 28 queued, #845) and pool checkout times out (#903). edge-proxy then returns 503s on POST /login (#796, #924, #948, #1022). The pool saturation and 5xx lines are downstream spread, so they are described rather than cited. The analytics-forwarder 429s (#242 onward) are a separate issue that does not sit on the login path. I did not find an earlier IdP anomaly, and auth-svc logs are normal before 22:04:41. Caveat: the IdP's internal cause is not visible in these logs."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.25,
+              "evidenceLines": [
+                638,
+                671,
+                768
+              ],
+              "reasoning": "The identity provider could be down rather than slow. The auth-svc failures are upstream timeouts after 30s, which fits a degraded or down third party. The hang-versus-fail-fast distinction points to dependency_timeout, so this is the less likely reading."
+            }
+          ],
+          "recommendedAction": "Escalate to the identity provider owner about token endpoint latency (idp.example/oauth2/token). Meanwhile, lower the auth-svc IdP call timeout well below 30s and add a circuit breaker so workers free up quickly. Bound the account-svc to auth-svc pool and fail fast on checkout. Separately, investigate the analytics-ingest 429 rate limiting, which is unrelated to login but is dropping events."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 7,
+    "toolCalls": 8,
+    "usage": {
+      "inputTokens": 16,
+      "outputTokens": 2817,
+      "cacheReadTokens": 49053,
+      "cacheWriteTokens": 12833
+    },
+    "durationMs": 13757,
+    "stopReason": "tool_use"
+  }
+}

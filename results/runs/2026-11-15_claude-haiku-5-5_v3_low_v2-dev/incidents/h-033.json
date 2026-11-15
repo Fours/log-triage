@@ -1,0 +1,232 @@
+{
+  "score": {
+    "incidentId": "h-033",
+    "difficulty": "medium",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 5,
+      "precision": 0.7142857142857143,
+      "recall": 1,
+      "f1": 0.8333333333333333
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0053303249999999995,
+    "durationMs": 19228,
+    "iterations": 8,
+    "toolCalls": 12,
+    "tokens": {
+      "input": 18,
+      "output": 3902,
+      "cacheRead": 80790,
+      "cacheWrite": 20557
+    }
+  },
+  "result": {
+    "incidentId": "h-033",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.85,
+          "evidenceLines": [
+            1402,
+            1450,
+            1498,
+            1457,
+            1549,
+            1578,
+            1614
+          ],
+          "reasoning": "Trigger: geo-cache restarted after a node replacement at 12:09:29 with no RDB snapshot, so it came back with 0 keys (#1402). Amplification: ingest-api's geo-cache miss ratio jumped from a 4% baseline to 95% and then 99%, and each miss now loads from events-db (#1450, #1498). That turns cache lookups into a stampede of point queries (SELECT * FROM events WHERE id = $1) on events-db. events-db then hit 497/500 connections with CPU at 100% (#1457, #1549), and its queries slowed to 3-8s (#1578, #1646, #1791). ingest-api queries timed out at 5s (#1614), and the gateway returned 504s (#1565, #1648). The trigger alone is survivable; the damage comes from the cache-miss fallback to the database. The status-poller timeouts against the deprecated legacy-inventory endpoint (#494 onward) are unrelated noise and not the cause."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.25,
+          "evidenceLines": [
+            1457,
+            1549,
+            1578
+          ],
+          "reasoning": "Alternative reading: events-db itself ran out of connections and CPU, so it is the failing resource. But that saturation is downstream of the miss storm that began at 12:09:29, and events-db showed no anomaly before then, so it is not the origin."
+        }
+      ],
+      "recommendedAction": "Restore the geo-cache hit rate and take load off events-db: warm the geo-cache (or restore it from a snapshot), and temporarily stop ingest-api from falling back to events-db on cache misses (shed or rate-limit those lookups). Once the cache is warm, confirm that events-db connections and CPU recover. Then enable RDB/AOF persistence so node replacements don't start cold, and add a limit or circuit breaker on the database fallback path. Separately, retire the status-poller calls to the deprecated legacy-inventory /v1/status endpoint."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "31 match(es):\n#494 2026-10-08T12:02:05Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#681 2026-10-08T12:03:30Z WARN event-processor GC pause 933ms (G1 Old Gen), heap 61% after collection\n#692 2026-10-08T12:03:35Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#843 2026-10-08T12:04:48Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1052 2026-10-08T12:06:29Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1102 2026-10-08T12:06:54Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1388 2026-10-08T12:09:23Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1448 2026-10-08T12:10:08Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1457 2026-10-08T12:10:17Z WARN events-db too many clients: 497 of 500 connection slots used, CPU at 100%\n#1536 2026-10-08T12:11:21Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1549 2026-10-08T12:11:31Z WARN events-db resource monitor: cpu=99% conns=497/500\n#1565 2026-10-08T12:11:46Z ERROR ingest-gateway [t-4579] POST /v1/events 504 20384ms: upstream ingest-api timed out\n#1578 2026-10-08T12:11:59Z WARN events-db slow query 8262ms: SELECT * FROM events WHERE id = $1\n#1614 2026-10-08T12:12:35Z ERROR ingest-api [t-4598] query on events timed out after 5000ms (e-4131)\n#1646 2026-10-08T12:13:00Z WARN events-db slow query 4472ms: SELECT * FROM events WHERE id = $1\n#1648 2026-10-08T12:13:00Z ERROR ingest-gateway [t-4618] POST /v1/events 504 6149ms: upstream ingest-api timed out\n#1665 2026-10-08T12:13:19Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1686 2026-10-08T12:13:41Z ERROR ingest-gateway [t-4635] POST /v1/events 504 5736ms: upstream ingest-api timed out\n#1761 2026-10-08T12:14:48Z ERROR ingest-api [t-4681] query on events timed out after 5000ms (e-4185)\n#1767 2026-10-08T12:14:56Z ERROR ingest-gateway [t-4685] POST /v1/events 504 8788ms: upstream ingest-api timed out\n#1787 2026-10-08T12:15:13Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1791 2026-10-08T12:15:15Z WARN events-db slow query 7793ms: SELECT * FROM events WHERE id = $1\n#1816 2026-10-08T12:15:40Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1920 2026-10-08T12:17:08Z ERROR ingest-gateway [t-4751] POST /v1/events 504 15653ms: upstream ingest-api timed out\n#1943 2026-10-08T12:17:25Z WARN events-db slow query 2987ms: SELECT * FROM events WHERE id = $1\n#1977 2026-10-08T12:17:47Z ERROR ingest-api [t-4781] query on events timed out after 5000ms (e-4258)\n#1991 2026-10-08T12:17:59Z ERROR ingest-gateway [t-4791] POST /v1/events 504 27595ms: upstream ingest-api timed out\n#2015 2026-10-08T12:18:19Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2050 2026-10-08T12:18:44Z ERROR ingest-gateway [t-4824] POST /v1/events 504 8664ms: upstream ingest-api timed out\n#2059 2026-10-08T12:18:52Z WARN events-db slow query 2969ms: SELECT * FROM events WHERE id = $1\n#2067 2026-10-08T12:18:57Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "status-poller",
+          "level": "ERROR",
+          "limit": 20
+        },
+        "output": "13 match(es):\n#494 2026-10-08T12:02:05Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#692 2026-10-08T12:03:35Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#843 2026-10-08T12:04:48Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1052 2026-10-08T12:06:29Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1102 2026-10-08T12:06:54Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1388 2026-10-08T12:09:23Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1448 2026-10-08T12:10:08Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1536 2026-10-08T12:11:21Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1665 2026-10-08T12:13:19Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1787 2026-10-08T12:15:13Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1816 2026-10-08T12:15:40Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2015 2026-10-08T12:18:19Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2067 2026-10-08T12:18:57Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "events-db",
+          "limit": 40
+        },
+        "output": "110 match(es), showing first 40:\n#12 2026-10-08T11:58:05Z INFO events-db InnoDB: page cleaner flushed 517 pages, buffer pool hit rate 98.7%\n#33 2026-10-08T11:58:15Z INFO events-db InnoDB: page cleaner flushed 287 pages, buffer pool hit rate 99.8%\n#57 2026-10-08T11:58:27Z INFO events-db InnoDB: page cleaner flushed 482 pages, buffer pool hit rate 99.8%\n#88 2026-10-08T11:58:40Z INFO events-db InnoDB: page cleaner flushed 719 pages, buffer pool hit rate 99.8%\n#104 2026-10-08T11:58:49Z INFO events-db InnoDB: page cleaner flushed 114 pages, buffer pool hit rate 99.4%\n#133 2026-10-08T11:59:03Z INFO events-db InnoDB: page cleaner flushed 585 pages, buffer pool hit rate 98.9%\n#152 2026-10-08T11:59:13Z INFO events-db InnoDB: page cleaner flushed 598 pages, buffer pool hit rate 99.6%\n#181 2026-10-08T11:59:27Z INFO events-db InnoDB: page cleaner flushed 465 pages, buffer pool hit rate 99.2%\n#214 2026-10-08T11:59:43Z INFO events-db InnoDB: page cleaner flushed 598 pages, buffer pool hit rate 98.9%\n#241 2026-10-08T11:59:56Z INFO events-db InnoDB: page cleaner flushed 181 pages, buffer pool hit rate 99.8%\n#271 2026-10-08T12:00:10Z INFO events-db InnoDB: page cleaner flushed 822 pages, buffer pool hit rate 98.6%\n#303 2026-10-08T12:00:25Z INFO events-db InnoDB: page cleaner flushed 484 pages, buffer pool hit rate 99.1%\n#322 2026-10-08T12:00:35Z INFO events-db InnoDB: page cleaner flushed 447 pages, buffer pool hit rate 99%\n#343 2026-10-08T12:00:47Z INFO events-db InnoDB: page cleaner flushed 787 pages, buffer pool hit rate 99.5%\n#369 2026-10-08T12:01:00Z INFO events-db InnoDB: page cleaner flushed 785 pages, buffer pool hit rate 99%\n#403 2026-10-08T12:01:15Z INFO events-db InnoDB: page cleaner flushed 301 pages, buffer pool hit rate 99.9%\n#435 2026-10-08T12:01:31Z INFO events-db InnoDB: page cleaner flushed 293 pages, buffer pool hit rate 99.2%\n#460 2026-10-08T12:01:46Z INFO events-db InnoDB: page cleaner flushed 224 pages, buffer pool hit rate 99.8%\n#484 2026-10-08T12:02:00Z INFO events-db InnoDB: page cleaner flushed 645 pages, buffer pool hit rate 99.1%\n#508 2026-10-08T12:02:09Z INFO events-db InnoDB: page cleaner flushed 734 pages, buffer pool hit rate 98.6%\n#527 2026-10-08T12:02:19Z INFO events-db InnoDB: page cleaner flushed 276 pages, buffer pool hit rate 99.6%\n#555 2026-10-08T12:02:31Z INFO events-db InnoDB: page cleaner flushed 529 pages, buffer pool hit rate 98.6%\n#585 2026-10-08T12:02:43Z INFO events-db InnoDB: page cleaner flushed 661 pages, buffer pool hit rate 99.5%\n#613 2026-10-08T12:02:57Z INFO events-db InnoDB: page cleaner flushed 559 pages, buffer pool hit rate 99.4%\n#641 2026-10-08T12:03:11Z INFO events-db InnoDB: page cleaner flushed 674 pages, buffer pool hit rate 99.5%\n#672 2026-10-08T12:03:25Z INFO events-db InnoDB: page cleaner flushed 598 pages, buffer pool hit rate 99.2%\n#703 2026-10-08T12:03:40Z INFO events-db InnoDB: page cleaner flushed 193 pages, buffer pool hit rate 99.3%\n#735 2026-10-08T12:03:53Z INFO events-db InnoDB: page cleaner flushed 496 pages, buffer pool hit rate 99.1%\n#758 2026-10-08T12:04:06Z INFO events-db InnoDB: page cleaner flushed 842 pages, buffer pool hit rate 98.8%\n#790 2026-10-08T12:04:22Z INFO events-db InnoDB: page cleaner flushed 580 pages, buffer pool hit rate 99.2%\n#810 2026-10-08T12:04:31Z INFO events-db InnoDB: page cleaner flushed 475 pages, buffer pool hit rate 99.5%\n#838 2026-10-08T12:04:45Z INFO events-db InnoDB: page cleaner flushed 387 pages, buffer pool hit rate 98.9%\n#866 2026-10-08T12:04:58Z INFO events-db InnoDB: page cleaner flushed 147 pages, buffer pool hit rate 98.5%\n#895 2026-10-08T12:05:14Z INFO events-db InnoDB: page cleaner flushed 707 pages, buffer pool hit rate 99.1%\n#921 2026-10-08T12:05:25Z INFO events-db InnoDB: page cleaner flushed 790 pages, buffer pool hit rate 99.4%\n#947 2026-10-08T12:05:40Z INFO events-db InnoDB: page cleaner flushed 601 pages, buffer pool hit rate 99.4%\n#982 2026-10-08T12:05:55Z INFO events-db InnoDB: page cleaner flushed 696 pages, buffer pool hit rate 99.4%\n#1007 2026-10-08T12:06:09Z INFO events-db InnoDB: page cleaner flushed 176 pages, buffer pool hit rate 99.8%\n#1030 2026-10-08T12:06:20Z INFO events-db InnoDB: page cleaner flushed 180 pages, buffer pool hit rate 98.9%\n#1057 2026-10-08T12:06:33Z INFO events-db InnoDB: page cleaner flushed 289 pages, buffer pool hit rate 99.1%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy OR migration OR config OR index OR connection pool",
+          "limit": 30
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "events-db",
+          "level": "WARN",
+          "limit": 10
+        },
+        "output": "7 match(es):\n#1457 2026-10-08T12:10:17Z WARN events-db too many clients: 497 of 500 connection slots used, CPU at 100%\n#1549 2026-10-08T12:11:31Z WARN events-db resource monitor: cpu=99% conns=497/500\n#1578 2026-10-08T12:11:59Z WARN events-db slow query 8262ms: SELECT * FROM events WHERE id = $1\n#1646 2026-10-08T12:13:00Z WARN events-db slow query 4472ms: SELECT * FROM events WHERE id = $1\n#1791 2026-10-08T12:15:15Z WARN events-db slow query 7793ms: SELECT * FROM events WHERE id = $1\n#1943 2026-10-08T12:17:25Z WARN events-db slow query 2987ms: SELECT * FROM events WHERE id = $1\n#2059 2026-10-08T12:18:52Z WARN events-db slow query 2969ms: SELECT * FROM events WHERE id = $1"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "limit": 15,
+          "until": "12:08:00"
+        },
+        "output": "337 match(es), showing first 15:\n#2 2026-10-08T11:58:00Z INFO ingest-api [t-3705] event e-3365 accepted, calling enrichment-svc POST /enrich\n#5 2026-10-08T11:58:02Z INFO ingest-api [t-3709] event e-3368 accepted, calling enrichment-svc POST /enrich\n#9 2026-10-08T11:58:05Z INFO ingest-api [t-3712] event e-3370 accepted, calling enrichment-svc POST /enrich\n#14 2026-10-08T11:58:06Z INFO ingest-api [t-3715] event e-3372 accepted, calling enrichment-svc POST /enrich\n#17 2026-10-08T11:58:07Z INFO ingest-api [t-3718] event e-3375 accepted, calling enrichment-svc POST /enrich\n#22 2026-10-08T11:58:09Z INFO ingest-api [t-3722] event e-3378 accepted, calling enrichment-svc POST /enrich\n#26 2026-10-08T11:58:11Z INFO ingest-api [t-3726] event e-3380 accepted, calling enrichment-svc POST /enrich\n#30 2026-10-08T11:58:13Z INFO ingest-api [t-3729] event e-3382 accepted, calling enrichment-svc POST /enrich\n#34 2026-10-08T11:58:15Z DEBUG ingest-api GC pause 12ms (young), heap 30%\n#35 2026-10-08T11:58:15Z INFO ingest-api [t-3733] event e-3384 accepted, calling enrichment-svc POST /enrich\n#40 2026-10-08T11:58:18Z INFO ingest-api [t-3734] event e-3386 accepted, calling enrichment-svc POST /enrich\n#42 2026-10-08T11:58:19Z INFO ingest-api [t-3738] event e-3387 accepted, calling enrichment-svc POST /enrich\n#45 2026-10-08T11:58:20Z INFO ingest-api [t-3739] event e-3389 accepted, calling enrichment-svc POST /enrich\n#50 2026-10-08T11:58:23Z INFO ingest-api [t-3742] event e-3390 accepted, calling enrichment-svc POST /enrich\n#54 2026-10-08T11:58:25Z INFO ingest-api [t-3743] event e-3392 accepted, calling enrichment-svc POST /enrich"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "events-db",
+          "since": "12:05:00",
+          "until": "12:11:00",
+          "limit": 60
+        },
+        "output": "27 match(es):\n#895 2026-10-08T12:05:14Z INFO events-db InnoDB: page cleaner flushed 707 pages, buffer pool hit rate 99.1%\n#921 2026-10-08T12:05:25Z INFO events-db InnoDB: page cleaner flushed 790 pages, buffer pool hit rate 99.4%\n#947 2026-10-08T12:05:40Z INFO events-db InnoDB: page cleaner flushed 601 pages, buffer pool hit rate 99.4%\n#982 2026-10-08T12:05:55Z INFO events-db InnoDB: page cleaner flushed 696 pages, buffer pool hit rate 99.4%\n#1007 2026-10-08T12:06:09Z INFO events-db InnoDB: page cleaner flushed 176 pages, buffer pool hit rate 99.8%\n#1030 2026-10-08T12:06:20Z INFO events-db InnoDB: page cleaner flushed 180 pages, buffer pool hit rate 98.9%\n#1057 2026-10-08T12:06:33Z INFO events-db InnoDB: page cleaner flushed 289 pages, buffer pool hit rate 99.1%\n#1077 2026-10-08T12:06:42Z INFO events-db InnoDB: page cleaner flushed 333 pages, buffer pool hit rate 99.2%\n#1113 2026-10-08T12:06:57Z INFO events-db InnoDB: page cleaner flushed 508 pages, buffer pool hit rate 99.5%\n#1145 2026-10-08T12:07:13Z INFO events-db InnoDB: page cleaner flushed 446 pages, buffer pool hit rate 99.6%\n#1167 2026-10-08T12:07:26Z INFO events-db InnoDB: page cleaner flushed 280 pages, buffer pool hit rate 99.8%\n#1192 2026-10-08T12:07:39Z INFO events-db InnoDB: page cleaner flushed 258 pages, buffer pool hit rate 99.2%\n#1213 2026-10-08T12:07:52Z INFO events-db InnoDB: page cleaner flushed 180 pages, buffer pool hit rate 99.9%\n#1242 2026-10-08T12:08:06Z INFO events-db InnoDB: page cleaner flushed 391 pages, buffer pool hit rate 99.2%\n#1260 2026-10-08T12:08:18Z INFO events-db InnoDB: page cleaner flushed 598 pages, buffer pool hit rate 98.6%\n#1288 2026-10-08T12:08:32Z INFO events-db InnoDB: page cleaner flushed 296 pages, buffer pool hit rate 99.5%\n#1306 2026-10-08T12:08:41Z INFO events-db InnoDB: page cleaner flushed 552 pages, buffer pool hit rate 99.2%\n#1337 2026-10-08T12:08:56Z INFO events-db InnoDB: page cleaner flushed 319 pages, buffer pool hit rate 99.6%\n#1365 2026-10-08T12:09:11Z INFO events-db InnoDB: page cleaner flushed 424 pages, buffer pool hit rate 99.1%\n#1396 2026-10-08T12:09:27Z INFO events-db InnoDB: page cleaner flushed 364 pages, buffer pool hit rate 99%\n#1418 2026-10-08T12:09:40Z INFO events-db InnoDB: page cleaner flushed 447 pages, buffer pool hit rate 99.1%\n#1427 2026-10-08T12:09:49Z INFO events-db InnoDB: page cleaner flushed 886 pages, buffer pool hit rate 99.9%\n#1444 2026-10-08T12:10:05Z INFO events-db InnoDB: page cleaner flushed 689 pages, buffer pool hit rate 99%\n#1454 2026-10-08T12:10:16Z INFO events-db InnoDB: page cleaner flushed 582 pages, buffer pool hit rate 99.7%\n#1457 2026-10-08T12:10:17Z WARN events-db too many clients: 497 of 500 connection slots used, CPU at 100%\n#1471 2026-10-08T12:10:32Z INFO events-db InnoDB: page cleaner flushed 449 pages, buffer pool hit rate 99.5%\n#1491 2026-10-08T12:10:48Z INFO events-db InnoDB: page cleaner flushed 625 pages, buffer pool hit rate 98.6%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "ingest-api",
+          "level": "ERROR",
+          "limit": 5
+        },
+        "output": "3 match(es):\n#1614 2026-10-08T12:12:35Z ERROR ingest-api [t-4598] query on events timed out after 5000ms (e-4131)\n#1761 2026-10-08T12:14:48Z ERROR ingest-api [t-4681] query on events timed out after 5000ms (e-4185)\n#1977 2026-10-08T12:17:47Z ERROR ingest-api [t-4781] query on events timed out after 5000ms (e-4258)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "geo-cache",
+          "since": "12:05:00",
+          "limit": 40
+        },
+        "output": "33 match(es):\n#885 2026-10-08T12:05:08Z INFO geo-cache stats: hits=19479 misses=845 evicted=0 connected_clients=51\n#901 2026-10-08T12:05:16Z INFO geo-cache stats: hits=11506 misses=652 evicted=0 connected_clients=47\n#923 2026-10-08T12:05:26Z INFO geo-cache stats: hits=15201 misses=410 evicted=0 connected_clients=57\n#940 2026-10-08T12:05:36Z INFO geo-cache stats: hits=15472 misses=896 evicted=0 connected_clients=60\n#957 2026-10-08T12:05:44Z INFO geo-cache stats: hits=14759 misses=873 evicted=0 connected_clients=30\n#977 2026-10-08T12:05:53Z INFO geo-cache stats: hits=19495 misses=790 evicted=0 connected_clients=32\n#993 2026-10-08T12:06:02Z INFO geo-cache stats: hits=19870 misses=414 evicted=0 connected_clients=31\n#1014 2026-10-08T12:06:12Z INFO geo-cache stats: hits=11796 misses=681 evicted=0 connected_clients=59\n#1026 2026-10-08T12:06:18Z INFO geo-cache stats: hits=9788 misses=686 evicted=0 connected_clients=59\n#1041 2026-10-08T12:06:25Z INFO geo-cache stats: hits=13703 misses=452 evicted=0 connected_clients=35\n#1053 2026-10-08T12:06:31Z INFO geo-cache stats: hits=12349 misses=689 evicted=0 connected_clients=50\n#1068 2026-10-08T12:06:38Z INFO geo-cache stats: hits=13991 misses=597 evicted=0 connected_clients=30\n#1087 2026-10-08T12:06:47Z INFO geo-cache stats: hits=8183 misses=657 evicted=0 connected_clients=34\n#1105 2026-10-08T12:06:55Z INFO geo-cache stats: hits=14685 misses=282 evicted=0 connected_clients=39\n#1123 2026-10-08T12:07:02Z INFO geo-cache stats: hits=11951 misses=624 evicted=0 connected_clients=56\n#1139 2026-10-08T12:07:10Z INFO geo-cache stats: hits=18138 misses=636 evicted=0 connected_clients=34\n#1157 2026-10-08T12:07:20Z INFO geo-cache stats: hits=17512 misses=624 evicted=0 connected_clients=43\n#1173 2026-10-08T12:07:29Z INFO geo-cache stats: hits=10182 misses=430 evicted=0 connected_clients=49\n#1185 2026-10-08T12:07:37Z INFO geo-cache stats: hits=13820 misses=311 evicted=0 connected_clients=49\n#1206 2026-10-08T12:07:46Z INFO geo-cache stats: hits=18004 misses=346 evicted=0 connected_clients=46\n#1223 2026-10-08T12:07:55Z INFO geo-cache stats: hits=19731 misses=699 evicted=0 connected_clients=58\n#1237 2026-10-08T12:08:02Z INFO geo-cache stats: hits=19475 misses=685 evicted=0 connected_clients=41\n#1249 2026-10-08T12:08:11Z INFO geo-cache stats: hits=13917 misses=564 evicted=0 connected_clients=58\n#1262 2026-10-08T12:08:18Z INFO geo-cache stats: hits=8409 misses=875 evicted=0 connected_clients=57\n#1278 2026-10-08T12:08:27Z INFO geo-cache stats: hits=15081 misses=335 evicted=0 connected_clients=50\n#1293 2026-10-08T12:08:33Z INFO geo-cache stats: hits=9508 misses=359 evicted=0 connected_clients=39\n#1307 2026-10-08T12:08:42Z INFO geo-cache stats: hits=11483 misses=573 evicted=0 connected_clients=57\n#1320 2026-10-08T12:08:49Z INFO geo-cache stats: hits=11869 misses=577 evicted=0 connected_clients=49\n#1339 2026-10-08T12:08:56Z INFO geo-cache stats: hits=12131 misses=600 evicted=0 connected_clients=31\n#1354 2026-10-08T12:09:05Z INFO geo-cache stats: hits=14218 misses=624 evicted=0 connected_clients=35\n#1370 2026-10-08T12:09:14Z INFO geo-cache stats: hits=17454 misses=630 evicted=0 connected_clients=59\n#1387 2026-10-08T12:09:22Z INFO geo-cache stats: hits=13139 misses=450 evicted=0 connected_clients=54\n#1402 2026-10-08T12:09:29Z INFO geo-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "enrichment-svc",
+          "since": "12:05:00",
+          "until": "12:12:00",
+          "limit": 40
+        },
+        "output": "102 match(es), showing first 40:\n#877 2026-10-08T12:05:05Z INFO enrichment-svc [t-4220] POST /enrich e-3790 ok 39ms\n#880 2026-10-08T12:05:07Z DEBUG enrichment-svc GC pause 5ms (young), heap 35%\n#882 2026-10-08T12:05:07Z INFO enrichment-svc [t-4223] POST /enrich e-3793 ok 21ms\n#887 2026-10-08T12:05:09Z INFO enrichment-svc [t-4224] POST /enrich e-3794 ok 38ms\n#893 2026-10-08T12:05:13Z INFO enrichment-svc [t-4232] POST /enrich e-3798 ok 25ms\n#904 2026-10-08T12:05:18Z DEBUG enrichment-svc GC pause 7ms (young), heap 39%\n#914 2026-10-08T12:05:22Z INFO enrichment-svc [t-4251] POST /enrich e-3809 ok 42ms\n#918 2026-10-08T12:05:24Z INFO enrichment-svc [t-4253] POST /enrich e-3812 ok 35ms\n#933 2026-10-08T12:05:32Z INFO enrichment-svc [t-4260] POST /enrich e-3820 ok 30ms\n#935 2026-10-08T12:05:32Z DEBUG enrichment-svc GC pause 11ms (young), heap 31%\n#942 2026-10-08T12:05:38Z INFO enrichment-svc [t-4262] POST /enrich e-3823 ok 73ms\n#949 2026-10-08T12:05:41Z INFO enrichment-svc [t-4265] POST /enrich e-3826 ok 49ms\n#955 2026-10-08T12:05:44Z INFO enrichment-svc [t-4269] POST /enrich e-3831 ok 31ms\n#959 2026-10-08T12:05:45Z INFO enrichment-svc [t-4270] POST /enrich e-3832 ok 27ms\n#962 2026-10-08T12:05:47Z INFO enrichment-svc [t-4272] POST /enrich e-3834 ok 41ms\n#963 2026-10-08T12:05:47Z DEBUG enrichment-svc GC pause 21ms (young), heap 43%\n#974 2026-10-08T12:05:52Z INFO enrichment-svc [t-4282] POST /enrich e-3840 ok 64ms\n#980 2026-10-08T12:05:55Z INFO enrichment-svc [t-4283] POST /enrich e-3843 ok 26ms\n#994 2026-10-08T12:06:03Z DEBUG enrichment-svc GC pause 13ms (young), heap 42%\n#996 2026-10-08T12:06:03Z INFO enrichment-svc [t-4289] POST /enrich e-3850 ok 36ms\n#1004 2026-10-08T12:06:08Z INFO enrichment-svc [t-4296] POST /enrich e-3855 ok 37ms\n#1011 2026-10-08T12:06:11Z INFO enrichment-svc [t-4303] POST /enrich e-3859 ok 51ms\n#1016 2026-10-08T12:06:13Z INFO enrichment-svc [t-4306] POST /enrich e-3862 ok 37ms\n#1018 2026-10-08T12:06:14Z DEBUG enrichment-svc GC pause 12ms (young), heap 36%\n#1039 2026-10-08T12:06:23Z INFO enrichment-svc [t-4320] POST /enrich e-3874 ok 70ms\n#1043 2026-10-08T12:06:25Z INFO enrichment-svc [t-4321] POST /enrich e-3876 ok 28ms\n#1045 2026-10-08T12:06:26Z DEBUG enrichment-svc GC pause 11ms (young), heap 30%\n#1048 2026-10-08T12:06:27Z INFO enrichment-svc [t-4323] POST /enrich e-3877 ok 31ms\n#1065 2026-10-08T12:06:36Z INFO enrichment-svc [t-4336] POST /enrich e-3887 ok 51ms\n#1072 2026-10-08T12:06:39Z INFO enrichment-svc [t-4340] POST /enrich e-3889 ok 79ms\n#1074 2026-10-08T12:06:41Z DEBUG enrichment-svc GC pause 16ms (young), heap 28%\n#1080 2026-10-08T12:06:43Z INFO enrichment-svc [t-4343] POST /enrich e-3894 ok 67ms\n#1095 2026-10-08T12:06:51Z INFO enrichment-svc [t-4358] POST /enrich e-3901 ok 35ms\n#1098 2026-10-08T12:06:52Z DEBUG enrichment-svc GC pause 16ms (young), heap 37%\n#1100 2026-10-08T12:06:53Z INFO enrichment-svc [t-4360] POST /enrich e-3902 ok 69ms\n#1106 2026-10-08T12:06:55Z INFO enrichment-svc [t-4362] POST /enrich e-3903 ok 52ms\n#1110 2026-10-08T12:06:57Z INFO enrichment-svc [t-4365] POST /enrich e-3905 ok 65ms\n#1121 2026-10-08T12:07:01Z INFO enrichment-svc [t-4368] POST /enrich e-3909 ok 30ms\n#1127 2026-10-08T12:07:05Z INFO enrichment-svc [t-4372] POST /enrich e-3914 ok 33ms\n#1130 2026-10-08T12:07:06Z DEBUG enrichment-svc GC pause 15ms (young), heap 29%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "enrichment-svc",
+          "since": "12:09:25",
+          "until": "12:12:00",
+          "limit": 40
+        },
+        "output": "28 match(es):\n#1399 2026-10-08T12:09:28Z INFO enrichment-svc [t-4525] POST /enrich e-4059 ok 62ms\n#1408 2026-10-08T12:09:34Z DEBUG enrichment-svc GC pause 14ms (young), heap 41%\n#1415 2026-10-08T12:09:39Z INFO enrichment-svc [t-4535] POST /enrich e-4070 ok 49ms\n#1421 2026-10-08T12:09:43Z INFO enrichment-svc [t-4537] POST /enrich e-4072 ok 80ms\n#1425 2026-10-08T12:09:46Z DEBUG enrichment-svc GC pause 18ms (young), heap 45%\n#1433 2026-10-08T12:09:54Z INFO enrichment-svc [t-4538] POST /enrich e-4073 ok 32ms\n#1435 2026-10-08T12:09:57Z DEBUG enrichment-svc GC pause 17ms (young), heap 41%\n#1449 2026-10-08T12:10:09Z DEBUG enrichment-svc GC pause 5ms (young), heap 36%\n#1459 2026-10-08T12:10:19Z DEBUG enrichment-svc GC pause 10ms (young), heap 37%\n#1467 2026-10-08T12:10:29Z INFO enrichment-svc [t-4546] POST /enrich e-4081 ok 31ms\n#1474 2026-10-08T12:10:34Z DEBUG enrichment-svc GC pause 14ms (young), heap 45%\n#1477 2026-10-08T12:10:38Z INFO enrichment-svc [t-4548] POST /enrich e-4082 ok 38ms\n#1481 2026-10-08T12:10:40Z INFO enrichment-svc [t-4549] POST /enrich e-4084 ok 68ms\n#1485 2026-10-08T12:10:42Z INFO enrichment-svc [t-4551] POST /enrich e-4085 ok 27ms\n#1492 2026-10-08T12:10:51Z DEBUG enrichment-svc GC pause 8ms (young), heap 40%\n#1503 2026-10-08T12:11:01Z INFO enrichment-svc [t-4554] POST /enrich e-4088 ok 76ms\n#1507 2026-10-08T12:11:03Z INFO enrichment-svc [t-4557] POST /enrich e-4090 ok 64ms\n#1516 2026-10-08T12:11:08Z INFO enrichment-svc [t-4564] POST /enrich e-4099 ok 59ms\n#1518 2026-10-08T12:11:09Z DEBUG enrichment-svc GC pause 9ms (young), heap 37%\n#1522 2026-10-08T12:11:11Z INFO enrichment-svc [t-4565] POST /enrich e-4101 ok 47ms\n#1526 2026-10-08T12:11:13Z INFO enrichment-svc [t-4567] POST /enrich e-4102 ok 54ms\n#1544 2026-10-08T12:11:26Z INFO enrichment-svc [t-4571] POST /enrich e-4106 ok 60ms\n#1547 2026-10-08T12:11:27Z DEBUG enrichment-svc GC pause 17ms (young), heap 34%\n#1559 2026-10-08T12:11:41Z DEBUG enrichment-svc GC pause 25ms (young), heap 29%\n#1562 2026-10-08T12:11:43Z INFO enrichment-svc [t-4578] POST /enrich e-4112 ok 47ms\n#1572 2026-10-08T12:11:54Z DEBUG enrichment-svc GC pause 13ms (young), heap 33%\n#1574 2026-10-08T12:11:56Z INFO enrichment-svc [t-4583] POST /enrich e-4115 ok 83ms\n#1579 2026-10-08T12:11:59Z INFO enrichment-svc [t-4584] POST /enrich e-4118 ok 27ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "geo",
+          "since": "12:09:20",
+          "until": "12:12:00",
+          "limit": 40
+        },
+        "output": "2 match(es):\n#1450 2026-10-08T12:10:10Z INFO ingest-api geo-cache miss ratio 95% over last 30s (baseline 4%), loading from events-db\n#1498 2026-10-08T12:10:59Z INFO ingest-api geo-cache miss ratio 99% over last 30s (baseline 4%), loading from events-db"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"cascading_failure\",\"confidence\":0.85,\"evidenceLines\":[1402,1450,1498,1457,1549,1578,1614],\"reasoning\":\"Trigger: geo-cache restarted after a node replacement at 12:09:29 with no RDB snapshot, so it came back with 0 keys (#1402). Amplification: ingest-api's geo-cache miss ratio jumped from a 4% baseline to 95% and then 99%, and each miss now loads from events-db (#1450, #1498). That turns the cache lookups into a stampede of point queries (SELECT * FROM events WHERE id = $1) on events-db. events-db then hit 497/500 connections with CPU at 100% (#1457, #1549), and its queries slowed to 3-8s (#1578, #1646, #1791). ingest-api queries timed out at 5s (#1614), and the gateway returned 504s (#1565, #1648). The trigger alone (a cache restart) is survivable; the damage comes from the cache-miss fallback to the database. The status-poller timeouts against the deprecated legacy-inventory endpoint (#494 and later) are a separate, unrelated noise source and are not the cause.\",\"},{\"rootCause\":\"resource_exhaustion\",\"confidence\":0.25,\"evidenceLines\":[1457,1549,1578],\"reasoning\":\"Alternative reading: events-db itself ran out of connections and CPU, so it is the resource that failed. But the connection and CPU saturation is downstream of the miss storm that started at 12:09:29, and events-db showed no anomaly before that point, so it is not the origin.\"}]",
+          "recommendedAction": "Restore the geo-cache hit rate and take load off events-db: warm the geo-cache (or restore it from a snapshot), and temporarily make ingest-api serve misses without hitting events-db, or shed/rate-limit the lookups. Once the cache is warm, confirm that events-db connections and CPU recover. Then fix the geo-cache persistence (enable RDB/AOF so node replacements don't start cold) and add a database fallback limit or circuit breaker on cache misses. Separately, retire the calls to the deprecated legacy-inventory /v1/status endpoint in status-poller."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.85,
+              "evidenceLines": [
+                1402,
+                1450,
+                1498,
+                1457,
+                1549,
+                1578,
+                1614
+              ],
+              "reasoning": "Trigger: geo-cache restarted after a node replacement at 12:09:29 with no RDB snapshot, so it came back with 0 keys (#1402). Amplification: ingest-api's geo-cache miss ratio jumped from a 4% baseline to 95% and then 99%, and each miss now loads from events-db (#1450, #1498). That turns cache lookups into a stampede of point queries (SELECT * FROM events WHERE id = $1) on events-db. events-db then hit 497/500 connections with CPU at 100% (#1457, #1549), and its queries slowed to 3-8s (#1578, #1646, #1791). ingest-api queries timed out at 5s (#1614), and the gateway returned 504s (#1565, #1648). The trigger alone is survivable; the damage comes from the cache-miss fallback to the database. The status-poller timeouts against the deprecated legacy-inventory endpoint (#494 onward) are unrelated noise and not the cause."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.25,
+              "evidenceLines": [
+                1457,
+                1549,
+                1578
+              ],
+              "reasoning": "Alternative reading: events-db itself ran out of connections and CPU, so it is the failing resource. But that saturation is downstream of the miss storm that began at 12:09:29, and events-db showed no anomaly before then, so it is not the origin."
+            }
+          ],
+          "recommendedAction": "Restore the geo-cache hit rate and take load off events-db: warm the geo-cache (or restore it from a snapshot), and temporarily stop ingest-api from falling back to events-db on cache misses (shed or rate-limit those lookups). Once the cache is warm, confirm that events-db connections and CPU recover. Then enable RDB/AOF persistence so node replacements don't start cold, and add a limit or circuit breaker on the database fallback path. Separately, retire the status-poller calls to the deprecated legacy-inventory /v1/status endpoint."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 8,
+    "toolCalls": 12,
+    "usage": {
+      "inputTokens": 18,
+      "outputTokens": 3902,
+      "cacheReadTokens": 80790,
+      "cacheWriteTokens": 20557
+    },
+    "durationMs": 19228,
+    "stopReason": "tool_use"
+  }
+}

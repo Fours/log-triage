@@ -37,11 +37,40 @@ export interface Hardness {
   phrases<A extends unknown[]>(family: string, variants: ReadonlyArray<(...args: A) => string>): (...args: A) => Phrased;
 }
 
-/** Background density per difficulty, tuned so v2 incidents land near ~1,500 / ~2,500 / ~4,000 lines (spec, T5). */
-export const VOLUME: Record<Difficulty, number> = { easy: 8, medium: 10, hard: 7 };
+/**
+ * Background density per difficulty, tuned so v2 incidents land near ~1,500 / ~2,500 / ~4,000+ lines (spec, T5).
+ * Since T6 the concurrent incident (medium and hard) brings its own background traffic at the medium
+ * density, so medium is lower and hard higher than at T5 (10 / 7).
+ */
+export const VOLUME: Record<Difficulty, number> = { easy: 8, medium: 5.5, hard: 10.5 };
 
 /** Number of message variants in play per difficulty (spec: 2 / 3 / 4). */
 const PHRASINGS: Record<Difficulty, number> = { easy: 2, medium: 3, hard: 4 };
+
+/**
+ * Loud decoys per difficulty (T6 redesign). A chronic decoy starts well before
+ * onset; a timed one starts just after the fault's first cause line, so timing
+ * alone no longer rules it out.
+ */
+export const DECOY_PLAN: Record<Difficulty, { chronic: number; timed: number }> = {
+  easy: { chronic: 1, timed: 0 },
+  medium: { chronic: 0, timed: 1 },
+  hard: { chronic: 1, timed: 1 },
+};
+
+/** Which difficulties get a second, unrelated fault (T4 had hard only; T6 adds medium). */
+export const CONCURRENT: Record<Difficulty, boolean> = { easy: false, medium: true, hard: true };
+
+/**
+ * Whether an incident gets a harmless on-path lookalike event before onset
+ * (T6 redesign): off at easy, every other scenario in sorted order at medium
+ * (the half quiet causes don't use), every scenario at hard.
+ */
+export function lookalikeOn(difficulty: Difficulty, scenarioKey: string, allKeys: readonly string[]): boolean {
+  if (difficulty === "easy") return false;
+  if (difficulty === "hard") return true;
+  return [...allKeys].sort().indexOf(scenarioKey) % 2 === 1;
+}
 
 /**
  * Scenarios whose originating cause lines can be quieted. At medium, half of

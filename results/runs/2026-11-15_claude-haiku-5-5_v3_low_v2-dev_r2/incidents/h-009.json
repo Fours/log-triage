@@ -1,0 +1,231 @@
+{
+  "score": {
+    "incidentId": "h-009",
+    "difficulty": "easy",
+    "scenario": "external_outage/cloud-object-storage",
+    "truth": "external_outage",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.8,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 3,
+      "precision": 0.5,
+      "recall": 0.75,
+      "f1": 0.6
+    },
+    "herringsCited": 3,
+    "costUsd": 0.0036368449999999997,
+    "durationMs": 11894,
+    "iterations": 7,
+    "toolCalls": 12,
+    "tokens": {
+      "input": 16,
+      "output": 2650,
+      "cacheRead": 49537,
+      "cacheWrite": 14519
+    }
+  },
+  "result": {
+    "incidentId": "h-009",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.8,
+          "evidenceLines": [
+            1103,
+            1179,
+            1180,
+            1237,
+            1105,
+            1357
+          ],
+          "reasoning": "The fault originates in template-svc's S3 writes to us-east-1. Starting at 16:00:59 (#1103), S3 uploads return 503 ServiceUnavailable and then 500 InternalError (#1180). template-svc's aws-sdk exhausts its retry quota after 50 failed attempts in 60s (#1179). These are fast fails from AWS, not hangs, which points to a provider-side outage rather than a timeout in our code. notification-svc then fails rendering with 'storage write failed' (#1237), and the gateway returns 500s on POST /v1/notify (#1105, #1357). Before 16:00:59 template-svc renders are healthy (e.g. #1096-#1102 show normal worker throughput). The gateway 500s and the notification-svc failures are downstream symptoms and are described here, not cited as root cause. Status-poller legacy-inventory timeouts (#573 etc.) are unrelated noise, and the 429 rate limiting on k-2668 (#261) is also unrelated."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.1,
+          "evidenceLines": [
+            573,
+            1298,
+            1684
+          ],
+          "reasoning": "Alternative: the status-poller healthcheck timeouts against deprecated legacy-inventory:8080 could be read as a hung dependency. However they start at 15:53, do not touch the notify path, and are not on the failing request path. They are a red herring."
+        }
+      ],
+      "recommendedAction": "Treat as an AWS S3 us-east-1 outage affecting template-svc artifact uploads. Check AWS service health and confirm with the vendor. Mitigate by failing over template-svc artifact writes to another region or bucket if one is configured, or by queuing and retrying uploads, and cap aws-sdk retries so they stop burning quota. Separately, remove the deprecated legacy-inventory healthcheck from status-poller (red herring, not part of this incident)."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "18 match(es):\n#261 2026-11-04T15:49:27Z WARN api-gateway rate limiter: client key k-2668 throttled (429), 142 req/s over quota\n#573 2026-11-04T15:53:47Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#927 2026-11-04T15:58:29Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1033 2026-11-04T15:59:57Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1103 2026-11-04T16:00:59Z ERROR template-svc [t-1963] S3 upload of m-9166.json returned 503 ServiceUnavailable (us-east-1, 6C3CBC2)\n#1105 2026-11-04T16:01:02Z ERROR api-gateway [t-1964] POST /v1/notify 500 24909ms: upstream notification-svc returned 500 Internal Server Error\n#1179 2026-11-04T16:02:25Z WARN template-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (50 failed attempts in 60s)\n#1180 2026-11-04T16:02:25Z ERROR template-svc [t-1993] PutObject s3://notifications-artifacts-prod/m-9183.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id B619B20)\n#1237 2026-11-04T16:03:24Z ERROR notification-svc [t-2010] TemplateClient.render failed: template-svc returned 500 (storage write failed)\n#1243 2026-11-04T16:03:33Z ERROR template-svc [t-2017] S3 upload of m-9201.json returned 503 ServiceUnavailable (us-east-1, C52AC1E)\n#1298 2026-11-04T16:04:39Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1357 2026-11-04T16:05:46Z ERROR api-gateway [t-2047] POST /v1/notify 500 16824ms: upstream notification-svc returned 500 Internal Server Error\n#1466 2026-11-04T16:07:50Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1529 2026-11-04T16:09:14Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1551 2026-11-04T16:09:38Z ERROR notification-svc [t-2104] TemplateClient.render failed: template-svc returned 500 (storage write failed)\n#1622 2026-11-04T16:10:51Z ERROR api-gateway [t-2133] POST /v1/notify 500 12165ms: upstream notification-svc returned 500 Internal Server Error\n#1653 2026-11-04T16:11:36Z ERROR api-gateway [t-2137] POST /v1/notify 500 19517ms: upstream notification-svc returned 500 Internal Server Error\n#1684 2026-11-04T16:12:20Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "status-poller",
+          "level": "ERROR"
+        },
+        "output": "7 match(es):\n#573 2026-11-04T15:53:47Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#927 2026-11-04T15:58:29Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1033 2026-11-04T15:59:57Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1298 2026-11-04T16:04:39Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1466 2026-11-04T16:07:50Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1529 2026-11-04T16:09:14Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1684 2026-11-04T16:12:20Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "since": "15:46:00Z",
+          "until": "16:01:00Z",
+          "limit": 60
+        },
+        "output": "tool error: can't read time \"15:46:00Z\": use an ISO timestamp like 2026-11-04T15:46:00Z or HH:MM:SS",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "s3",
+          "since": "15:46:00Z",
+          "until": "16:00:59Z",
+          "limit": 40
+        },
+        "output": "tool error: can't read time \"15:46:00Z\": use an ISO timestamp like 2026-11-04T15:46:00Z or HH:MM:SS",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "since": "2026-11-04T15:46:00Z",
+          "until": "2026-11-04T16:01:00Z",
+          "limit": 60
+        },
+        "output": "152 match(es), showing first 60:\n#2 2026-11-04T15:46:00Z INFO template-svc [t-1451] POST /render m-8760 ok 72ms\n#11 2026-11-04T15:46:10Z INFO template-svc [t-1456] POST /render m-8764 ok 74ms\n#18 2026-11-04T15:46:15Z INFO template-svc [t-1459] POST /render m-8765 ok 63ms\n#22 2026-11-04T15:46:20Z DEBUG template-svc GC pause 15ms (young), heap 29%\n#30 2026-11-04T15:46:25Z INFO template-svc [t-1461] POST /render m-8767 ok 33ms\n#36 2026-11-04T15:46:31Z INFO template-svc [t-1463] POST /render m-8770 ok 50ms\n#47 2026-11-04T15:46:39Z DEBUG template-svc GC pause 15ms (young), heap 32%\n#51 2026-11-04T15:46:42Z INFO template-svc [t-1467] POST /render m-8773 ok 53ms\n#54 2026-11-04T15:46:44Z INFO template-svc [t-1470] POST /render m-8775 ok 26ms\n#61 2026-11-04T15:46:48Z INFO template-svc [t-1471] POST /render m-8778 ok 31ms\n#65 2026-11-04T15:46:52Z INFO template-svc [t-1472] POST /render m-8781 ok 28ms\n#71 2026-11-04T15:46:56Z INFO template-svc [t-1474] POST /render m-8784 ok 70ms\n#80 2026-11-04T15:47:03Z INFO template-svc [t-1481] POST /render m-8788 ok 89ms\n#83 2026-11-04T15:47:03Z DEBUG template-svc GC pause 9ms (young), heap 32%\n#98 2026-11-04T15:47:16Z INFO template-svc [t-1487] POST /render m-8794 ok 20ms\n#99 2026-11-04T15:47:16Z DEBUG template-svc GC pause 13ms (young), heap 32%\n#104 2026-11-04T15:47:21Z INFO template-svc [t-1489] POST /render m-8795 ok 80ms\n#109 2026-11-04T15:47:25Z INFO template-svc [t-1493] POST /render m-8797 ok 68ms\n#124 2026-11-04T15:47:37Z DEBUG template-svc GC pause 7ms (young), heap 34%\n#127 2026-11-04T15:47:39Z INFO template-svc [t-1503] POST /render m-8806 ok 66ms\n#138 2026-11-04T15:47:46Z INFO template-svc [t-1506] POST /render m-8810 ok 73ms\n#142 2026-11-04T15:47:51Z DEBUG template-svc GC pause 12ms (young), heap 36%\n#145 2026-11-04T15:47:52Z INFO template-svc [t-1509] POST /render m-8813 ok 42ms\n#150 2026-11-04T15:47:55Z INFO template-svc [t-1511] POST /render m-8815 ok 56ms\n#156 2026-11-04T15:48:00Z INFO template-svc [t-1513] POST /render m-8818 ok 65ms\n#162 2026-11-04T15:48:05Z INFO template-svc [t-1517] POST /render m-8821 ok 62ms\n#172 2026-11-04T15:48:13Z DEBUG template-svc GC pause 4ms (young), heap 29%\n#190 2026-11-04T15:48:30Z INFO template-svc [t-1533] POST /render m-8830 ok 32ms\n#194 2026-11-04T15:48:33Z DEBUG template-svc GC pause 4ms (young), heap 42%\n#197 2026-11-04T15:48:36Z INFO template-svc [t-1534] POST /render m-8832 ok 68ms\n#202 2026-11-04T15:48:39Z INFO template-svc [t-1538] POST /render m-8834 ok 64ms\n#222 2026-11-04T15:48:57Z INFO template-svc [t-1550] POST /render m-8842 ok 90ms\n#224 2026-11-04T15:48:57Z DEBUG template-svc GC pause 6ms (young), heap 37%\n#229 2026-11-04T15:49:02Z INFO template-svc [t-1553] POST /render m-8843 ok 61ms\n#237 2026-11-04T15:49:10Z DEBUG template-svc GC pause 23ms (young), heap 29%\n#242 2026-11-04T15:49:13Z INFO template-svc [t-1558] POST /render m-8848 ok 42ms\n#247 2026-11-04T15:49:18Z INFO template-svc [t-1559] POST /render m-8851 ok 41ms\n#252 2026-11-04T15:49:21Z INFO template-svc [t-1561] POST /render m-8852 ok 25ms\n#259 2026-11-04T15:49:27Z INFO template-svc [t-1564] POST /render m-8855 ok 78ms\n#262 2026-11-04T15:49:28Z DEBUG template-svc GC pause 22ms (young), heap 40%\n#267 2026-11-04T15:49:31Z INFO template-svc [t-1565] POST /render m-8858 ok 79ms\n#279 2026-11-04T15:49:44Z INFO template-svc [t-1571] POST /render m-8863 ok 79ms\n#287 2026-11-04T15:49:50Z DEBUG template-svc GC pause 19ms (young), heap 37%\n#291 2026-11-04T15:49:53Z INFO template-svc [t-1575] POST /render m-8866 ok 22ms\n#303 2026-11-04T15:50:03Z INFO template-svc [t-1582] POST /render m-8868 ok 86ms\n#308 2026-11-04T15:50:08Z DEBUG template-svc GC pause 12ms (young), heap 34%\n#315 2026-11-04T15:50:14Z INFO template-svc [t-1587] POST /render m-8873 ok 26ms\n#331 2026-11-04T15:50:28Z INFO template-svc [t-1594] POST /render m-8878 ok 36ms\n#335 2026-11-04T15:50:29Z DEBUG template-svc GC pause 15ms (young), heap 45%\n#349 2026-11-04T15:50:44Z INFO template-svc [t-1600] POST /render m-8885 ok 72ms\n#353 2026-11-04T15:50:47Z DEBUG template-svc GC pause 11ms (young), heap 29%\n#357 2026-11-04T15:50:50Z INFO template-svc [t-1602] POST /render m-8887 ok 39ms\n#363 2026-11-04T15:50:56Z INFO template-svc [t-1605] POST /render m-8889 ok 32ms\n#373 2026-11-04T15:51:04Z INFO template-svc [t-1611] POST /render m-8892 ok 63ms\n#378 2026-11-04T15:51:08Z DEBUG template-svc GC pause 19ms (young), heap 37%\n#384 2026-11-04T15:51:12Z INFO template-svc [t-1619] POST /render m-8897 ok 44ms\n#389 2026-11-04T15:51:16Z INFO template-svc [t-1622] POST /render m-8898 ok 46ms\n#400 2026-11-04T15:51:25Z DEBUG template-svc GC pause 23ms (young), heap 37%\n#416 2026-11-04T15:51:38Z INFO template-svc [t-1634] POST /render m-8910 ok 47ms\n#419 2026-11-04T15:51:43Z INFO template-svc [t-1638] POST /render m-8911 ok 66ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "s3",
+          "since": "2026-11-04T15:46:00Z",
+          "until": "2026-11-04T16:01:00Z",
+          "limit": 40
+        },
+        "output": "1 match(es):\n#1103 2026-11-04T16:00:59Z ERROR template-svc [t-1963] S3 upload of m-9166.json returned 503 ServiceUnavailable (us-east-1, 6C3CBC2)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "since": "2026-11-04T15:58:00Z",
+          "until": "2026-11-04T16:01:00Z",
+          "limit": 80
+        },
+        "output": "28 match(es):\n#898 2026-11-04T15:58:06Z INFO template-svc [t-1865] POST /render m-9084 ok 81ms\n#905 2026-11-04T15:58:10Z DEBUG template-svc GC pause 15ms (young), heap 35%\n#918 2026-11-04T15:58:23Z DEBUG template-svc GC pause 25ms (young), heap 45%\n#924 2026-11-04T15:58:27Z INFO template-svc [t-1878] POST /render m-9092 ok 65ms\n#933 2026-11-04T15:58:37Z DEBUG template-svc GC pause 13ms (young), heap 32%\n#935 2026-11-04T15:58:39Z INFO template-svc [t-1883] POST /render m-9096 ok 35ms\n#940 2026-11-04T15:58:43Z INFO template-svc [t-1885] POST /render m-9099 ok 79ms\n#951 2026-11-04T15:58:52Z DEBUG template-svc GC pause 5ms (young), heap 41%\n#954 2026-11-04T15:58:53Z INFO template-svc [t-1888] POST /render m-9104 ok 74ms\n#958 2026-11-04T15:58:56Z INFO template-svc [t-1889] POST /render m-9105 ok 62ms\n#973 2026-11-04T15:59:12Z DEBUG template-svc GC pause 11ms (young), heap 40%\n#976 2026-11-04T15:59:13Z INFO template-svc [t-1898] POST /render m-9111 ok 64ms\n#979 2026-11-04T15:59:15Z INFO template-svc [t-1899] POST /render m-9113 ok 68ms\n#1004 2026-11-04T15:59:35Z DEBUG template-svc GC pause 23ms (young), heap 44%\n#1007 2026-11-04T15:59:40Z INFO template-svc [t-1915] POST /render m-9130 ok 81ms\n#1012 2026-11-04T15:59:43Z INFO template-svc [t-1918] POST /render m-9133 ok 28ms\n#1017 2026-11-04T15:59:48Z INFO template-svc [t-1921] POST /render m-9135 ok 48ms\n#1020 2026-11-04T15:59:51Z INFO template-svc [t-1922] POST /render m-9138 ok 42ms\n#1023 2026-11-04T15:59:51Z DEBUG template-svc GC pause 14ms (young), heap 30%\n#1030 2026-11-04T15:59:54Z INFO template-svc [t-1926] POST /render m-9141 ok 38ms\n#1041 2026-11-04T16:00:02Z INFO template-svc [t-1931] POST /render m-9146 ok 81ms\n#1052 2026-11-04T16:00:13Z DEBUG template-svc GC pause 21ms (young), heap 41%\n#1056 2026-11-04T16:00:15Z INFO template-svc [t-1940] POST /render m-9151 ok 85ms\n#1060 2026-11-04T16:00:18Z INFO template-svc [t-1943] POST /render m-9152 ok 37ms\n#1068 2026-11-04T16:00:24Z INFO template-svc [t-1944] POST /render m-9154 ok 87ms\n#1076 2026-11-04T16:00:33Z DEBUG template-svc GC pause 23ms (young), heap 39%\n#1095 2026-11-04T16:00:48Z DEBUG template-svc GC pause 22ms (young), heap 45%\n#1103 2026-11-04T16:00:59Z ERROR template-svc [t-1963] S3 upload of m-9166.json returned 503 ServiceUnavailable (us-east-1, 6C3CBC2)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-db",
+          "since": "2026-11-04T15:46:00Z",
+          "until": "2026-11-04T16:01:00Z",
+          "limit": 15
+        },
+        "output": "58 match(es), showing first 15:\n#4 2026-11-04T15:46:03Z INFO notif-db InnoDB: page cleaner flushed 821 pages, buffer pool hit rate 99.1%\n#21 2026-11-04T15:46:18Z INFO notif-db InnoDB: page cleaner flushed 700 pages, buffer pool hit rate 99%\n#45 2026-11-04T15:46:38Z INFO notif-db InnoDB: page cleaner flushed 694 pages, buffer pool hit rate 99.1%\n#69 2026-11-04T15:46:55Z INFO notif-db InnoDB: page cleaner flushed 175 pages, buffer pool hit rate 99.4%\n#95 2026-11-04T15:47:15Z INFO notif-db InnoDB: page cleaner flushed 789 pages, buffer pool hit rate 98.7%\n#112 2026-11-04T15:47:28Z INFO notif-db InnoDB: page cleaner flushed 153 pages, buffer pool hit rate 99.6%\n#135 2026-11-04T15:47:43Z INFO notif-db InnoDB: page cleaner flushed 197 pages, buffer pool hit rate 99.3%\n#159 2026-11-04T15:48:01Z INFO notif-db InnoDB: page cleaner flushed 238 pages, buffer pool hit rate 99%\n#171 2026-11-04T15:48:12Z INFO notif-db InnoDB: page cleaner flushed 601 pages, buffer pool hit rate 99.9%\n#188 2026-11-04T15:48:30Z INFO notif-db InnoDB: page cleaner flushed 684 pages, buffer pool hit rate 98.6%\n#209 2026-11-04T15:48:44Z INFO notif-db InnoDB: page cleaner flushed 621 pages, buffer pool hit rate 99.3%\n#227 2026-11-04T15:48:59Z INFO notif-db InnoDB: page cleaner flushed 465 pages, buffer pool hit rate 99.1%\n#249 2026-11-04T15:49:19Z INFO notif-db InnoDB: page cleaner flushed 101 pages, buffer pool hit rate 98.9%\n#269 2026-11-04T15:49:32Z INFO notif-db InnoDB: page cleaner flushed 107 pages, buffer pool hit rate 99.3%\n#281 2026-11-04T15:49:44Z INFO notif-db InnoDB: page cleaner flushed 360 pages, buffer pool hit rate 99.2%"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1103,
+          "before": 8,
+          "after": 12
+        },
+        "output": "#1095 2026-11-04T16:00:48Z DEBUG template-svc GC pause 22ms (young), heap 45%\n#1096 2026-11-04T16:00:51Z INFO notif-worker processed batch of 88 messages from notifications.outbound (lag 130ms)\n#1097 2026-11-04T16:00:53Z INFO notif-db InnoDB: page cleaner flushed 265 pages, buffer pool hit rate 99.8%\n#1098 2026-11-04T16:00:55Z DEBUG notification-svc GC pause 24ms (young), heap 34%\n#1099 2026-11-04T16:00:55Z INFO notif-worker processed batch of 22 messages from notifications.outbound (lag 342ms)\n#1100 2026-11-04T16:00:55Z INFO metrics-agent flushed 6692 series to remote-write in 104ms\n#1101 2026-11-04T16:00:59Z INFO redis stats: hits=11652 misses=301 evicted=0 connected_clients=38\n#1102 2026-11-04T16:00:59Z INFO notif-worker processed batch of 22 messages from notifications.outbound (lag 253ms)\n#1103 2026-11-04T16:00:59Z ERROR template-svc [t-1963] S3 upload of m-9166.json returned 503 ServiceUnavailable (us-east-1, 6C3CBC2)\n#1104 2026-11-04T16:01:01Z INFO status-poller poll cycle complete: 39 targets checked in 810ms\n#1105 2026-11-04T16:01:02Z ERROR api-gateway [t-1964] POST /v1/notify 500 24909ms: upstream notification-svc returned 500 Internal Server Error\n#1106 2026-11-04T16:01:04Z INFO notif-worker processed batch of 43 messages from notifications.outbound (lag 266ms)\n#1107 2026-11-04T16:01:05Z DEBUG template-svc GC pause 17ms (young), heap 34%\n#1108 2026-11-04T16:01:05Z INFO notif-db InnoDB: page cleaner flushed 834 pages, buffer pool hit rate 98.8%\n#1109 2026-11-04T16:01:07Z DEBUG notification-svc GC pause 25ms (young), heap 45%\n#1110 2026-11-04T16:01:08Z INFO redis stats: hits=16440 misses=829 evicted=0 connected_clients=59\n#1111 2026-11-04T16:01:10Z INFO notif-worker processed batch of 34 messages from notifications.outbound (lag 159ms)\n#1112 2026-11-04T16:01:13Z INFO metrics-agent flushed 7375 series to remote-write in 100ms\n#1113 2026-11-04T16:01:15Z INFO status-poller poll cycle complete: 24 targets checked in 835ms\n#1114 2026-11-04T16:01:16Z INFO notification-svc [t-1968] message m-9168 accepted, calling template-svc POST /render\n#1115 2026-11-04T16:01:16Z INFO notif-worker processed batch of 111 messages from notifications.outbound (lag 235ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "aws-sdk",
+          "since": "2026-11-04T15:46:00Z",
+          "until": "2026-11-04T16:14:59Z",
+          "limit": 30
+        },
+        "output": "1 match(es):\n#1179 2026-11-04T16:02:25Z WARN template-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (50 failed attempts in 60s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "endpoint",
+          "since": "2026-11-04T15:46:00Z",
+          "until": "2026-11-04T16:14:59Z",
+          "limit": 20
+        },
+        "output": "7 match(es):\n#573 2026-11-04T15:53:47Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#927 2026-11-04T15:58:29Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1033 2026-11-04T15:59:57Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1298 2026-11-04T16:04:39Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1466 2026-11-04T16:07:50Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1529 2026-11-04T16:09:14Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1684 2026-11-04T16:12:20Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "PutObject",
+          "since": "2026-11-04T16:00:00Z",
+          "until": "2026-11-04T16:14:59Z",
+          "limit": 20
+        },
+        "output": "1 match(es):\n#1180 2026-11-04T16:02:25Z ERROR template-svc [t-1993] PutObject s3://notifications-artifacts-prod/m-9183.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id B619B20)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.8,
+              "evidenceLines": [
+                1103,
+                1179,
+                1180,
+                1237,
+                1105,
+                1357
+              ],
+              "reasoning": "The fault originates in template-svc's S3 writes to us-east-1. Starting at 16:00:59 (#1103), S3 uploads return 503 ServiceUnavailable and then 500 InternalError (#1180). template-svc's aws-sdk exhausts its retry quota after 50 failed attempts in 60s (#1179). These are fast fails from AWS, not hangs, which points to a provider-side outage rather than a timeout in our code. notification-svc then fails rendering with 'storage write failed' (#1237), and the gateway returns 500s on POST /v1/notify (#1105, #1357). Before 16:00:59 template-svc renders are healthy (e.g. #1096-#1102 show normal worker throughput). The gateway 500s and the notification-svc failures are downstream symptoms and are described here, not cited as root cause. Status-poller legacy-inventory timeouts (#573 etc.) are unrelated noise, and the 429 rate limiting on k-2668 (#261) is also unrelated.",
+              "recommendation_hint": ""
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.1,
+              "evidenceLines": [
+                573,
+                1298,
+                1684
+              ],
+              "reasoning": "Alternative: the status-poller healthcheck timeouts against deprecated legacy-inventory:8080 could be read as a hung dependency. However they start at 15:53, do not touch the notify path, and are not on the failing request path. They are a red herring.",
+              "recommendedAction": ""
+            }
+          ],
+          "recommendedAction": "Treat as an AWS S3 us-east-1 outage affecting template-svc artifact uploads. Check AWS service health and confirm with the vendor. Mitigate by failing over template-svc artifact writes to another region or bucket if one is configured, or by queuing and retrying uploads, and cap aws-sdk retries so they stop burning quota. Separately, remove the deprecated legacy-inventory healthcheck from status-poller (red herring, not part of this incident)."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 7,
+    "toolCalls": 12,
+    "usage": {
+      "inputTokens": 16,
+      "outputTokens": 2650,
+      "cacheReadTokens": 49537,
+      "cacheWriteTokens": 14519
+    },
+    "durationMs": 11894,
+    "stopReason": "tool_use"
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "score": {
+    "incidentId": "h-006",
+    "difficulty": "easy",
+    "scenario": "config_error/rotated-credential",
+    "truth": "config_error",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "config_error",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 4,
+      "correct": 4,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0024220150000000005,
+    "durationMs": 10521,
+    "iterations": 5,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 12,
+      "output": 1536,
+      "cacheRead": 28294,
+      "cacheWrite": 10959
+    }
+  },
+  "result": {
+    "incidentId": "h-006",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "config_error",
+          "confidence": 0.9,
+          "evidenceLines": [
+            965,
+            1046,
+            1113,
+            1149
+          ],
+          "reasoning": "At 20:22:57Z payment-svc reloaded CARDPROC_API_KEY from the secrets store as version 18 and revoked version 17 (#965). Charges succeeded for about 90 seconds after that, then from 20:24:24Z payment-svc began getting 401 invalid_api_key from the card processor (#1046, #1113, #1149). This means the service is still presenting the revoked key 17 (stale key cache or a partial reload), not the new key 18. The 401s propagate: order-service gets 502 from payment-svc (#1164, #1343), order-service returns 502 to api-gateway, and the gateway returns 502 on POST /checkout (#1091, #1208, #1290, #1392), which is the alert. webhook-dispatcher 502s are a separate customer-side problem and are not the cause. Ruled out: GC pauses are small and steady, the database and redis show no errors, and no deploy is logged."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.1,
+          "evidenceLines": [
+            1113
+          ],
+          "reasoning": "The card processor could be rejecting keys on its side, but the 401 starts right after the local key rotation at #965, so an external cause is unlikely."
+        }
+      ],
+      "recommendedAction": "Make payment-svc load the current CARDPROC_API_KEY (version 18): force a secrets reload or restart the instances so none still hold the revoked version 17. Confirm that card-processor calls return 200 again, then watch the POST /checkout 502 rate drop. Going forward, do not revoke the old key until all instances have confirmed the new version. Also check the webhook-dispatcher 502s separately."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "since": "2026-10-19T20:10:00Z",
+          "until": "2026-10-19T20:12:00Z",
+          "limit": 60
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 60
+        },
+        "output": "18 match(es):\n#573 2026-10-19T20:17:37Z ERROR webhook-dispatcher customer webhook https://hooks.acme-63.example/ingest returned 502 Bad Gateway (attempt 1/10)\n#639 2026-10-19T20:18:33Z ERROR webhook-dispatcher customer webhook https://hooks.acme-72.example/ingest returned 502 Bad Gateway (attempt 2/10)\n#844 2026-10-19T20:21:16Z ERROR webhook-dispatcher customer webhook https://hooks.acme-95.example/ingest returned 502 Bad Gateway (attempt 3/10)\n#987 2026-10-19T20:23:15Z ERROR webhook-dispatcher customer webhook https://hooks.acme-32.example/ingest returned 502 Bad Gateway (attempt 4/10)\n#1046 2026-10-19T20:24:24Z ERROR payment-svc [t-7722] POST /v1/charges -> 401 {\"error\":\"invalid_api_key\"}\n#1083 2026-10-19T20:25:27Z ERROR webhook-dispatcher customer webhook https://hooks.acme-85.example/ingest returned 502 Bad Gateway (attempt 5/10)\n#1091 2026-10-19T20:25:37Z ERROR api-gateway [t-7724] POST /checkout 502 28124ms: upstream order-service returned 502 Bad Gateway\n#1113 2026-10-19T20:26:08Z ERROR payment-svc [t-7725] card processor rejected request: 401 Unauthorized (invalid API key) POST https://api.cardproc.example/v1/charges\n#1119 2026-10-19T20:26:11Z ERROR webhook-dispatcher customer webhook https://hooks.acme-54.example/ingest returned 502 Bad Gateway (attempt 6/10)\n#1149 2026-10-19T20:27:00Z ERROR payment-svc [t-7731] POST /v1/charges -> 401 {\"error\":\"invalid_api_key\"}\n#1164 2026-10-19T20:27:19Z ERROR order-service [t-7737] PaymentClient.charge failed: payment-svc returned 502 (upstream card processor error)\n#1208 2026-10-19T20:28:21Z ERROR api-gateway [t-7742] POST /checkout 502 24821ms: upstream order-service returned 502 Bad Gateway\n#1243 2026-10-19T20:29:08Z ERROR webhook-dispatcher customer webhook https://hooks.acme-68.example/ingest returned 502 Bad Gateway (attempt 7/10)\n#1290 2026-10-19T20:30:18Z ERROR api-gateway [t-7753] POST /checkout 502 9972ms: upstream order-service returned 502 Bad Gateway\n#1340 2026-10-19T20:31:29Z ERROR webhook-dispatcher customer webhook https://hooks.acme-47.example/ingest returned 502 Bad Gateway (attempt 8/10)\n#1343 2026-10-19T20:31:31Z ERROR order-service [t-7762] PaymentClient.charge failed: payment-svc returned 502 (upstream card processor error)\n#1392 2026-10-19T20:32:37Z ERROR api-gateway [t-7774] POST /checkout 502 13141ms: upstream order-service returned 502 Bad Gateway\n#1402 2026-10-19T20:32:53Z ERROR webhook-dispatcher customer webhook https://hooks.acme-39.example/ingest returned 502 Bad Gateway (attempt 9/10)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "since": "2026-10-19T20:10:00Z",
+          "until": "2026-10-19T20:25:00Z",
+          "limit": 80
+        },
+        "output": "149 match(es), showing first 80:\n#16 2026-10-19T20:10:13Z INFO payment-svc [t-7262] POST /charge o-2161 ok 43ms\n#18 2026-10-19T20:10:15Z DEBUG payment-svc GC pause 25ms (young), heap 30%\n#33 2026-10-19T20:10:25Z INFO payment-svc [t-7268] POST /charge o-2169 ok 85ms\n#41 2026-10-19T20:10:29Z DEBUG payment-svc GC pause 18ms (young), heap 30%\n#43 2026-10-19T20:10:31Z INFO payment-svc [t-7273] POST /charge o-2173 ok 81ms\n#49 2026-10-19T20:10:35Z INFO payment-svc [t-7276] POST /charge o-2175 ok 58ms\n#59 2026-10-19T20:10:45Z INFO payment-svc [t-7280] POST /charge o-2180 ok 85ms\n#65 2026-10-19T20:10:50Z DEBUG payment-svc GC pause 10ms (young), heap 36%\n#71 2026-10-19T20:10:54Z INFO payment-svc [t-7284] POST /charge o-2182 ok 57ms\n#75 2026-10-19T20:10:56Z INFO payment-svc [t-7286] POST /charge o-2184 ok 67ms\n#83 2026-10-19T20:11:02Z DEBUG payment-svc GC pause 9ms (young), heap 34%\n#89 2026-10-19T20:11:05Z INFO payment-svc [t-7293] POST /charge o-2189 ok 77ms\n#93 2026-10-19T20:11:07Z INFO payment-svc [t-7295] POST /charge o-2190 ok 86ms\n#98 2026-10-19T20:11:11Z INFO payment-svc [t-7298] POST /charge o-2193 ok 45ms\n#102 2026-10-19T20:11:16Z INFO payment-svc [t-7300] POST /charge o-2195 ok 34ms\n#108 2026-10-19T20:11:21Z INFO payment-svc [t-7301] POST /charge o-2197 ok 76ms\n#115 2026-10-19T20:11:26Z DEBUG payment-svc GC pause 23ms (young), heap 40%\n#122 2026-10-19T20:11:34Z INFO payment-svc [t-7304] POST /charge o-2201 ok 27ms\n#128 2026-10-19T20:11:39Z INFO payment-svc [t-7308] POST /charge o-2202 ok 67ms\n#135 2026-10-19T20:11:44Z INFO payment-svc [t-7310] POST /charge o-2203 ok 73ms\n#139 2026-10-19T20:11:47Z DEBUG payment-svc GC pause 20ms (young), heap 28%\n#150 2026-10-19T20:11:54Z INFO payment-svc [t-7319] POST /charge o-2206 ok 72ms\n#159 2026-10-19T20:12:03Z DEBUG payment-svc GC pause 23ms (young), heap 35%\n#161 2026-10-19T20:12:04Z INFO payment-svc [t-7325] POST /charge o-2209 ok 36ms\n#168 2026-10-19T20:12:08Z INFO payment-svc [t-7329] POST /charge o-2210 ok 67ms\n#173 2026-10-19T20:12:14Z INFO payment-svc [t-7330] POST /charge o-2211 ok 34ms\n#178 2026-10-19T20:12:17Z INFO payment-svc [t-7331] POST /charge o-2213 ok 38ms\n#186 2026-10-19T20:12:24Z DEBUG payment-svc GC pause 10ms (young), heap 42%\n#197 2026-10-19T20:12:32Z INFO payment-svc [t-7339] POST /charge o-2222 ok 27ms\n#202 2026-10-19T20:12:36Z INFO payment-svc [t-7343] POST /charge o-2225 ok 78ms\n#210 2026-10-19T20:12:42Z INFO payment-svc [t-7347] POST /charge o-2228 ok 37ms\n#212 2026-10-19T20:12:45Z DEBUG payment-svc GC pause 9ms (young), heap 33%\n#225 2026-10-19T20:12:56Z INFO payment-svc [t-7355] POST /charge o-2234 ok 47ms\n#229 2026-10-19T20:12:58Z DEBUG payment-svc GC pause 12ms (young), heap 35%\n#231 2026-10-19T20:13:00Z INFO payment-svc [t-7356] POST /charge o-2237 ok 21ms\n#241 2026-10-19T20:13:12Z INFO payment-svc [t-7363] POST /charge o-2241 ok 59ms\n#249 2026-10-19T20:13:18Z INFO payment-svc [t-7364] POST /charge o-2244 ok 59ms\n#255 2026-10-19T20:13:21Z DEBUG payment-svc GC pause 8ms (young), heap 39%\n#257 2026-10-19T20:13:23Z INFO payment-svc [t-7369] POST /charge o-2248 ok 55ms\n#265 2026-10-19T20:13:30Z INFO payment-svc [t-7370] POST /charge o-2251 ok 75ms\n#272 2026-10-19T20:13:34Z DEBUG payment-svc GC pause 12ms (young), heap 39%\n#282 2026-10-19T20:13:43Z INFO payment-svc [t-7375] POST /charge o-2256 ok 50ms\n#286 2026-10-19T20:13:46Z INFO payment-svc [t-7377] POST /charge o-2258 ok 83ms\n#289 2026-10-19T20:13:47Z DEBUG payment-svc GC pause 5ms (young), heap 30%\n#292 2026-10-19T20:13:49Z INFO payment-svc [t-7379] POST /charge o-2261 ok 39ms\n#305 2026-10-19T20:14:00Z DEBUG payment-svc GC pause 11ms (young), heap 28%\n#308 2026-10-19T20:14:02Z INFO payment-svc [t-7386] POST /charge o-2265 ok 48ms\n#320 2026-10-19T20:14:12Z INFO payment-svc [t-7389] POST /charge o-2268 ok 51ms\n#331 2026-10-19T20:14:23Z DEBUG payment-svc GC pause 6ms (young), heap 40%\n#333 2026-10-19T20:14:23Z INFO payment-svc [t-7394] POST /charge o-2271 ok 37ms\n#342 2026-10-19T20:14:30Z INFO payment-svc [t-7398] POST /charge o-2275 ok 66ms\n#348 2026-10-19T20:14:36Z INFO payment-svc [t-7402] POST /charge o-2277 ok 21ms\n#361 2026-10-19T20:14:46Z INFO payment-svc [t-7411] POST /charge o-2285 ok 51ms\n#364 2026-10-19T20:14:47Z DEBUG payment-svc GC pause 20ms (young), heap 44%\n#368 2026-10-19T20:14:50Z INFO payment-svc [t-7412] POST /charge o-2288 ok 61ms\n#378 2026-10-19T20:14:57Z INFO payment-svc [t-7419] POST /charge o-2293 ok 82ms\n#382 2026-10-19T20:15:02Z INFO payment-svc [t-7420] POST /charge o-2294 ok 57ms\n#387 2026-10-19T20:15:05Z DEBUG payment-svc GC pause 4ms (young), heap 34%\n#393 2026-10-19T20:15:07Z INFO payment-svc [t-7422] POST /charge o-2300 ok 70ms\n#400 2026-10-19T20:15:16Z INFO payment-svc [t-7428] POST /charge o-2305 ok 48ms\n#404 2026-10-19T20:15:18Z DEBUG payment-svc GC pause 20ms (young), heap 29%\n#409 2026-10-19T20:15:23Z INFO payment-svc [t-7429] POST /charge o-2307 ok 85ms\n#416 2026-10-19T20:15:28Z INFO payment-svc [t-7430] POST /charge o-2310 ok 22ms\n#420 2026-10-19T20:15:31Z INFO payment-svc [t-7432] POST /charge o-2313 ok 43ms\n#423 2026-10-19T20:15:35Z DEBUG payment-svc GC pause 12ms (young), heap 34%\n#431 2026-10-19T20:15:40Z INFO payment-svc [t-7435] POST /charge o-2317 ok 82ms\n#439 2026-10-19T20:15:48Z DEBUG payment-svc GC pause 12ms (young), heap 29%\n#442 2026-10-19T20:15:51Z INFO payment-svc [t-7442] POST /charge o-2320 ok 46ms\n#449 2026-10-19T20:15:54Z INFO payment-svc [t-7445] POST /charge o-2321 ok 65ms\n#454 2026-10-19T20:15:57Z INFO payment-svc [t-7446] POST /charge o-2323 ok 24ms\n#459 2026-10-19T20:16:02Z INFO payment-svc [t-7448] POST /charge o-2325 ok 58ms\n#467 2026-10-19T20:16:10Z DEBUG payment-svc GC pause 13ms (young), heap 33%\n#480 2026-10-19T20:16:20Z INFO payment-svc [t-7458] POST /charge o-2332 ok 49ms\n#484 2026-10-19T20:16:24Z INFO payment-svc [t-7461] POST /charge o-2333 ok 53ms\n#492 2026-10-19T20:16:30Z DEBUG payment-svc GC pause 10ms (young), heap 35%\n#501 2026-10-19T20:16:39Z INFO payment-svc [t-7469] POST /charge o-2339 ok 32ms\n#513 2026-10-19T20:16:47Z DEBUG payment-svc GC pause 5ms (young), heap 35%\n#518 2026-10-19T20:16:51Z INFO payment-svc [t-7475] POST /charge o-2346 ok 85ms\n#523 2026-10-19T20:16:57Z INFO payment-svc [t-7479] POST /charge o-2348 ok 76ms\n#530 2026-10-19T20:17:02Z INFO payment-svc [t-7482] POST /charge o-2351 ok 87ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "key",
+          "limit": 40
+        },
+        "output": "4 match(es):\n#965 2026-10-19T20:22:57Z INFO payment-svc secrets: reloaded CARDPROC_API_KEY from secrets store (version 18, previous 17 revoked)\n#1046 2026-10-19T20:24:24Z ERROR payment-svc [t-7722] POST /v1/charges -> 401 {\"error\":\"invalid_api_key\"}\n#1113 2026-10-19T20:26:08Z ERROR payment-svc [t-7725] card processor rejected request: 401 Unauthorized (invalid API key) POST https://api.cardproc.example/v1/charges\n#1149 2026-10-19T20:27:00Z ERROR payment-svc [t-7731] POST /v1/charges -> 401 {\"error\":\"invalid_api_key\"}"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 965,
+          "before": 6,
+          "after": 6
+        },
+        "output": "#959 2026-10-19T20:22:53Z DEBUG order-service GC pause 9ms (young), heap 47%\n#960 2026-10-19T20:22:54Z INFO redis stats: hits=12110 misses=351 evicted=0 connected_clients=35\n#961 2026-10-19T20:22:55Z INFO order-service [t-7693] order o-2513 accepted, calling payment-svc POST /charge\n#962 2026-10-19T20:22:55Z INFO status-poller poll cycle complete: 29 targets checked in 757ms\n#963 2026-10-19T20:22:56Z INFO api-gateway [t-7693] POST /checkout 200 220ms\n#964 2026-10-19T20:22:57Z DEBUG payment-svc GC pause 7ms (young), heap 35%\n#965 2026-10-19T20:22:57Z INFO payment-svc secrets: reloaded CARDPROC_API_KEY from secrets store (version 18, previous 17 revoked)\n#966 2026-10-19T20:22:58Z INFO order-consumer processed batch of 117 messages from orders.events (lag 138ms)\n#967 2026-10-19T20:23:00Z DEBUG api-gateway upstream health: order-service ok, payment-svc ok\n#968 2026-10-19T20:23:02Z INFO order-service [t-7694] order o-2514 accepted, calling payment-svc POST /charge\n#969 2026-10-19T20:23:02Z INFO api-gateway [t-7694] POST /checkout 200 229ms\n#970 2026-10-19T20:23:03Z INFO webhook-dispatcher delivered 125 webhooks (p95 171ms)\n#971 2026-10-19T20:23:04Z INFO order-consumer processed batch of 88 messages from orders.events (lag 243ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "since": "2026-10-19T20:22:57Z",
+          "until": "2026-10-19T20:24:30Z",
+          "limit": 30
+        },
+        "output": "11 match(es):\n#964 2026-10-19T20:22:57Z DEBUG payment-svc GC pause 7ms (young), heap 35%\n#965 2026-10-19T20:22:57Z INFO payment-svc secrets: reloaded CARDPROC_API_KEY from secrets store (version 18, previous 17 revoked)\n#983 2026-10-19T20:23:14Z INFO payment-svc [t-7700] POST /charge o-2520 ok 33ms\n#989 2026-10-19T20:23:18Z DEBUG payment-svc GC pause 21ms (young), heap 42%\n#996 2026-10-19T20:23:24Z INFO payment-svc [t-7706] POST /charge o-2525 ok 21ms\n#1008 2026-10-19T20:23:31Z INFO payment-svc [t-7716] POST /charge o-2530 ok 41ms\n#1017 2026-10-19T20:23:38Z DEBUG payment-svc GC pause 20ms (young), heap 42%\n#1025 2026-10-19T20:23:53Z DEBUG payment-svc GC pause 22ms (young), heap 40%\n#1038 2026-10-19T20:24:13Z DEBUG payment-svc GC pause 21ms (young), heap 30%\n#1046 2026-10-19T20:24:24Z ERROR payment-svc [t-7722] POST /v1/charges -> 401 {\"error\":\"invalid_api_key\"}\n#1051 2026-10-19T20:24:30Z DEBUG payment-svc GC pause 10ms (young), heap 44%"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "config_error",
+              "confidence": 0.9,
+              "evidenceLines": [
+                965,
+                1046,
+                1113,
+                1149
+              ],
+              "reasoning": "At 20:22:57Z payment-svc reloaded CARDPROC_API_KEY from the secrets store as version 18 and revoked version 17 (#965). Charges succeeded for about 90 seconds after that, then from 20:24:24Z payment-svc began getting 401 invalid_api_key from the card processor (#1046, #1113, #1149). This means the service is still presenting the revoked key 17 (stale key cache or a partial reload), not the new key 18. The 401s propagate: order-service gets 502 from payment-svc (#1164, #1343), order-service returns 502 to api-gateway, and the gateway returns 502 on POST /checkout (#1091, #1208, #1290, #1392), which is the alert. webhook-dispatcher 502s are a separate customer-side problem and are not the cause. Ruled out: GC pauses are small and steady, the database and redis show no errors, and no deploy is logged.",
+              "reasoningNote": "Gateway 502s and order-service 502s are downstream symptoms and are not cited as origin evidence."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.1,
+              "evidenceLines": [
+                1113
+              ],
+              "reasoning": "The card processor could be rejecting keys on its side, but the 401 starts right after the local key rotation at #965, so an external cause is unlikely."
+            }
+          ],
+          "recommendedAction": "Make payment-svc load the current CARDPROC_API_KEY (version 18): force a secrets reload or restart the instances so none still hold the revoked version 17. Confirm that card-processor calls return 200 again, then watch the POST /checkout 502 rate drop. Going forward, do not revoke the old key until all instances have confirmed the new version. Also check the webhook-dispatcher 502s separately."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1536,
+      "cacheReadTokens": 28294,
+      "cacheWriteTokens": 10959
+    },
+    "durationMs": 10521,
+    "stopReason": "tool_use"
+  }
+}

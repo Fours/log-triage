@@ -1,0 +1,157 @@
+{
+  "score": {
+    "incidentId": "h-005",
+    "difficulty": "hard",
+    "scenario": "external_outage/cloud-object-storage",
+    "truth": "external_outage",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 5,
+      "precision": 0.7142857142857143,
+      "recall": 0.8333333333333334,
+      "f1": 0.7692307692307692
+    },
+    "herringsCited": 0,
+    "secondaryCited": 3,
+    "costUsd": 0.0820122,
+    "durationMs": 14959,
+    "iterations": 5,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 12,
+      "output": 1301,
+      "cacheRead": 32121,
+      "cacheWrite": 9904
+    }
+  },
+  "result": {
+    "incidentId": "h-005",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.88,
+          "evidenceLines": [
+            3244,
+            3319,
+            3436,
+            3583,
+            3737,
+            3292,
+            3565
+          ],
+          "reasoning": "The first checkout-related error is at 14:05:38 (#3244): payment-svc's artifact write fails with a storage 500. AWS S3 in us-east-1 then keeps returning 500 InternalError and 503 ServiceUnavailable on PutObject (#3319, #3436, #3583). These calls fail fast rather than hang. The aws-sdk used up its retry quota (#3494), which is the impact of the outage, not its cause. payment-svc passes the 500 back to order-service ('storage write failed', #3292, #3565), and order-service returns 500 to api-gateway on POST /checkout (#3264 onward). The checkout 500s only start after the S3 errors begin. Not the cause of the checkout errors: the flag-sync unknown-flag errors (start at 13:58, keep cached values, harmless). Not the cause either: metrics-agent exporter saturation. A separate issue, enrichment-svc's geo-IP 401 errors (invalid API key), only affects the ingest path (ingest-api and ingest-gateway 502s), not checkout."
+        },
+        {
+          "rootCause": "config_error",
+          "confidence": 0.07,
+          "evidenceLines": [
+            3655,
+            3860,
+            3988
+          ],
+          "reasoning": "enrichment-svc's geo-IP API key is rejected with 401, which points to a rotated or expired credential. That explains the ingest-gateway 502s on /v1/events but not the checkout failures."
+        }
+      ],
+      "recommendedAction": "Check AWS S3 us-east-1 health and open an AWS support case if needed. Make payment-svc's artifact write to s3://checkout-artifacts-prod non-blocking: queue it for retry later or fail over to another region, so a charge doesn't fail when the S3 write does. Separately, rotate or fix the geo-IP API key for enrichment-svc."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 80
+        },
+        "output": "71 match(es):\n#1499 2026-11-08T13:58:04Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#1923 2026-11-08T13:59:50Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#2096 2026-11-08T14:00:35Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2425 2026-11-08T14:01:56Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2940 2026-11-08T14:04:06Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3038 2026-11-08T14:04:33Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#3244 2026-11-08T14:05:38Z ERROR payment-svc [t-9246] artifact write o-9859 errored: storage service responded 500\n#3264 2026-11-08T14:05:43Z ERROR api-gateway [t-9258] POST /checkout 500 12805ms: upstream order-service returned 500 Internal Server Error\n#3282 2026-11-08T14:05:49Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 318 samples\n#3292 2026-11-08T14:05:54Z ERROR order-service [t-9277] PaymentClient.charge failed: payment-svc returned 500 (storage write failed)\n#3319 2026-11-08T14:06:04Z ERROR payment-svc [t-9292] PutObject s3://checkout-artifacts-prod/o-9890.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id F045176)\n#3320 2026-11-08T14:06:05Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#3379 2026-11-08T14:06:24Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1259 samples\n#3431 2026-11-08T14:06:42Z ERROR api-gateway [t-9356] POST /checkout 500 7810ms: upstream order-service returned 500 Internal Server Error\n#3436 2026-11-08T14:06:44Z ERROR payment-svc [t-9362] S3 upload of o-9948.json returned 503 ServiceUnavailable (us-east-1, C8D3BD6)\n#3511 2026-11-08T14:07:13Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 463 samples\n#3554 2026-11-08T14:07:29Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3565 2026-11-08T14:07:33Z ERROR order-service [t-9426] PaymentClient.charge failed: payment-svc returned 500 (storage write failed)\n#3583 2026-11-08T14:07:39Z ERROR payment-svc [t-9432] aws-sdk PutObjectCommand failed for key o-10004.json: ServiceUnavailable (HTTP 503), requestId=C0A40EE\n#3622 2026-11-08T14:07:53Z ERROR api-gateway [t-9460] POST /checkout 500 15349ms: upstream order-service returned 500 Internal Server Error\n#3638 2026-11-08T14:07:58Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1534 samples\n#3655 2026-11-08T14:08:02Z ERROR enrichment-svc [t-9474] geo-IP provider rejected request: 401 Unauthorized (invalid API key) POST https://api.geoip.example/v1/lookup\n#3692 2026-11-08T14:08:19Z ERROR ingest-gateway [t-9488] POST /v1/events 502 14461ms: upstream ingest-api returned 502 Bad Gateway\n#3703 2026-11-08T14:08:25Z ERROR api-gateway [t-9497] POST /checkout 500 6114ms: upstream order-service returned 500 Internal Server Error\n#3721 2026-11-08T14:08:35Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1064 samples\n#3737 2026-11-08T14:08:41Z ERROR payment-svc [t-9511] artifact write o-10069 errored: storage service responded 503\n#3762 2026-11-08T14:08:54Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 741 samples\n#3810 2026-11-08T14:09:13Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#3846 2026-11-08T14:09:33Z ERROR ingest-gateway [t-9553] POST /v1/events 502 22067ms: upstream ingest-api returned 502 Bad Gateway\n#3860 2026-11-08T14:09:37Z ERROR enrichment-svc [t-9561] POST /v1/lookup -> 401 {\"error\":\"invalid_api_key\"}\n#3884 2026-11-08T14:09:48Z ERROR api-gateway [t-9576] POST /checkout 500 19619ms: upstream order-service returned 500 Internal Server Error\n#3888 2026-11-08T14:09:49Z ERROR ingest-api [t-9580] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#3910 2026-11-08T14:09:59Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 540 samples\n#3931 2026-11-08T14:10:08Z ERROR api-gateway [t-9596] POST /checkout 500 20121ms: upstream order-service returned 500 Internal Server Error\n#3944 2026-11-08T14:10:17Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1936 samples\n#3953 2026-11-08T14:10:22Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3960 2026-11-08T14:10:25Z ERROR order-service [t-9608] PaymentClient.charge failed: payment-svc returned 500 (storage write failed)\n#3988 2026-11-08T14:10:33Z ERROR enrichment-svc [t-9625] geo-IP provider auth failed: HTTP 401, credentials not accepted by api.geoip.example\n#4015 2026-11-08T14:10:47Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#4043 2026-11-08T14:11:02Z ERROR enrichment-svc [t-9645] geo-IP provider rejected request: 401 Unauthorized (invalid API key) POST https://api.geoip.example/v1/lookup\n#4047 2026-11-08T14:11:04Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 613 samples\n#4053 2026-11-08T14:11:06Z ERROR ingest-gateway [t-9650] POST /v1/events 502 17241ms: upstream ingest-api returned 502 Bad Gateway\n#4130 2026-11-08T14:11:42Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 640 samples\n#4145 2026-11-08T14:11:48Z ERROR order-service [t-9693] PaymentClient.charge failed: payment-svc returned 500 (storage write failed)\n#4151 2026-11-08T14:11:50Z ERROR api-gateway [t-9697] POST /checkout 500 12727ms: upstream order-service returned 500 Internal Server Error\n#4180 2026-11-08T14:12:08Z ERROR ingest-api [t-9710] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#4190 2026-11-08T14:12:09Z ERROR api-gateway [t-9716] POST /checkout 500 27082ms: upstream order-service returned 500 Internal Server Error\n#4209 2026-11-08T14:12:17Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1949 samples\n#4221 2026-11-08T14:12:24Z ERROR ingest-gateway [t-9739] POST /v1/events 502 24559ms: upstream ingest-api returned 502 Bad Gateway\n#4258 2026-11-08T14:12:41Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#4273 2026-11-08T14:12:48Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1065 samples\n#4330 2026-11-08T14:13:18Z ERROR order-service [t-9786] PaymentClient.charge failed: payment-svc returned 500 (storage write failed)\n#4369 2026-11-08T14:13:36Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1942 samples\n#4372 2026-11-08T14:13:37Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#4373 2026-11-08T14:13:37Z ERROR api-gateway [t-9801] POST /checkout 500 15742ms: upstream order-service returned 500 Internal Server Error\n#4380 2026-11-08T14:13:41Z ERROR ingest-api [t-9806] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#4420 2026-11-08T14:13:59Z ERROR ingest-gateway [t-9827] POST /v1/events 502 15890ms: upstream ingest-api returned 502 Bad Gateway\n#4461 2026-11-08T14:14:17Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1015 samples\n#4489 2026-11-08T14:14:38Z ERROR ingest-gateway [t-9850] POST /v1/events 502 8655ms: upstream ingest-api returned 502 Bad Gateway\n#4498 2026-11-08T14:14:39Z ERROR api-gateway [t-9857] POST /checkout 500 22238ms: upstream order-service returned 500 Internal Server Error\n#4509 2026-11-08T14:14:42Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 521 samples\n#4510 2026-11-08T14:14:42Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#4556 2026-11-08T14:15:09Z ERROR order-service [t-9875] PaymentClient.charge failed: payment-svc returned 500 (storage write failed)\n#4557 2026-11-08T14:15:09Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 247 samples\n#4624 2026-11-08T14:15:42Z ERROR api-gateway [t-9896] POST /checkout 500 22860ms: upstream order-service returned 500 Internal Server Error\n#4670 2026-11-08T14:16:07Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#4679 2026-11-08T14:16:12Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1227 samples\n#4680 2026-11-08T14:16:13Z ERROR api-gateway [t-9917] POST /checkout 500 21219ms: upstream order-service returned 500 Internal Server Error\n#4692 2026-11-08T14:16:18Z ERROR ingest-gateway [t-9922] POST /v1/events 502 6231ms: upstream ingest-api returned 502 Bad Gateway\n#4698 2026-11-08T14:16:20Z ERROR ingest-api [t-9925] EnrichClient.enrich failed: enrichment-svc returned 502 (upstream geo-IP provider error)\n#4704 2026-11-08T14:16:22Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1275 samples"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "level": "WARN",
+          "limit": 20
+        },
+        "output": "6 match(es):\n#3244 2026-11-08T14:05:38Z ERROR payment-svc [t-9246] artifact write o-9859 errored: storage service responded 500\n#3319 2026-11-08T14:06:04Z ERROR payment-svc [t-9292] PutObject s3://checkout-artifacts-prod/o-9890.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id F045176)\n#3436 2026-11-08T14:06:44Z ERROR payment-svc [t-9362] S3 upload of o-9948.json returned 503 ServiceUnavailable (us-east-1, C8D3BD6)\n#3494 2026-11-08T14:07:07Z WARN payment-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (64 failed attempts in 60s)\n#3583 2026-11-08T14:07:39Z ERROR payment-svc [t-9432] aws-sdk PutObjectCommand failed for key o-10004.json: ServiceUnavailable (HTTP 503), requestId=C0A40EE\n#3737 2026-11-08T14:08:41Z ERROR payment-svc [t-9511] artifact write o-10069 errored: storage service responded 503"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "status",
+          "service": "payment-svc",
+          "limit": 10
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-9292"
+        },
+        "output": "1 line(s) for t-9292:\n#3319 2026-11-08T14:06:04Z ERROR payment-svc [t-9292] PutObject s3://checkout-artifacts-prod/o-9890.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id F045176)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "s3",
+          "until": "14:05:40",
+          "limit": 15
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.88,
+              "evidenceLines": [
+                3244,
+                3319,
+                3436,
+                3583,
+                3737,
+                3292,
+                3565
+              ],
+              "reasoning": "The first checkout-related error is at 14:05:38 (#3244): payment-svc's artifact write fails with a storage 500. AWS S3 in us-east-1 then keeps returning 500 InternalError and 503 ServiceUnavailable on PutObject (#3319, #3436, #3583). These calls fail fast rather than hang. The aws-sdk used up its retry quota (#3494), which is the impact of the outage, not its cause. payment-svc passes the 500 back to order-service ('storage write failed', #3292, #3565), and order-service returns 500 to api-gateway on POST /checkout (#3264 onward). The checkout 500s only start after the S3 errors begin. Not the cause of the checkout errors: the flag-sync unknown-flag errors (start at 13:58, keep cached values, harmless). Not the cause either: metrics-agent exporter saturation. A separate issue, enrichment-svc's geo-IP 401 errors (invalid API key), only affects the ingest path (ingest-api and ingest-gateway 502s), not checkout."
+            },
+            {
+              "rootCause": "config_error",
+              "confidence": 0.07,
+              "evidenceLines": [
+                3655,
+                3860,
+                3988
+              ],
+              "reasoning": "enrichment-svc's geo-IP API key is rejected with 401, which points to a rotated or expired credential. That explains the ingest-gateway 502s on /v1/events but not the checkout failures."
+            }
+          ],
+          "recommendedAction": "Check AWS S3 us-east-1 health and open an AWS support case if needed. Make payment-svc's artifact write to s3://checkout-artifacts-prod non-blocking: queue it for retry later or fail over to another region, so a charge doesn't fail when the S3 write does. Separately, rotate or fix the geo-IP API key for enrichment-svc."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1301,
+      "cacheReadTokens": 32121,
+      "cacheWriteTokens": 9904
+    },
+    "durationMs": 14959,
+    "stopReason": "tool_use"
+  }
+}

@@ -1,0 +1,238 @@
+{
+  "score": {
+    "incidentId": "h-018",
+    "difficulty": "medium",
+    "scenario": "bad_deploy/dependency-contract-change",
+    "truth": "bad_deploy",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "bad_deploy",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 6,
+      "precision": 0.75,
+      "recall": 1,
+      "f1": 0.8571428571428571
+    },
+    "herringsCited": 3,
+    "secondaryCited": 0,
+    "costUsd": 0.004813735,
+    "durationMs": 13714,
+    "iterations": 8,
+    "toolCalls": 13,
+    "tokens": {
+      "input": 18,
+      "output": 2723,
+      "cacheRead": 86881,
+      "cacheWrite": 20653
+    }
+  },
+  "result": {
+    "incidentId": "h-018",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.9,
+          "evidenceLines": [
+            2047,
+            2083,
+            2200,
+            2231,
+            2330,
+            2346,
+            2185,
+            2262
+          ],
+          "reasoning": "auth-svc was rolled out to v4.30.0 at 03:57:03 (#2047). Its startup line (#2083) shows 'response serializer v2 enabled'. From that point, account-svc fails to decode auth-svc POST /tokens replies because the required 'status' field is missing; the payload only has id, state, updatedAt (#2200, #2231, #2330, #2346). account-svc therefore cannot issue tokens, and edge-proxy returns 502 on POST /login (#2185, #2262), with more 502s after. Before the deploy, auth-svc returned 200 OK responses and logins succeeded (#2044, #2045). The 502s are a symptom of the broken contract; the fault is the serializer change in v4.30.0. Other errors (S3 500s in template-svc, notify 500s, billing invoice checksum errors) are real but do not explain the login path."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.1,
+          "evidenceLines": [
+            2086,
+            2169,
+            2296
+          ],
+          "reasoning": "billing-reconciler reports invoice_archive rows violating checksum constraints (partition 2019-Q*). This is a real data problem but it is not on the login path and does not match the timing of the 502s, which start at the auth-svc deploy. Ruled out as the cause of the login failures."
+        }
+      ],
+      "recommendedAction": "Roll back auth-svc from v4.30.0 to v4.29.5 (or turn off response serializer v2) to restore the 'status' field in POST /tokens responses. Then confirm the edge-proxy 502 rate on POST /login drops below threshold. Follow up on the serializer contract and the unrelated template-svc S3 failures and billing checksum errors."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "39 match(es):\n#1754 2026-11-22T03:54:19Z ERROR template-svc [t-7043] aws-sdk PutObjectCommand failed for key m-2539.json: InternalError (HTTP 500), requestId=DF1E2ED\n#1836 2026-11-22T03:54:59Z ERROR notification-svc [t-7085] TemplateClient.render failed: template-svc returned 500 (storage write failed)\n#1878 2026-11-22T03:55:24Z ERROR template-svc [t-7106] PutObject s3://notifications-artifacts-prod/m-2600.json failed: 503 ServiceUnavailable: Please reduce your request rate. (region us-east-1, request-id 952DE7A)\n#1897 2026-11-22T03:55:34Z ERROR api-gateway [t-7116] POST /v1/notify 500 16804ms: upstream notification-svc returned 500 Internal Server Error\n#1930 2026-11-22T03:55:52Z WARN template-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (88 failed attempts in 60s)\n#1993 2026-11-22T03:56:30Z ERROR template-svc [t-7156] S3 upload of m-2649.json returned 500 InternalError (us-east-1, B8B9594)\n#2068 2026-11-22T03:57:15Z ERROR api-gateway [t-7199] POST /v1/notify 500 5446ms: upstream notification-svc returned 500 Internal Server Error\n#2086 2026-11-22T03:57:25Z ERROR billing-reconciler invoice_archive row inv-664725 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2129 2026-11-22T03:57:51Z ERROR template-svc [t-7234] aws-sdk PutObjectCommand failed for key m-2703.json: InternalError (HTTP 500), requestId=033A945\n#2169 2026-11-22T03:58:21Z ERROR billing-reconciler invoice_archive row inv-948674 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2185 2026-11-22T03:58:34Z ERROR edge-proxy [t-7261] POST /login 502 28415ms: upstream account-svc returned 502 Bad Gateway\n#2200 2026-11-22T03:58:48Z ERROR account-svc [t-7269] schema validation error on auth-svc reply (u-2727): required property 'status' not found\n#2231 2026-11-22T03:59:20Z ERROR account-svc [t-7284] AuthClient.issueToken: unexpected payload for u-2736, cannot map status (present: id, state, updatedAt)\n#2262 2026-11-22T03:59:45Z ERROR edge-proxy [t-7298] POST /login 502 11395ms: upstream account-svc returned 502 Bad Gateway\n#2289 2026-11-22T04:00:09Z ERROR notification-svc [t-7303] TemplateClient.render failed: template-svc returned 500 (storage write failed)\n#2296 2026-11-22T04:00:13Z ERROR billing-reconciler invoice_archive row inv-224051 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2312 2026-11-22T04:00:32Z ERROR billing-reconciler invoice_archive row inv-349061 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2315 2026-11-22T04:00:37Z ERROR api-gateway [t-7311] POST /v1/notify 500 26912ms: upstream notification-svc returned 500 Internal Server Error\n#2330 2026-11-22T04:00:44Z ERROR account-svc [t-7317] failed to decode auth-svc POST /tokens response for u-2758: missing required field \"status\" (got keys: id, state, updatedAt)\n#2346 2026-11-22T04:00:59Z ERROR account-svc [t-7323] schema validation error on auth-svc reply (u-2764): required property 'status' not found\n#2369 2026-11-22T04:01:22Z ERROR api-gateway [t-7328] POST /v1/notify 500 23882ms: upstream notification-svc returned 500 Internal Server Error\n#2390 2026-11-22T04:01:45Z ERROR billing-reconciler invoice_archive row inv-805698 violates checksum constraint, skipping (archive partition 2019-Q3)\n#2443 2026-11-22T04:02:27Z ERROR notification-svc [t-7354] TemplateClient.render failed: template-svc returned 500 (storage write failed)\n#2459 2026-11-22T04:02:38Z ERROR edge-proxy [t-7364] POST /login 502 10669ms: upstream account-svc returned 502 Bad Gateway\n#2463 2026-11-22T04:02:41Z ERROR billing-reconciler invoice_archive row inv-562029 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2516 2026-11-22T04:03:25Z ERROR edge-proxy [t-7380] POST /login 502 7890ms: upstream account-svc returned 502 Bad Gateway\n#2569 2026-11-22T04:04:06Z ERROR api-gateway [t-7409] POST /v1/notify 500 11158ms: upstream notification-svc returned 500 Internal Server Error\n#2587 2026-11-22T04:04:21Z ERROR billing-reconciler invoice_archive row inv-232134 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2647 2026-11-22T04:05:09Z ERROR edge-proxy [t-7447] POST /login 502 19949ms: upstream account-svc returned 502 Bad Gateway\n#2666 2026-11-22T04:05:28Z ERROR billing-reconciler invoice_archive row inv-215106 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2719 2026-11-22T04:06:26Z ERROR billing-reconciler invoice_archive row inv-509028 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2749 2026-11-22T04:06:51Z ERROR api-gateway [t-7468] POST /v1/notify 500 9849ms: upstream notification-svc returned 500 Internal Server Error\n#2752 2026-11-22T04:06:56Z ERROR edge-proxy [t-7472] POST /login 502 12399ms: upstream account-svc returned 502 Bad Gateway\n#2799 2026-11-22T04:07:28Z ERROR billing-reconciler invoice_archive row inv-962695 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2844 2026-11-22T04:08:07Z ERROR billing-reconciler invoice_archive row inv-872921 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2867 2026-11-22T04:08:32Z ERROR edge-proxy [t-7514] POST /login 502 27124ms: upstream account-svc returned 502 Bad Gateway\n#2902 2026-11-22T04:09:06Z ERROR notification-svc [t-7525] TemplateClient.render failed: template-svc returned 500 (storage write failed)\n#2909 2026-11-22T04:09:11Z ERROR billing-reconciler invoice_archive row inv-856608 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2932 2026-11-22T04:09:38Z ERROR api-gateway [t-7532] POST /v1/notify 500 21704ms: upstream notification-svc returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "billing-reconciler",
+          "level": "ERROR"
+        },
+        "output": "12 match(es):\n#2086 2026-11-22T03:57:25Z ERROR billing-reconciler invoice_archive row inv-664725 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2169 2026-11-22T03:58:21Z ERROR billing-reconciler invoice_archive row inv-948674 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2296 2026-11-22T04:00:13Z ERROR billing-reconciler invoice_archive row inv-224051 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2312 2026-11-22T04:00:32Z ERROR billing-reconciler invoice_archive row inv-349061 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2390 2026-11-22T04:01:45Z ERROR billing-reconciler invoice_archive row inv-805698 violates checksum constraint, skipping (archive partition 2019-Q3)\n#2463 2026-11-22T04:02:41Z ERROR billing-reconciler invoice_archive row inv-562029 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2587 2026-11-22T04:04:21Z ERROR billing-reconciler invoice_archive row inv-232134 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2666 2026-11-22T04:05:28Z ERROR billing-reconciler invoice_archive row inv-215106 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2719 2026-11-22T04:06:26Z ERROR billing-reconciler invoice_archive row inv-509028 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2799 2026-11-22T04:07:28Z ERROR billing-reconciler invoice_archive row inv-962695 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2844 2026-11-22T04:08:07Z ERROR billing-reconciler invoice_archive row inv-872921 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2909 2026-11-22T04:09:11Z ERROR billing-reconciler invoice_archive row inv-856608 violates checksum constraint, skipping (archive partition 2019-Q4)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "since": "03:41:00Z",
+          "until": "03:58:30Z",
+          "limit": 60
+        },
+        "output": "tool error: can't read time \"03:41:00Z\": use an ISO timestamp like 2026-11-22T03:41:00Z or HH:MM:SS",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "account-svc",
+          "level": "WARN",
+          "limit": 30
+        },
+        "output": "4 match(es):\n#2200 2026-11-22T03:58:48Z ERROR account-svc [t-7269] schema validation error on auth-svc reply (u-2727): required property 'status' not found\n#2231 2026-11-22T03:59:20Z ERROR account-svc [t-7284] AuthClient.issueToken: unexpected payload for u-2736, cannot map status (present: id, state, updatedAt)\n#2330 2026-11-22T04:00:44Z ERROR account-svc [t-7317] failed to decode auth-svc POST /tokens response for u-2758: missing required field \"status\" (got keys: id, state, updatedAt)\n#2346 2026-11-22T04:00:59Z ERROR account-svc [t-7323] schema validation error on auth-svc reply (u-2764): required property 'status' not found"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "since": "2026-11-22T03:41:00Z",
+          "until": "2026-11-22T03:58:50Z",
+          "limit": 80
+        },
+        "output": "180 match(es), showing first 80:\n#2 2026-11-22T03:41:00Z INFO auth-svc [t-5936] POST /tokens u-1636 ok 34ms\n#23 2026-11-22T03:41:10Z INFO auth-svc [t-5949] POST /tokens u-1646 ok 90ms\n#28 2026-11-22T03:41:13Z INFO auth-svc [t-5950] POST /tokens u-1648 ok 32ms\n#35 2026-11-22T03:41:16Z INFO auth-svc [t-5958] POST /tokens u-1654 ok 57ms\n#44 2026-11-22T03:41:20Z INFO auth-svc [t-5967] POST /tokens u-1659 ok 20ms\n#51 2026-11-22T03:41:24Z DEBUG auth-svc GC pause 10ms (young), heap 43%\n#71 2026-11-22T03:41:33Z INFO auth-svc [t-5987] POST /tokens u-1675 ok 55ms\n#82 2026-11-22T03:41:38Z INFO auth-svc [t-5994] POST /tokens u-1680 ok 62ms\n#92 2026-11-22T03:41:41Z INFO auth-svc [t-5999] POST /tokens u-1685 ok 21ms\n#101 2026-11-22T03:41:47Z DEBUG auth-svc GC pause 21ms (young), heap 31%\n#103 2026-11-22T03:41:47Z INFO auth-svc [t-6006] POST /tokens u-1689 ok 70ms\n#113 2026-11-22T03:41:52Z INFO auth-svc [t-6013] POST /tokens u-1694 ok 73ms\n#140 2026-11-22T03:42:03Z INFO auth-svc [t-6036] POST /tokens u-1707 ok 40ms\n#145 2026-11-22T03:42:06Z DEBUG auth-svc GC pause 17ms (young), heap 32%\n#166 2026-11-22T03:42:16Z INFO auth-svc [t-6051] POST /tokens u-1724 ok 23ms\n#184 2026-11-22T03:42:24Z INFO auth-svc [t-6065] POST /tokens u-1732 ok 48ms\n#186 2026-11-22T03:42:24Z DEBUG auth-svc GC pause 13ms (young), heap 45%\n#196 2026-11-22T03:42:29Z INFO auth-svc [t-6071] POST /tokens u-1739 ok 34ms\n#205 2026-11-22T03:42:34Z INFO auth-svc [t-6076] POST /tokens u-1744 ok 68ms\n#228 2026-11-22T03:42:44Z INFO auth-svc [t-6085] POST /tokens u-1757 ok 90ms\n#236 2026-11-22T03:42:48Z DEBUG auth-svc GC pause 16ms (young), heap 36%\n#254 2026-11-22T03:42:57Z INFO auth-svc [t-6100] POST /tokens u-1768 ok 76ms\n#268 2026-11-22T03:43:02Z INFO auth-svc [t-6107] POST /tokens u-1774 ok 69ms\n#278 2026-11-22T03:43:06Z INFO auth-svc [t-6113] POST /tokens u-1782 ok 57ms\n#283 2026-11-22T03:43:08Z INFO auth-svc [t-6114] POST /tokens u-1784 ok 62ms\n#295 2026-11-22T03:43:14Z INFO auth-svc [t-6123] POST /tokens u-1792 ok 24ms\n#315 2026-11-22T03:43:24Z DEBUG auth-svc GC pause 9ms (young), heap 31%\n#325 2026-11-22T03:43:27Z INFO auth-svc [t-6142] POST /tokens u-1805 ok 56ms\n#334 2026-11-22T03:43:32Z INFO auth-svc [t-6148] POST /tokens u-1809 ok 73ms\n#342 2026-11-22T03:43:37Z INFO auth-svc [t-6152] POST /tokens u-1812 ok 75ms\n#380 2026-11-22T03:43:52Z INFO auth-svc [t-6175] POST /tokens u-1830 ok 26ms\n#382 2026-11-22T03:43:53Z DEBUG auth-svc GC pause 12ms (young), heap 34%\n#396 2026-11-22T03:44:00Z INFO auth-svc [t-6185] POST /tokens u-1838 ok 85ms\n#405 2026-11-22T03:44:05Z INFO auth-svc [t-6190] POST /tokens u-1844 ok 60ms\n#415 2026-11-22T03:44:07Z INFO auth-svc [t-6193] POST /tokens u-1848 ok 33ms\n#421 2026-11-22T03:44:10Z INFO auth-svc [t-6199] POST /tokens u-1851 ok 83ms\n#429 2026-11-22T03:44:14Z INFO auth-svc [t-6202] POST /tokens u-1857 ok 20ms\n#433 2026-11-22T03:44:14Z DEBUG auth-svc GC pause 15ms (young), heap 40%\n#440 2026-11-22T03:44:17Z INFO auth-svc [t-6206] POST /tokens u-1861 ok 78ms\n#448 2026-11-22T03:44:21Z INFO auth-svc [t-6212] POST /tokens u-1864 ok 85ms\n#456 2026-11-22T03:44:26Z INFO auth-svc [t-6219] POST /tokens u-1868 ok 62ms\n#468 2026-11-22T03:44:32Z INFO auth-svc [t-6225] POST /tokens u-1874 ok 67ms\n#473 2026-11-22T03:44:34Z INFO auth-svc [t-6230] POST /tokens u-1878 ok 46ms\n#480 2026-11-22T03:44:38Z INFO auth-svc [t-6234] POST /tokens u-1881 ok 58ms\n#486 2026-11-22T03:44:41Z DEBUG auth-svc GC pause 11ms (young), heap 40%\n#490 2026-11-22T03:44:43Z INFO auth-svc [t-6238] POST /tokens u-1885 ok 80ms\n#498 2026-11-22T03:44:45Z INFO auth-svc [t-6245] POST /tokens u-1890 ok 22ms\n#507 2026-11-22T03:44:47Z INFO auth-svc [t-6250] POST /tokens u-1895 ok 22ms\n#520 2026-11-22T03:44:52Z INFO auth-svc [t-6255] POST /tokens u-1902 ok 53ms\n#540 2026-11-22T03:45:01Z DEBUG auth-svc GC pause 10ms (young), heap 40%\n#542 2026-11-22T03:45:02Z INFO auth-svc [t-6267] POST /tokens u-1912 ok 67ms\n#567 2026-11-22T03:45:12Z INFO auth-svc [t-6281] POST /tokens u-1922 ok 63ms\n#576 2026-11-22T03:45:17Z INFO auth-svc [t-6288] POST /tokens u-1930 ok 49ms\n#585 2026-11-22T03:45:20Z INFO auth-svc [t-6293] POST /tokens u-1933 ok 36ms\n#590 2026-11-22T03:45:23Z DEBUG auth-svc GC pause 21ms (young), heap 41%\n#595 2026-11-22T03:45:25Z INFO auth-svc config reloaded from config-service (revision 695): 0 keys changed\n#603 2026-11-22T03:45:28Z INFO auth-svc [t-6302] POST /tokens u-1941 ok 40ms\n#610 2026-11-22T03:45:31Z INFO auth-svc [t-6310] POST /tokens u-1944 ok 64ms\n#615 2026-11-22T03:45:33Z INFO auth-svc [t-6313] POST /tokens u-1946 ok 30ms\n#623 2026-11-22T03:45:37Z INFO auth-svc [t-6318] POST /tokens u-1950 ok 46ms\n#640 2026-11-22T03:45:45Z INFO auth-svc [t-6329] POST /tokens u-1961 ok 82ms\n#646 2026-11-22T03:45:47Z INFO auth-svc [t-6335] POST /tokens u-1966 ok 72ms\n#653 2026-11-22T03:45:50Z DEBUG auth-svc GC pause 13ms (young), heap 43%\n#688 2026-11-22T03:46:07Z INFO auth-svc [t-6359] POST /tokens u-1982 ok 84ms\n#704 2026-11-22T03:46:15Z INFO auth-svc [t-6369] POST /tokens u-1992 ok 47ms\n#716 2026-11-22T03:46:19Z DEBUG auth-svc GC pause 10ms (young), heap 41%\n#737 2026-11-22T03:46:30Z INFO auth-svc [t-6391] POST /tokens u-2006 ok 45ms\n#742 2026-11-22T03:46:33Z INFO auth-svc [t-6397] POST /tokens u-2011 ok 36ms\n#759 2026-11-22T03:46:39Z DEBUG auth-svc GC pause 5ms (young), heap 43%\n#777 2026-11-22T03:46:47Z INFO auth-svc [t-6418] POST /tokens u-2031 ok 89ms\n#783 2026-11-22T03:46:49Z INFO auth-svc [t-6422] POST /tokens u-2035 ok 22ms\n#798 2026-11-22T03:46:56Z INFO auth-svc [t-6430] POST /tokens u-2039 ok 66ms\n#804 2026-11-22T03:46:59Z INFO auth-svc [t-6432] POST /tokens u-2044 ok 84ms\n#825 2026-11-22T03:47:08Z DEBUG auth-svc GC pause 9ms (young), heap 31%\n#861 2026-11-22T03:47:26Z INFO auth-svc [t-6465] POST /tokens u-2075 ok 21ms\n#863 2026-11-22T03:47:27Z DEBUG auth-svc GC pause 16ms (young), heap 31%\n#890 2026-11-22T03:47:40Z INFO auth-svc [t-6487] POST /tokens u-2092 ok 32ms\n#912 2026-11-22T03:47:51Z INFO auth-svc [t-6499] POST /tokens u-2103 ok 54ms\n#919 2026-11-22T03:47:55Z DEBUG auth-svc GC pause 6ms (young), heap 34%\n#932 2026-11-22T03:47:59Z INFO auth-svc [t-6509] POST /tokens u-2114 ok 60ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "2026-11-22T03:47:59Z",
+          "until": "2026-11-22T03:58:50Z",
+          "query": "auth",
+          "limit": 60
+        },
+        "output": "189 match(es), showing first 60:\n#931 2026-11-22T03:47:59Z INFO account-svc [t-6509] user u-2114 accepted, calling auth-svc POST /tokens\n#937 2026-11-22T03:48:03Z INFO account-svc [t-6514] user u-2119 accepted, calling auth-svc POST /tokens\n#941 2026-11-22T03:48:05Z INFO account-svc [t-6516] user u-2121 accepted, calling auth-svc POST /tokens\n#946 2026-11-22T03:48:10Z INFO account-svc [t-6520] user u-2124 accepted, calling auth-svc POST /tokens\n#952 2026-11-22T03:48:11Z INFO account-svc [t-6527] user u-2126 accepted, calling auth-svc POST /tokens\n#956 2026-11-22T03:48:13Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#963 2026-11-22T03:48:15Z INFO account-svc [t-6533] user u-2130 accepted, calling auth-svc POST /tokens\n#969 2026-11-22T03:48:17Z INFO account-svc [t-6537] user u-2131 accepted, calling auth-svc POST /tokens\n#975 2026-11-22T03:48:21Z INFO account-svc [t-6542] user u-2134 accepted, calling auth-svc POST /tokens\n#983 2026-11-22T03:48:26Z INFO account-svc [t-6549] user u-2139 accepted, calling auth-svc POST /tokens\n#990 2026-11-22T03:48:28Z INFO account-svc [t-6551] user u-2145 accepted, calling auth-svc POST /tokens\n#1002 2026-11-22T03:48:33Z INFO account-svc [t-6562] user u-2149 accepted, calling auth-svc POST /tokens\n#1009 2026-11-22T03:48:36Z INFO account-svc [t-6568] user u-2153 accepted, calling auth-svc POST /tokens\n#1017 2026-11-22T03:48:40Z INFO account-svc [t-6576] user u-2157 accepted, calling auth-svc POST /tokens\n#1028 2026-11-22T03:48:45Z INFO account-svc [t-6584] user u-2165 accepted, calling auth-svc POST /tokens\n#1031 2026-11-22T03:48:49Z INFO account-svc [t-6585] user u-2166 accepted, calling auth-svc POST /tokens\n#1041 2026-11-22T03:48:52Z INFO account-svc [t-6590] user u-2170 accepted, calling auth-svc POST /tokens\n#1048 2026-11-22T03:48:56Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#1052 2026-11-22T03:48:57Z INFO account-svc [t-6596] user u-2173 accepted, calling auth-svc POST /tokens\n#1058 2026-11-22T03:49:02Z INFO account-svc [t-6601] user u-2178 accepted, calling auth-svc POST /tokens\n#1066 2026-11-22T03:49:05Z INFO account-svc [t-6605] user u-2183 accepted, calling auth-svc POST /tokens\n#1069 2026-11-22T03:49:07Z INFO account-svc [t-6608] user u-2186 accepted, calling auth-svc POST /tokens\n#1075 2026-11-22T03:49:09Z INFO account-svc [t-6611] user u-2189 accepted, calling auth-svc POST /tokens\n#1086 2026-11-22T03:49:13Z INFO account-svc [t-6617] user u-2195 accepted, calling auth-svc POST /tokens\n#1095 2026-11-22T03:49:18Z INFO account-svc [t-6619] user u-2200 accepted, calling auth-svc POST /tokens\n#1104 2026-11-22T03:49:22Z INFO account-svc [t-6621] user u-2203 accepted, calling auth-svc POST /tokens\n#1114 2026-11-22T03:49:26Z INFO account-svc [t-6628] user u-2208 accepted, calling auth-svc POST /tokens\n#1118 2026-11-22T03:49:28Z INFO account-svc [t-6629] user u-2211 accepted, calling auth-svc POST /tokens\n#1126 2026-11-22T03:49:33Z INFO account-svc [t-6632] user u-2215 accepted, calling auth-svc POST /tokens\n#1138 2026-11-22T03:49:37Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#1139 2026-11-22T03:49:37Z INFO account-svc [t-6641] user u-2220 accepted, calling auth-svc POST /tokens\n#1149 2026-11-22T03:49:42Z INFO account-svc [t-6647] user u-2223 accepted, calling auth-svc POST /tokens\n#1155 2026-11-22T03:49:45Z INFO account-svc [t-6653] user u-2227 accepted, calling auth-svc POST /tokens\n#1164 2026-11-22T03:49:49Z INFO account-svc [t-6659] user u-2231 accepted, calling auth-svc POST /tokens\n#1171 2026-11-22T03:49:52Z INFO account-svc [t-6662] user u-2234 accepted, calling auth-svc POST /tokens\n#1177 2026-11-22T03:49:55Z INFO account-svc [t-6667] user u-2238 accepted, calling auth-svc POST /tokens\n#1186 2026-11-22T03:49:57Z INFO account-svc [t-6673] user u-2241 accepted, calling auth-svc POST /tokens\n#1190 2026-11-22T03:50:00Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#1194 2026-11-22T03:50:01Z INFO account-svc [t-6676] user u-2244 accepted, calling auth-svc POST /tokens\n#1204 2026-11-22T03:50:06Z INFO account-svc [t-6682] user u-2247 accepted, calling auth-svc POST /tokens\n#1211 2026-11-22T03:50:09Z INFO account-svc [t-6686] user u-2250 accepted, calling auth-svc POST /tokens\n#1222 2026-11-22T03:50:14Z INFO account-svc [t-6693] user u-2255 accepted, calling auth-svc POST /tokens\n#1229 2026-11-22T03:50:17Z INFO account-svc [t-6699] user u-2261 accepted, calling auth-svc POST /tokens\n#1236 2026-11-22T03:50:21Z INFO account-svc [t-6702] user u-2266 accepted, calling auth-svc POST /tokens\n#1243 2026-11-22T03:50:24Z INFO account-svc [t-6706] user u-2272 accepted, calling auth-svc POST /tokens\n#1247 2026-11-22T03:50:26Z INFO account-svc [t-6707] user u-2273 accepted, calling auth-svc POST /tokens\n#1253 2026-11-22T03:50:29Z INFO account-svc [t-6712] user u-2279 accepted, calling auth-svc POST /tokens\n#1255 2026-11-22T03:50:32Z INFO account-svc [t-6714] user u-2280 accepted, calling auth-svc POST /tokens\n#1266 2026-11-22T03:50:35Z INFO account-svc [t-6719] user u-2284 accepted, calling auth-svc POST /tokens\n#1273 2026-11-22T03:50:38Z INFO account-svc [t-6724] user u-2287 accepted, calling auth-svc POST /tokens\n#1274 2026-11-22T03:50:38Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#1283 2026-11-22T03:50:40Z INFO account-svc [t-6732] user u-2293 accepted, calling auth-svc POST /tokens\n#1285 2026-11-22T03:50:42Z INFO account-svc [t-6733] user u-2296 accepted, calling auth-svc POST /tokens\n#1291 2026-11-22T03:50:45Z INFO account-svc [t-6739] user u-2300 accepted, calling auth-svc POST /tokens\n#1300 2026-11-22T03:50:48Z INFO account-svc [t-6742] user u-2302 accepted, calling auth-svc POST /tokens\n#1307 2026-11-22T03:50:52Z INFO account-svc [t-6747] user u-2306 accepted, calling auth-svc POST /tokens\n#1316 2026-11-22T03:50:56Z INFO account-svc [t-6751] user u-2312 accepted, calling auth-svc POST /tokens\n#1322 2026-11-22T03:51:00Z INFO account-svc [t-6756] user u-2315 accepted, calling auth-svc POST /tokens\n#1333 2026-11-22T03:51:05Z INFO account-svc [t-6763] user u-2324 accepted, calling auth-svc POST /tokens\n#1334 2026-11-22T03:51:05Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "status",
+          "since": "2026-11-22T03:45:00Z",
+          "until": "2026-11-22T03:58:50Z",
+          "limit": 60
+        },
+        "output": "1 match(es):\n#2200 2026-11-22T03:58:48Z ERROR account-svc [t-7269] schema validation error on auth-svc reply (u-2727): required property 'status' not found"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 30
+        },
+        "output": "1 match(es):\n#2047 2026-11-22T03:57:03Z INFO auth-svc deploy: rolling out auth-svc v4.30.0 (build 207dfed), replacing v4.29.5"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "schema",
+          "limit": 30
+        },
+        "output": "2 match(es):\n#2200 2026-11-22T03:58:48Z ERROR account-svc [t-7269] schema validation error on auth-svc reply (u-2727): required property 'status' not found\n#2346 2026-11-22T04:00:59Z ERROR account-svc [t-7323] schema validation error on auth-svc reply (u-2764): required property 'status' not found"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "level": "INFO",
+          "since": "2026-11-22T03:52:00Z",
+          "until": "2026-11-22T03:58:50Z",
+          "limit": 40
+        },
+        "output": "50 match(es), showing first 40:\n#1462 2026-11-22T03:52:01Z INFO auth-svc [t-6839] POST /tokens u-2388 ok 25ms\n#1496 2026-11-22T03:52:14Z INFO auth-svc [t-6863] POST /tokens u-2409 ok 62ms\n#1523 2026-11-22T03:52:26Z INFO auth-svc [t-6883] POST /tokens u-2420 ok 56ms\n#1543 2026-11-22T03:52:38Z INFO auth-svc [t-6904] POST /tokens u-2434 ok 25ms\n#1553 2026-11-22T03:52:43Z INFO auth-svc [t-6906] POST /tokens u-2436 ok 22ms\n#1574 2026-11-22T03:52:51Z INFO auth-svc [t-6921] POST /tokens u-2445 ok 55ms\n#1581 2026-11-22T03:52:55Z INFO auth-svc [t-6925] POST /tokens u-2447 ok 30ms\n#1594 2026-11-22T03:53:03Z INFO auth-svc [t-6935] POST /tokens u-2453 ok 57ms\n#1615 2026-11-22T03:53:13Z INFO auth-svc [t-6950] POST /tokens u-2466 ok 72ms\n#1638 2026-11-22T03:53:24Z INFO auth-svc [t-6970] POST /tokens u-2477 ok 28ms\n#1654 2026-11-22T03:53:30Z INFO auth-svc [t-6980] POST /tokens u-2486 ok 44ms\n#1660 2026-11-22T03:53:34Z INFO auth-svc [t-6985] POST /tokens u-2490 ok 27ms\n#1668 2026-11-22T03:53:37Z INFO auth-svc [t-6988] POST /tokens u-2492 ok 33ms\n#1679 2026-11-22T03:53:42Z INFO auth-svc [t-6993] POST /tokens u-2501 ok 80ms\n#1697 2026-11-22T03:53:52Z INFO auth-svc [t-7004] POST /tokens u-2512 ok 23ms\n#1721 2026-11-22T03:54:02Z INFO auth-svc [t-7018] POST /tokens u-2521 ok 59ms\n#1729 2026-11-22T03:54:07Z INFO auth-svc [t-7026] POST /tokens u-2526 ok 73ms\n#1740 2026-11-22T03:54:11Z INFO auth-svc [t-7032] POST /tokens u-2530 ok 67ms\n#1746 2026-11-22T03:54:15Z INFO auth-svc [t-7035] POST /tokens u-2533 ok 56ms\n#1755 2026-11-22T03:54:19Z INFO auth-svc [t-7040] POST /tokens u-2538 ok 21ms\n#1764 2026-11-22T03:54:22Z INFO auth-svc [t-7051] POST /tokens u-2543 ok 50ms\n#1791 2026-11-22T03:54:35Z INFO auth-svc [t-7062] POST /tokens u-2554 ok 35ms\n#1794 2026-11-22T03:54:38Z INFO auth-svc [t-7064] POST /tokens u-2555 ok 52ms\n#1801 2026-11-22T03:54:40Z INFO auth-svc [t-7067] POST /tokens u-2558 ok 33ms\n#1815 2026-11-22T03:54:48Z INFO auth-svc [t-7075] POST /tokens u-2568 ok 46ms\n#1822 2026-11-22T03:54:51Z INFO auth-svc [t-7080] POST /tokens u-2574 ok 28ms\n#1834 2026-11-22T03:54:58Z INFO auth-svc [t-7083] POST /tokens u-2580 ok 20ms\n#1853 2026-11-22T03:55:08Z INFO auth-svc [t-7089] POST /tokens u-2588 ok 37ms\n#1858 2026-11-22T03:55:13Z INFO auth-svc [t-7093] POST /tokens u-2591 ok 67ms\n#1880 2026-11-22T03:55:25Z INFO auth-svc [t-7108] POST /tokens u-2603 ok 21ms\n#1888 2026-11-22T03:55:29Z INFO auth-svc [t-7111] POST /tokens u-2609 ok 28ms\n#1892 2026-11-22T03:55:31Z INFO auth-svc [t-7114] POST /tokens u-2610 ok 30ms\n#1901 2026-11-22T03:55:36Z INFO auth-svc [t-7117] POST /tokens u-2613 ok 45ms\n#1923 2026-11-22T03:55:48Z INFO auth-svc [t-7128] POST /tokens u-2622 ok 68ms\n#1952 2026-11-22T03:56:04Z INFO auth-svc [t-7138] POST /tokens u-2633 ok 36ms\n#1973 2026-11-22T03:56:17Z INFO auth-svc [t-7149] POST /tokens u-2641 ok 82ms\n#1997 2026-11-22T03:56:31Z INFO auth-svc [t-7158] POST /tokens u-2650 ok 44ms\n#2019 2026-11-22T03:56:43Z INFO auth-svc [t-7172] POST /tokens u-2660 ok 52ms\n#2031 2026-11-22T03:56:51Z INFO auth-svc [t-7178] POST /tokens u-2665 ok 78ms\n#2044 2026-11-22T03:57:01Z INFO auth-svc [t-7185] POST /tokens u-2671 ok 52ms"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 2047,
+          "before": 4,
+          "after": 8
+        },
+        "output": "#2043 2026-11-22T03:57:01Z INFO account-svc [t-7185] user u-2671 accepted, calling auth-svc POST /tokens\n#2044 2026-11-22T03:57:01Z INFO auth-svc [t-7185] POST /tokens u-2671 ok 52ms\n#2045 2026-11-22T03:57:01Z INFO edge-proxy [t-7185] POST /login 200 154ms\n#2046 2026-11-22T03:57:01Z DEBUG auth-svc GC pause 17ms (young), heap 43%\n#2047 2026-11-22T03:57:03Z INFO auth-svc deploy: rolling out auth-svc v4.30.0 (build 207dfed), replacing v4.29.5\n#2048 2026-11-22T03:57:03Z INFO audit-consumer processed batch of 43 messages from audit.events (lag 344ms)\n#2049 2026-11-22T03:57:04Z INFO notification-svc [t-7189] message m-2672 accepted, calling template-svc POST /render\n#2050 2026-11-22T03:57:04Z INFO template-svc [t-7189] POST /render m-2672 ok 24ms\n#2051 2026-11-22T03:57:04Z INFO account-svc [t-7192] user u-2675 accepted, calling auth-svc POST /tokens\n#2052 2026-11-22T03:57:04Z INFO api-gateway [t-7189] POST /v1/notify 200 108ms\n#2053 2026-11-22T03:57:04Z INFO edge-proxy [t-7192] POST /login 200 117ms\n#2054 2026-11-22T03:57:05Z INFO notif-db InnoDB: page cleaner flushed 746 pages, buffer pool hit rate 99.9%\n#2055 2026-11-22T03:57:05Z INFO notif-worker processed batch of 85 messages from notifications.outbound (lag 292ms)"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-7269"
+        },
+        "output": "1 line(s) for t-7269:\n#2200 2026-11-22T03:58:48Z ERROR account-svc [t-7269] schema validation error on auth-svc reply (u-2727): required property 'status' not found"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "since": "2026-11-22T03:57:03Z",
+          "until": "2026-11-22T03:58:50Z",
+          "limit": 15
+        },
+        "output": "13 match(es):\n#2047 2026-11-22T03:57:03Z INFO auth-svc deploy: rolling out auth-svc v4.30.0 (build 207dfed), replacing v4.29.5\n#2059 2026-11-22T03:57:09Z INFO auth-svc [t-7195] POST /tokens u-2677 ok 73ms\n#2064 2026-11-22T03:57:13Z INFO auth-svc [t-7198] POST /tokens u-2678 ok 86ms\n#2081 2026-11-22T03:57:23Z DEBUG auth-svc GC pause 13ms (young), heap 40%\n#2083 2026-11-22T03:57:23Z INFO auth-svc started auth-svc v4.30.0: response serializer v2 enabled\n#2088 2026-11-22T03:57:27Z INFO auth-svc [t-7211] POST /tokens u-2684 ok 78ms\n#2093 2026-11-22T03:57:30Z INFO auth-svc [t-7213] POST /tokens u-2685 ok 86ms\n#2103 2026-11-22T03:57:37Z INFO auth-svc [t-7219] POST /tokens u-2692 ok 23ms\n#2121 2026-11-22T03:57:44Z DEBUG auth-svc GC pause 16ms (young), heap 33%\n#2124 2026-11-22T03:57:48Z INFO auth-svc [t-7230] POST /tokens u-2701 ok 59ms\n#2131 2026-11-22T03:57:52Z INFO auth-svc [t-7236] POST /tokens u-2706 ok 61ms\n#2168 2026-11-22T03:58:19Z DEBUG auth-svc GC pause 9ms (young), heap 30%\n#2175 2026-11-22T03:58:26Z INFO auth-svc [t-7258] POST /tokens u-2720 ok 44ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.9,
+              "evidenceLines": [
+                2047,
+                2083,
+                2200,
+                2231,
+                2330,
+                2346,
+                2185,
+                2262
+              ],
+              "reasoning": "auth-svc was rolled out to v4.30.0 at 03:57:03 (#2047). Its startup line (#2083) shows 'response serializer v2 enabled'. From that point, account-svc fails to decode auth-svc POST /tokens replies because the required 'status' field is missing; the payload only has id, state, updatedAt (#2200, #2231, #2330, #2346). account-svc therefore cannot issue tokens, and edge-proxy returns 502 on POST /login (#2185, #2262), with more 502s after. Before the deploy, auth-svc returned 200 OK responses and logins succeeded (#2044, #2045). The 502s are a symptom of the broken contract; the fault is the serializer change in v4.30.0. Other errors (S3 500s in template-svc, notify 500s, billing invoice checksum errors) are real but do not explain the login path.",
+              "recommendedAction": "Roll back auth-svc to v4.29.5 (or disable the response serializer v2 flag) immediately to restore the 'status' field, then verify POST /login 502 rate drops. Afterwards, fix the v4.30.0 serializer to include 'status' and add a contract test between auth-svc and account-svc. Separately, investigate the template-svc S3 PutObject 500/503 failures and the billing-reconciler invoice_archive checksum violations as unrelated issues."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.1,
+              "evidenceLines": [
+                2086,
+                2169,
+                2296
+              ],
+              "reasoning": "billing-reconciler reports invoice_archive rows violating checksum constraints (partition 2019-Q*). This is a real data problem but it is not on the login path and does not match the timing of the 502s, which start at the auth-svc deploy. Ruled out as the cause of the login failures.",
+              "recommendedAction": "Separately examine invoice_archive checksum failures in the 2019 partitions."
+            }
+          ],
+          "recommendedAction": "Roll back auth-svc from v4.30.0 to v4.29.5 (or turn off response serializer v2) to restore the 'status' field in POST /tokens responses. Then confirm the edge-proxy 502 rate on POST /login drops below threshold. Follow up on the serializer contract and the unrelated template-svc S3 failures and billing checksum errors."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 8,
+    "toolCalls": 13,
+    "usage": {
+      "inputTokens": 18,
+      "outputTokens": 2723,
+      "cacheReadTokens": 86881,
+      "cacheWriteTokens": 20653
+    },
+    "durationMs": 13714,
+    "stopReason": "tool_use"
+  }
+}

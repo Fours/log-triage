@@ -1,0 +1,193 @@
+{
+  "score": {
+    "incidentId": "h-020",
+    "difficulty": "easy",
+    "scenario": "external_outage/provider-5xx",
+    "truth": "external_outage",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.8,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 5,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0030665299999999996,
+    "durationMs": 12374,
+    "iterations": 5,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 12,
+      "output": 2636,
+      "cacheRead": 32008,
+      "cacheWrite": 11418
+    }
+  },
+  "result": {
+    "incidentId": "h-020",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.8,
+          "evidenceLines": [
+            715,
+            739,
+            755,
+            795,
+            985
+          ],
+          "reasoning": "The origin is the third-party geo-IP provider (api.geoip.example). At 17:29:45 enrichment-svc starts getting HTTP 502 Bad Gateway from it (#715), then 502/503 again at #739 and #755. The failures are fast 5xx responses, not timeouts, which points to an upstream outage rather than a hang. enrichment-svc's circuit breaker opened at 17:31:33 with an 89% failure rate (#795), and the half-open probe failed at 17:35:44 (#985), so the breaker keeps re-opening. ingest-api then fails enrich calls with 503 (circuit open) (#876, #967), and ingest-gateway returns POST /v1/events 503s (#748, #888, #970, #1022). Before 17:29:45 there are no geo-IP warnings or errors in enrichment-svc, and the trace for t-3011 shows no preceding slowdown. The analytics-forwarder 429s (#288 onward) are a separate, downstream symptom and don't explain the enrichment failures. Other services show no errors, and geo-cache hit/miss stats are normal (#712, #717)."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.15,
+          "evidenceLines": [
+            748,
+            888,
+            1022
+          ],
+          "reasoning": "Gateway 503s show latencies of 7-21 seconds (#748 21684ms, #888 16680ms, #1022 7067ms), which could suggest a hang in the chain. But the origin errors from enrichment are fast 502s, so a timeout only fits if the provider slowness is hidden in the gateway path. This is a weaker reading than external_outage."
+        }
+      ],
+      "recommendedAction": "Confirm the status of api.geoip.example with the provider and escalate to them. Meanwhile, let ingest-api accept events without geo enrichment (or queue them for later enrichment) while the breaker is open, so the gateway stops returning 503. Once the provider recovers, backfill the unenriched events. Also review the breaker's half-open probe policy so it doesn't keep re-opening, and consider serving geo lookups from geo-cache for known IPs."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "22 match(es):\n#288 2026-10-31T17:23:59Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 359 events (attempt 1/5, then dropped)\n#448 2026-10-31T17:26:06Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 230 events (attempt 2/5, then dropped)\n#509 2026-10-31T17:26:54Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 133 events (attempt 3/5, then dropped)\n#594 2026-10-31T17:28:06Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 57 events (attempt 4/5, then dropped)\n#704 2026-10-31T17:29:35Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 353 events (attempt 5/5, then dropped)\n#715 2026-10-31T17:29:45Z ERROR enrichment-svc [t-3011] geo-IP provider returned 502 Bad Gateway POST https://api.geoip.example/v1/lookup (x-request-id 45c3d1f)\n#739 2026-10-31T17:30:22Z ERROR enrichment-svc [t-3015] geo-IP provider -> HTTP 502 (request 001f18a)\n#748 2026-10-31T17:30:35Z ERROR ingest-gateway [t-3019] POST /v1/events 503 21684ms: upstream ingest-api returned 503 Service Unavailable\n#755 2026-10-31T17:30:41Z ERROR enrichment-svc [t-3020] geo-IP provider returned 502 Service Unavailable POST https://api.geoip.example/v1/lookup (x-request-id 670533a)\n#787 2026-10-31T17:31:20Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 342 events (attempt 1/5, then dropped)\n#795 2026-10-31T17:31:33Z WARN enrichment-svc circuit breaker OPEN for api.geoip.example (failure rate 89% over 20 calls), failing fast for 30s\n#798 2026-10-31T17:31:35Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 370 events (attempt 2/5, then dropped)\n#868 2026-10-31T17:33:12Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 195 events (attempt 3/5, then dropped)\n#876 2026-10-31T17:33:21Z ERROR ingest-api [t-3037] EnrichClient.enrich failed: enrichment-svc returned 503 (circuit open)\n#888 2026-10-31T17:33:35Z ERROR ingest-gateway [t-3040] POST /v1/events 503 16680ms: upstream ingest-api returned 503 Service Unavailable\n#959 2026-10-31T17:35:04Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 386 events (attempt 4/5, then dropped)\n#967 2026-10-31T17:35:17Z ERROR ingest-api [t-3054] EnrichClient.enrich failed: enrichment-svc returned 503 (circuit open)\n#970 2026-10-31T17:35:20Z ERROR ingest-gateway [t-3056] POST /v1/events 503 7453ms: upstream ingest-api returned 503 Service Unavailable\n#985 2026-10-31T17:35:44Z WARN enrichment-svc circuit breaker half-open probe to api.geoip.example failed: 502, re-opening\n#1016 2026-10-31T17:36:30Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 51 events (attempt 5/5, then dropped)\n#1022 2026-10-31T17:36:36Z ERROR ingest-gateway [t-3062] POST /v1/events 503 7067ms: upstream ingest-api returned 503 Service Unavailable\n#1045 2026-10-31T17:37:11Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 79 events (attempt 1/5, then dropped)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "enrichment-svc",
+          "limit": 60
+        },
+        "output": "132 match(es), showing first 60:\n#4 2026-10-31T17:20:02Z INFO enrichment-svc [t-2696] POST /enrich e-8449 ok 57ms\n#10 2026-10-31T17:20:08Z INFO enrichment-svc [t-2698] POST /enrich e-8450 ok 27ms\n#19 2026-10-31T17:20:16Z INFO enrichment-svc [t-2701] POST /enrich e-8455 ok 48ms\n#24 2026-10-31T17:20:19Z DEBUG enrichment-svc GC pause 14ms (young), heap 38%\n#26 2026-10-31T17:20:20Z INFO enrichment-svc [t-2704] POST /enrich e-8458 ok 76ms\n#32 2026-10-31T17:20:26Z INFO enrichment-svc [t-2706] POST /enrich e-8460 ok 35ms\n#47 2026-10-31T17:20:39Z INFO enrichment-svc [t-2717] POST /enrich e-8466 ok 52ms\n#50 2026-10-31T17:20:39Z DEBUG enrichment-svc GC pause 8ms (young), heap 35%\n#65 2026-10-31T17:20:53Z INFO enrichment-svc [t-2729] POST /enrich e-8473 ok 58ms\n#68 2026-10-31T17:20:57Z INFO enrichment-svc [t-2731] POST /enrich e-8474 ok 72ms\n#73 2026-10-31T17:21:00Z INFO enrichment-svc [t-2733] POST /enrich e-8475 ok 90ms\n#77 2026-10-31T17:21:03Z DEBUG enrichment-svc GC pause 24ms (young), heap 30%\n#79 2026-10-31T17:21:03Z INFO enrichment-svc [t-2736] POST /enrich e-8476 ok 27ms\n#83 2026-10-31T17:21:06Z INFO enrichment-svc [t-2737] POST /enrich e-8477 ok 20ms\n#90 2026-10-31T17:21:11Z INFO enrichment-svc [t-2739] POST /enrich e-8480 ok 40ms\n#94 2026-10-31T17:21:14Z INFO enrichment-svc [t-2740] POST /enrich e-8483 ok 48ms\n#98 2026-10-31T17:21:18Z INFO enrichment-svc [t-2742] POST /enrich e-8484 ok 81ms\n#105 2026-10-31T17:21:22Z INFO enrichment-svc [t-2743] POST /enrich e-8486 ok 75ms\n#111 2026-10-31T17:21:26Z DEBUG enrichment-svc GC pause 8ms (young), heap 39%\n#115 2026-10-31T17:21:30Z INFO enrichment-svc [t-2747] POST /enrich e-8488 ok 86ms\n#134 2026-10-31T17:21:48Z DEBUG enrichment-svc GC pause 8ms (young), heap 42%\n#136 2026-10-31T17:21:48Z INFO enrichment-svc [t-2751] POST /enrich e-8492 ok 67ms\n#147 2026-10-31T17:21:57Z INFO enrichment-svc [t-2756] POST /enrich e-8498 ok 58ms\n#152 2026-10-31T17:22:03Z INFO enrichment-svc [t-2757] POST /enrich e-8500 ok 90ms\n#156 2026-10-31T17:22:05Z DEBUG enrichment-svc GC pause 13ms (young), heap 44%\n#169 2026-10-31T17:22:17Z INFO enrichment-svc [t-2762] POST /enrich e-8507 ok 57ms\n#181 2026-10-31T17:22:27Z DEBUG enrichment-svc GC pause 11ms (young), heap 30%\n#192 2026-10-31T17:22:34Z INFO enrichment-svc [t-2773] POST /enrich e-8517 ok 40ms\n#195 2026-10-31T17:22:38Z INFO enrichment-svc [t-2775] POST /enrich e-8518 ok 78ms\n#200 2026-10-31T17:22:42Z DEBUG enrichment-svc GC pause 22ms (young), heap 42%\n#207 2026-10-31T17:22:50Z INFO enrichment-svc [t-2782] POST /enrich e-8522 ok 38ms\n#223 2026-10-31T17:23:06Z DEBUG enrichment-svc GC pause 20ms (young), heap 32%\n#226 2026-10-31T17:23:08Z INFO enrichment-svc [t-2787] POST /enrich e-8527 ok 28ms\n#236 2026-10-31T17:23:15Z INFO enrichment-svc [t-2790] POST /enrich e-8531 ok 41ms\n#240 2026-10-31T17:23:17Z INFO enrichment-svc [t-2791] POST /enrich e-8532 ok 24ms\n#248 2026-10-31T17:23:24Z DEBUG enrichment-svc GC pause 8ms (young), heap 38%\n#253 2026-10-31T17:23:27Z INFO enrichment-svc [t-2797] POST /enrich e-8537 ok 71ms\n#263 2026-10-31T17:23:36Z INFO enrichment-svc [t-2802] POST /enrich e-8541 ok 27ms\n#266 2026-10-31T17:23:40Z DEBUG enrichment-svc GC pause 20ms (young), heap 35%\n#280 2026-10-31T17:23:52Z INFO enrichment-svc [t-2808] POST /enrich e-8546 ok 25ms\n#282 2026-10-31T17:23:54Z DEBUG enrichment-svc GC pause 5ms (young), heap 42%\n#286 2026-10-31T17:23:57Z INFO enrichment-svc [t-2811] POST /enrich e-8547 ok 81ms\n#291 2026-10-31T17:24:00Z INFO enrichment-svc [t-2812] POST /enrich e-8549 ok 80ms\n#299 2026-10-31T17:24:04Z INFO enrichment-svc [t-2813] POST /enrich e-8550 ok 42ms\n#304 2026-10-31T17:24:09Z INFO enrichment-svc [t-2815] POST /enrich e-8551 ok 49ms\n#306 2026-10-31T17:24:09Z DEBUG enrichment-svc GC pause 5ms (young), heap 34%\n#320 2026-10-31T17:24:21Z INFO enrichment-svc [t-2824] POST /enrich e-8557 ok 38ms\n#323 2026-10-31T17:24:24Z DEBUG enrichment-svc GC pause 23ms (young), heap 41%\n#336 2026-10-31T17:24:37Z DEBUG enrichment-svc GC pause 8ms (young), heap 40%\n#350 2026-10-31T17:24:46Z INFO enrichment-svc [t-2840] POST /enrich e-8568 ok 88ms\n#353 2026-10-31T17:24:50Z DEBUG enrichment-svc GC pause 4ms (young), heap 38%\n#369 2026-10-31T17:25:01Z INFO enrichment-svc [t-2847] POST /enrich e-8576 ok 40ms\n#377 2026-10-31T17:25:07Z DEBUG enrichment-svc GC pause 8ms (young), heap 33%\n#391 2026-10-31T17:25:20Z INFO enrichment-svc [t-2858] POST /enrich e-8586 ok 64ms\n#396 2026-10-31T17:25:26Z INFO enrichment-svc [t-2861] POST /enrich e-8588 ok 58ms\n#400 2026-10-31T17:25:26Z DEBUG enrichment-svc GC pause 8ms (young), heap 31%\n#409 2026-10-31T17:25:36Z INFO enrichment-svc [t-2868] POST /enrich e-8592 ok 77ms\n#413 2026-10-31T17:25:40Z DEBUG enrichment-svc GC pause 7ms (young), heap 40%\n#417 2026-10-31T17:25:42Z INFO enrichment-svc [t-2869] POST /enrich e-8594 ok 78ms\n#424 2026-10-31T17:25:48Z INFO enrichment-svc [t-2872] POST /enrich e-8596 ok 41ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "geo",
+          "since": "17:25:00",
+          "until": "17:31:00",
+          "limit": 60
+        },
+        "output": "3 match(es):\n#715 2026-10-31T17:29:45Z ERROR enrichment-svc [t-3011] geo-IP provider returned 502 Bad Gateway POST https://api.geoip.example/v1/lookup (x-request-id 45c3d1f)\n#739 2026-10-31T17:30:22Z ERROR enrichment-svc [t-3015] geo-IP provider -> HTTP 502 (request 001f18a)\n#755 2026-10-31T17:30:41Z ERROR enrichment-svc [t-3020] geo-IP provider returned 502 Service Unavailable POST https://api.geoip.example/v1/lookup (x-request-id 670533a)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 715,
+          "before": 12,
+          "after": 5
+        },
+        "output": "#703 2026-10-31T17:29:34Z INFO ingest-gateway [t-3009] POST /v1/events 200 56ms\n#704 2026-10-31T17:29:35Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 353 events (attempt 5/5, then dropped)\n#705 2026-10-31T17:29:36Z DEBUG enrichment-svc GC pause 7ms (young), heap 35%\n#706 2026-10-31T17:29:36Z INFO ingest-api [t-3010] event e-8705 accepted, calling enrichment-svc POST /enrich\n#707 2026-10-31T17:29:36Z INFO ingest-gateway [t-3010] POST /v1/events 200 76ms\n#708 2026-10-31T17:29:38Z INFO event-processor processed batch of 38 messages from events.raw (lag 112ms)\n#709 2026-10-31T17:29:38Z INFO analytics-forwarder forwarded 907 events to analytics-ingest\n#710 2026-10-31T17:29:39Z INFO flag-sync synced 124 feature flags from flag service (etag 5a2398b)\n#711 2026-10-31T17:29:40Z INFO events-db InnoDB: page cleaner flushed 463 pages, buffer pool hit rate 99.6%\n#712 2026-10-31T17:29:41Z INFO geo-cache stats: hits=13318 misses=818 evicted=0 connected_clients=40\n#713 2026-10-31T17:29:44Z INFO event-processor processed batch of 120 messages from events.raw (lag 327ms)\n#714 2026-10-31T17:29:45Z DEBUG ingest-api GC pause 25ms (young), heap 47%\n#715 2026-10-31T17:29:45Z ERROR enrichment-svc [t-3011] geo-IP provider returned 502 Bad Gateway POST https://api.geoip.example/v1/lookup (x-request-id 45c3d1f)\n#716 2026-10-31T17:29:49Z INFO event-processor processed batch of 46 messages from events.raw (lag 389ms)\n#717 2026-10-31T17:29:50Z INFO geo-cache stats: hits=13320 misses=716 evicted=0 connected_clients=31\n#718 2026-10-31T17:29:51Z INFO analytics-forwarder forwarded 1795 events to analytics-ingest\n#719 2026-10-31T17:29:53Z INFO ingest-api [t-3012] event e-8708 accepted, calling enrichment-svc POST /enrich\n#720 2026-10-31T17:29:53Z INFO ingest-gateway [t-3012] POST /v1/events 200 80ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "provider",
+          "limit": 40
+        },
+        "output": "3 match(es):\n#715 2026-10-31T17:29:45Z ERROR enrichment-svc [t-3011] geo-IP provider returned 502 Bad Gateway POST https://api.geoip.example/v1/lookup (x-request-id 45c3d1f)\n#739 2026-10-31T17:30:22Z ERROR enrichment-svc [t-3015] geo-IP provider -> HTTP 502 (request 001f18a)\n#755 2026-10-31T17:30:41Z ERROR enrichment-svc [t-3020] geo-IP provider returned 502 Service Unavailable POST https://api.geoip.example/v1/lookup (x-request-id 670533a)"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-3011"
+        },
+        "output": "1 line(s) for t-3011:\n#715 2026-10-31T17:29:45Z ERROR enrichment-svc [t-3011] geo-IP provider returned 502 Bad Gateway POST https://api.geoip.example/v1/lookup (x-request-id 45c3d1f)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.8,
+              "evidenceLines": [
+                715,
+                739,
+                755,
+                795,
+                985
+              ],
+              "reasoning": "The origin is the third-party geo-IP provider (api.geoip.example). At 17:29:45 enrichment-svc starts getting HTTP 502 Bad Gateway from it (#715), then 502/503 again at #739 and #755. The failures are fast 5xx responses, not timeouts, which points to an upstream outage rather than a hang. enrichment-svc's circuit breaker opened at 17:31:33 with an 89% failure rate (#795), and the half-open probe failed at 17:35:44 (#985), so the breaker keeps re-opening. ingest-api then fails enrich calls with 503 (circuit open) (#876, #967), and ingest-gateway returns POST /v1/events 503s (#748, #888, #970, #1022). Before 17:29:45 there are no geo-IP warnings or errors in enrichment-svc, and the trace for t-3011 shows no preceding slowdown. The analytics-forwarder 429s (#288 onward) are a separate, downstream symptom and don't explain the enrichment failures. Other services show no errors, and geo-cache hit/miss stats are normal (#712, #717).",
+              "recommendedAction": "Confirm the status of api.geoip.example with the provider and escalate to them. Meanwhile, consider degrading gracefully: let ingest-api accept events without geo enrichment (or queue them for later enrichment) while the breaker is open, so the gateway stops returning 503. Once the provider recovers, backfill the unenriched events. Also review the breaker's half-open probe policy so it doesn't keep re-opening, and consider serving geo lookups from geo-cache for known IPs."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.15,
+              "evidenceLines": [
+                748,
+                888,
+                1022
+              ],
+              "reasoning": "Gateway 503s show latencies of 7-21 seconds (#748 21684ms, #888 16680ms, #1022 7067ms), which could suggest a hang in the chain. But the origin errors from enrichment are fast 502s, so a timeout only fits if the provider slowness is hidden in the gateway path. This is a weaker reading than external_outage."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.8,
+              "evidenceLines": [
+                715,
+                739,
+                755,
+                795,
+                985
+              ],
+              "reasoning": "The origin is the third-party geo-IP provider (api.geoip.example). At 17:29:45 enrichment-svc starts getting HTTP 502 Bad Gateway from it (#715), then 502/503 again at #739 and #755. The failures are fast 5xx responses, not timeouts, which points to an upstream outage rather than a hang. enrichment-svc's circuit breaker opened at 17:31:33 with an 89% failure rate (#795), and the half-open probe failed at 17:35:44 (#985), so the breaker keeps re-opening. ingest-api then fails enrich calls with 503 (circuit open) (#876, #967), and ingest-gateway returns POST /v1/events 503s (#748, #888, #970, #1022). Before 17:29:45 there are no geo-IP warnings or errors in enrichment-svc, and the trace for t-3011 shows no preceding slowdown. The analytics-forwarder 429s (#288 onward) are a separate, downstream symptom and don't explain the enrichment failures. Other services show no errors, and geo-cache hit/miss stats are normal (#712, #717).",
+              "recommendedAction": "Confirm the status of api.geoip.example with the provider and escalate to them. Meanwhile, consider degrading gracefully: let ingest-api accept events without geo enrichment (or queue them for later enrichment) while the breaker is open, so the gateway stops returning 503. Once the provider recovers, backfill the unenriched events. Also review the breaker's half-open probe policy so it doesn't keep re-opening, and consider serving geo lookups from geo-cache for known IPs."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.15,
+              "evidenceLines": [
+                748,
+                888,
+                1022
+              ],
+              "reasoning": "Gateway 503s show latencies of 7-21 seconds (#748 21684ms, #888 16680ms, #1022 7067ms), which could suggest a hang in the chain. But the origin errors from enrichment are fast 502s, so a timeout only fits if the provider slowness is hidden in the gateway path. This is a weaker reading than external_outage."
+            }
+          ],
+          "recommendedAction": "Confirm the status of api.geoip.example with the provider and escalate to them. Meanwhile, let ingest-api accept events without geo enrichment (or queue them for later enrichment) while the breaker is open, so the gateway stops returning 503. Once the provider recovers, backfill the unenriched events. Also review the breaker's half-open probe policy so it doesn't keep re-opening, and consider serving geo lookups from geo-cache for known IPs."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 2636,
+      "cacheReadTokens": 32008,
+      "cacheWriteTokens": 11418
+    },
+    "durationMs": 12374,
+    "stopReason": "tool_use"
+  }
+}

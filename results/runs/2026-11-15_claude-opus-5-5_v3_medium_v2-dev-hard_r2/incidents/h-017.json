@@ -1,0 +1,152 @@
+{
+  "score": {
+    "incidentId": "h-017",
+    "difficulty": "hard",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 6,
+      "precision": 0.8571428571428571,
+      "recall": 0.6,
+      "f1": 0.7058823529411764
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.09752939999999999,
+    "durationMs": 18192,
+    "iterations": 5,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 12,
+      "output": 1367,
+      "cacheRead": 35357,
+      "cacheWrite": 12614
+    }
+  },
+  "result": {
+    "incidentId": "h-017",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.85,
+          "evidenceLines": [
+            3114,
+            3197,
+            3371,
+            3500,
+            3612,
+            3364,
+            3347
+          ],
+          "reasoning": "auth-svc was healthy (POST /tokens ok, 20-90ms) until a routine rolling deploy of v4.3.0 drained auth-svc-1, dropping capacity to 3/4 at 11:09:02 (#3114). That small capacity dip caused the first 503s, and account-svc's AuthClient retries them right away with backoff and jitter turned off, up to 4 attempts (#3197, #3371, #3500, #3612). This multiplied the load on auth-svc to 3.2-5x baseline with about 700 requests in flight (#3364, #3590, #3735). auth-svc then shed load with 503 queue-full (#3347), which caused more retries. That loop kept going after auth-svc-1 was back and capacity was 4/4 again at 11:09:40 (#3212), so the 503s are not recovering. edge-proxy's POST /login 503s ('upstream account-svc returned 503, retries exhausted') are the downstream symptom."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.1,
+          "evidenceLines": [
+            3094,
+            3114,
+            3212
+          ],
+          "reasoning": "The auth-svc v4.3.0 rollout came just before the onset. But the new instance reported ready, the auth-svc errors are load-shedding because of request volume rather than code faults, and successful token issuance continued. So the deploy looks like the trigger rather than a faulty release."
+        }
+      ],
+      "recommendedAction": "Stop the retry storm. Turn on exponential backoff with jitter and a retry budget, or a circuit breaker, in account-svc's AuthClient. As a short-term fix, cut its retries to 1, or rate-limit or scale out auth-svc temporarily so the inflight queue can drain. Pause the rest of the auth-svc v4.3.0 rollout until things are stable. The other errors look unrelated and can be handled separately: report-cron's missing pandas, the event-processor poison message msg-992570, and metrics-agent exporter drops."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "78 match(es), showing first 60:\n#1154 2026-10-23T11:00:49Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1285 samples\n#1385 2026-10-23T11:01:47Z WARN edge-proxy disk usage 83% on /var/log (threshold 75%)\n#1393 2026-10-23T11:01:48Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2107 samples\n#1619 2026-10-23T11:02:44Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2315 samples\n#1779 2026-10-23T11:03:25Z WARN account-svc heap usage 86% of 1024MiB (threshold 80%), starting concurrent mark cycle\n#1866 2026-10-23T11:03:47Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2064 samples\n#2246 2026-10-23T11:05:25Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1598 samples\n#2496 2026-10-23T11:06:26Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1682 samples\n#2577 2026-10-23T11:06:48Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 597 samples\n#2847 2026-10-23T11:07:54Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1201 samples\n#2963 2026-10-23T11:08:23Z WARN accounts-db slow query 1852ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#3174 2026-10-23T11:09:25Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3179 2026-10-23T11:09:28Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2264 samples\n#3181 2026-10-23T11:09:29Z WARN audit-consumer GC pause 720ms (G1 Old Gen), heap 66% after collection\n#3197 2026-10-23T11:09:33Z WARN account-svc [t-9660] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#3271 2026-10-23T11:10:00Z ERROR edge-proxy [t-9709] POST /login 503 5147ms: upstream account-svc returned 503 (retries exhausted)\n#3272 2026-10-23T11:10:00Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 890 samples\n#3303 2026-10-23T11:10:08Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3326 2026-10-23T11:10:19Z ERROR edge-proxy [t-9740] POST /login 503 25008ms: upstream account-svc returned 503 (retries exhausted)\n#3347 2026-10-23T11:10:26Z ERROR auth-svc [t-9753] load shed: rejected POST /tokens with 503 (queue full)\n#3364 2026-10-23T11:10:33Z WARN auth-svc inbound request rate 3.2x baseline (inflight 732), shedding load with 503\n#3371 2026-10-23T11:10:36Z WARN account-svc [t-9766] retry 3/4 for POST /tokens after 503 from auth-svc (delay 0ms)\n#3411 2026-10-23T11:10:51Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3456 2026-10-23T11:11:05Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3473 2026-10-23T11:11:13Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1915 samples\n#3500 2026-10-23T11:11:24Z WARN account-svc [t-9835] auth-svc unavailable (503), re-sending at once: attempt 4 of 4, no backoff policy\n#3501 2026-10-23T11:11:24Z ERROR edge-proxy [t-9837] POST /login 503 26349ms: upstream account-svc returned 503 (retries exhausted)\n#3532 2026-10-23T11:11:36Z ERROR auth-svc [t-9853] load shed: rejected POST /tokens with 503 (queue full)\n#3561 2026-10-23T11:11:51Z ERROR edge-proxy [t-9870] POST /login 503 21832ms: upstream account-svc returned 503 (retries exhausted)\n#3584 2026-10-23T11:12:01Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3590 2026-10-23T11:12:04Z WARN auth-svc admission control: 685 requests in flight (4.1x normal), rejecting new work\n#3612 2026-10-23T11:12:13Z WARN account-svc [t-9898] RetryPolicy(auth-svc): immediate retry #2, max 4, jitter and backoff off\n#3623 2026-10-23T11:12:19Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3639 2026-10-23T11:12:24Z ERROR event-processor SyntaxError: Unexpected token \\u0000 in JSON at position 1939 (message msg-992570, events.raw[10]@564401)\n#3652 2026-10-23T11:12:28Z ERROR auth-svc [t-9919] load shed: rejected POST /tokens with 503 (queue full)\n#3656 2026-10-23T11:12:29Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2030 samples\n#3697 2026-10-23T11:12:45Z ERROR edge-proxy [t-9936] POST /login 503 12961ms: upstream account-svc returned 503 (retries exhausted)\n#3719 2026-10-23T11:12:55Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3720 2026-10-23T11:12:57Z ERROR event-processor handler error for msg-992570 at offset 564401: invalid JSON payload (byte 1939 is NUL)\n#3735 2026-10-23T11:13:04Z WARN auth-svc overloaded: request rate at 5.0 times baseline, 718 inflight, returning 503 to callers\n#3797 2026-10-23T11:13:26Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 490 samples\n#3809 2026-10-23T11:13:33Z WARN event-processor consumer lag on events.raw partition 10: 1021 messages behind (75s)\n#3810 2026-10-23T11:13:33Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3813 2026-10-23T11:13:34Z ERROR auth-svc [t-9990] load shed: rejected POST /tokens with 503 (queue full)\n#3819 2026-10-23T11:13:37Z ERROR edge-proxy [t-9996] POST /login 503 19629ms: upstream account-svc returned 503 (retries exhausted)\n#3885 2026-10-23T11:14:06Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2059 samples\n#3891 2026-10-23T11:14:08Z WARN event-processor consumer lag on events.raw partition 10: 2128 messages behind (112s)\n#3894 2026-10-23T11:14:08Z ERROR auth-svc [t-10031] load shed: rejected POST /tokens with 503 (queue full)\n#3924 2026-10-23T11:14:21Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3925 2026-10-23T11:14:21Z ERROR edge-proxy [t-10047] POST /login 503 28477ms: upstream account-svc returned 503 (retries exhausted)\n#3947 2026-10-23T11:14:34Z ERROR edge-proxy [t-10060] POST /login 503 21622ms: upstream account-svc returned 503 (retries exhausted)\n#3998 2026-10-23T11:14:56Z WARN event-processor consumer lag on events.raw partition 10: 3918 messages behind (183s)\n#4005 2026-10-23T11:14:59Z ERROR event-processor failed to process msg-992570 (partition 10, offset 564401): JSON parse error: unexpected token '\\u0000' at position 1939\n#4016 2026-10-23T11:15:03Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4022 2026-10-23T11:15:07Z ERROR ingest-api [t-10092] event e-6698 timed out waiting for downstream confirmation (120s), marked failed\n#4035 2026-10-23T11:15:12Z ERROR auth-svc [t-10101] load shed: rejected POST /tokens with 503 (queue full)\n#4059 2026-10-23T11:15:22Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4066 2026-10-23T11:15:23Z ERROR edge-proxy [t-10122] POST /login 503 12605ms: upstream account-svc returned 503 (retries exhausted)\n#4073 2026-10-23T11:15:26Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2283 samples\n#4089 2026-10-23T11:15:32Z WARN event-processor consumer lag on events.raw partition 10: 2716 messages behind (248s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "since": "11:07:00",
+          "until": "11:10:00",
+          "limit": 60
+        },
+        "output": "75 match(es), showing first 60:\n#2627 2026-10-23T11:07:01Z INFO auth-svc [t-9281] POST /tokens u-6089 ok 62ms\n#2630 2026-10-23T11:07:01Z INFO auth-svc [t-9285] POST /tokens u-6092 ok 39ms\n#2637 2026-10-23T11:07:02Z INFO auth-svc [t-9292] POST /tokens u-6095 ok 30ms\n#2642 2026-10-23T11:07:03Z INFO auth-svc [t-9295] POST /tokens u-6097 ok 60ms\n#2647 2026-10-23T11:07:05Z INFO auth-svc [t-9297] POST /tokens u-6100 ok 74ms\n#2656 2026-10-23T11:07:07Z DEBUG auth-svc GC pause 23ms (young), heap 32%\n#2659 2026-10-23T11:07:08Z INFO auth-svc [t-9305] POST /tokens u-6107 ok 88ms\n#2670 2026-10-23T11:07:11Z INFO auth-svc [t-9311] POST /tokens u-6114 ok 53ms\n#2679 2026-10-23T11:07:13Z INFO auth-svc [t-9317] POST /tokens u-6120 ok 78ms\n#2689 2026-10-23T11:07:15Z INFO auth-svc [t-9327] POST /tokens u-6126 ok 69ms\n#2694 2026-10-23T11:07:17Z INFO auth-svc [t-9331] POST /tokens u-6127 ok 58ms\n#2706 2026-10-23T11:07:20Z INFO auth-svc [t-9340] POST /tokens u-6132 ok 55ms\n#2712 2026-10-23T11:07:22Z INFO auth-svc [t-9345] POST /tokens u-6136 ok 25ms\n#2719 2026-10-23T11:07:23Z INFO auth-svc [t-9347] POST /tokens u-6137 ok 72ms\n#2725 2026-10-23T11:07:25Z DEBUG auth-svc GC pause 15ms (young), heap 28%\n#2733 2026-10-23T11:07:27Z INFO auth-svc [t-9353] POST /tokens u-6142 ok 84ms\n#2743 2026-10-23T11:07:30Z INFO auth-svc [t-9364] POST /tokens u-6149 ok 76ms\n#2749 2026-10-23T11:07:32Z INFO auth-svc [t-9365] POST /tokens u-6151 ok 32ms\n#2753 2026-10-23T11:07:32Z INFO auth-svc [t-9369] POST /tokens u-6152 ok 20ms\n#2761 2026-10-23T11:07:34Z INFO auth-svc [t-9376] POST /tokens u-6156 ok 66ms\n#2765 2026-10-23T11:07:35Z INFO auth-svc [t-9378] POST /tokens u-6158 ok 75ms\n#2770 2026-10-23T11:07:37Z INFO auth-svc [t-9380] POST /tokens u-6160 ok 72ms\n#2773 2026-10-23T11:07:37Z DEBUG auth-svc GC pause 4ms (young), heap 39%\n#2783 2026-10-23T11:07:40Z INFO auth-svc [t-9389] POST /tokens u-6168 ok 76ms\n#2787 2026-10-23T11:07:41Z INFO auth-svc [t-9392] POST /tokens u-6170 ok 86ms\n#2798 2026-10-23T11:07:43Z INFO auth-svc [t-9399] POST /tokens u-6175 ok 80ms\n#2802 2026-10-23T11:07:44Z INFO auth-svc [t-9400] POST /tokens u-6177 ok 80ms\n#2808 2026-10-23T11:07:45Z INFO auth-svc [t-9404] POST /tokens u-6179 ok 84ms\n#2814 2026-10-23T11:07:46Z INFO auth-svc [t-9405] POST /tokens u-6181 ok 78ms\n#2827 2026-10-23T11:07:50Z INFO auth-svc [t-9415] POST /tokens u-6188 ok 60ms\n#2839 2026-10-23T11:07:52Z INFO auth-svc [t-9423] POST /tokens u-6195 ok 69ms\n#2849 2026-10-23T11:07:55Z INFO auth-svc [t-9431] POST /tokens u-6198 ok 34ms\n#2857 2026-10-23T11:07:56Z DEBUG auth-svc GC pause 18ms (young), heap 38%\n#2866 2026-10-23T11:08:00Z INFO auth-svc [t-9442] POST /tokens u-6208 ok 62ms\n#2873 2026-10-23T11:08:01Z INFO auth-svc [t-9444] POST /tokens u-6211 ok 86ms\n#2882 2026-10-23T11:08:03Z INFO auth-svc [t-9451] POST /tokens u-6214 ok 24ms\n#2897 2026-10-23T11:08:07Z INFO auth-svc [t-9460] POST /tokens u-6220 ok 32ms\n#2903 2026-10-23T11:08:08Z INFO auth-svc [t-9462] POST /tokens u-6226 ok 89ms\n#2904 2026-10-23T11:08:08Z DEBUG auth-svc GC pause 24ms (young), heap 37%\n#2911 2026-10-23T11:08:10Z INFO auth-svc [t-9468] POST /tokens u-6229 ok 37ms\n#2918 2026-10-23T11:08:11Z INFO auth-svc [t-9473] POST /tokens u-6234 ok 49ms\n#2943 2026-10-23T11:08:17Z DEBUG auth-svc GC pause 17ms (young), heap 39%\n#2954 2026-10-23T11:08:21Z INFO auth-svc [t-9495] POST /tokens u-6256 ok 44ms\n#2978 2026-10-23T11:08:28Z INFO auth-svc [t-9517] POST /tokens u-6272 ok 83ms\n#2995 2026-10-23T11:08:31Z DEBUG auth-svc GC pause 16ms (young), heap 32%\n#2998 2026-10-23T11:08:31Z INFO auth-svc [t-9522] POST /tokens u-6276 ok 20ms\n#3004 2026-10-23T11:08:33Z INFO auth-svc [t-9526] POST /tokens u-6279 ok 36ms\n#3010 2026-10-23T11:08:35Z INFO auth-svc [t-9533] POST /tokens u-6283 ok 61ms\n#3015 2026-10-23T11:08:36Z INFO auth-svc [t-9536] POST /tokens u-6284 ok 28ms\n#3032 2026-10-23T11:08:41Z INFO auth-svc [t-9553] POST /tokens u-6297 ok 90ms\n#3035 2026-10-23T11:08:42Z INFO auth-svc [t-9555] POST /tokens u-6299 ok 25ms\n#3040 2026-10-23T11:08:43Z DEBUG auth-svc GC pause 6ms (young), heap 30%\n#3055 2026-10-23T11:08:47Z INFO auth-svc [t-9572] POST /tokens u-6311 ok 77ms\n#3065 2026-10-23T11:08:49Z INFO auth-svc [t-9578] POST /tokens u-6317 ok 68ms\n#3071 2026-10-23T11:08:50Z INFO auth-svc [t-9585] POST /tokens u-6322 ok 89ms\n#3080 2026-10-23T11:08:53Z INFO auth-svc [t-9595] POST /tokens u-6328 ok 71ms\n#3084 2026-10-23T11:08:54Z INFO auth-svc [t-9598] POST /tokens u-6330 ok 56ms\n#3092 2026-10-23T11:08:56Z INFO auth-svc [t-9606] POST /tokens u-6335 ok 21ms\n#3094 2026-10-23T11:08:57Z INFO auth-svc deploy: rolling out auth-svc v4.3.0 (build f6374c2), 1 of 4 instances at a time\n#3098 2026-10-23T11:08:57Z INFO auth-svc [t-9607] POST /tokens u-6338 ok 90ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "since": "11:08:57",
+          "until": "11:10:30",
+          "limit": 40
+        },
+        "output": "24 match(es):\n#3094 2026-10-23T11:08:57Z INFO auth-svc deploy: rolling out auth-svc v4.3.0 (build f6374c2), 1 of 4 instances at a time\n#3098 2026-10-23T11:08:57Z INFO auth-svc [t-9607] POST /tokens u-6338 ok 90ms\n#3100 2026-10-23T11:08:58Z DEBUG auth-svc GC pause 25ms (young), heap 33%\n#3114 2026-10-23T11:09:02Z INFO auth-svc instance auth-svc-1 draining for rollout, capacity 3/4\n#3126 2026-10-23T11:09:05Z INFO auth-svc [t-9626] POST /tokens u-6353 ok 54ms\n#3144 2026-10-23T11:09:13Z DEBUG auth-svc GC pause 25ms (young), heap 41%\n#3154 2026-10-23T11:09:17Z INFO auth-svc [t-9647] POST /tokens u-6365 ok 60ms\n#3183 2026-10-23T11:09:30Z DEBUG auth-svc GC pause 6ms (young), heap 31%\n#3204 2026-10-23T11:09:37Z INFO auth-svc [t-9665] POST /tokens u-6379 ok 66ms\n#3212 2026-10-23T11:09:40Z INFO auth-svc instance auth-svc-1 ready, capacity 4/4\n#3219 2026-10-23T11:09:42Z INFO auth-svc [t-9671] POST /tokens u-6386 ok 25ms\n#3225 2026-10-23T11:09:44Z INFO auth-svc [t-9675] POST /tokens u-6391 ok 47ms\n#3231 2026-10-23T11:09:45Z INFO auth-svc [t-9679] POST /tokens u-6392 ok 28ms\n#3235 2026-10-23T11:09:46Z DEBUG auth-svc GC pause 7ms (young), heap 36%\n#3245 2026-10-23T11:09:52Z INFO auth-svc [t-9689] POST /tokens u-6397 ok 72ms\n#3259 2026-10-23T11:09:56Z DEBUG auth-svc GC pause 7ms (young), heap 37%\n#3267 2026-10-23T11:09:59Z INFO auth-svc [t-9707] POST /tokens u-6404 ok 28ms\n#3278 2026-10-23T11:10:02Z INFO auth-svc [t-9712] POST /tokens u-6407 ok 29ms\n#3293 2026-10-23T11:10:06Z INFO auth-svc [t-9724] POST /tokens u-6418 ok 58ms\n#3298 2026-10-23T11:10:06Z DEBUG auth-svc GC pause 12ms (young), heap 40%\n#3318 2026-10-23T11:10:15Z INFO auth-svc [t-9736] POST /tokens u-6423 ok 43ms\n#3322 2026-10-23T11:10:16Z DEBUG auth-svc GC pause 6ms (young), heap 43%\n#3328 2026-10-23T11:10:19Z INFO auth-svc [t-9743] POST /tokens u-6427 ok 46ms\n#3347 2026-10-23T11:10:26Z ERROR auth-svc [t-9753] load shed: rejected POST /tokens with 503 (queue full)"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-9660"
+        },
+        "output": "1 line(s) for t-9660:\n#3197 2026-10-23T11:09:33Z WARN account-svc [t-9660] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.85,
+              "evidenceLines": [
+                3114,
+                3197,
+                3371,
+                3500,
+                3612,
+                3364,
+                3347
+              ],
+              "reasoning": "auth-svc was healthy (POST /tokens ok, 20-90ms) until a routine rolling deploy of v4.3.0 drained auth-svc-1, dropping capacity to 3/4 at 11:09:02 (#3114). That small capacity dip caused the first 503s, and account-svc's AuthClient retries them right away with backoff and jitter turned off, up to 4 attempts (#3197, #3371, #3500, #3612). This multiplied the load on auth-svc to 3.2-5x baseline with about 700 requests in flight (#3364, #3590, #3735). auth-svc then shed load with 503 queue-full (#3347), which caused more retries. That loop kept going after auth-svc-1 was back and capacity was 4/4 again at 11:09:40 (#3212), so the 503s are not recovering. edge-proxy's POST /login 503s ('upstream account-svc returned 503, retries exhausted') are the downstream symptom."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.1,
+              "evidenceLines": [
+                3094,
+                3114,
+                3212
+              ],
+              "reasoning": "The auth-svc v4.3.0 rollout came just before the onset. But the new instance reported ready, the auth-svc errors are load-shedding because of request volume rather than code faults, and successful token issuance continued. So the deploy looks like the trigger rather than a faulty release."
+            }
+          ],
+          "recommendedAction": "Stop the retry storm. Turn on exponential backoff with jitter and a retry budget, or a circuit breaker, in account-svc's AuthClient. As a short-term fix, cut its retries to 1, or rate-limit or scale out auth-svc temporarily so the inflight queue can drain. Pause the rest of the auth-svc v4.3.0 rollout until things are stable. The other errors look unrelated and can be handled separately: report-cron's missing pandas, the event-processor poison message msg-992570, and metrics-agent exporter drops."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 1367,
+      "cacheReadTokens": 35357,
+      "cacheWriteTokens": 12614
+    },
+    "durationMs": 18192,
+    "stopReason": "tool_use"
+  }
+}

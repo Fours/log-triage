@@ -1,6 +1,7 @@
 import type { RootCauseCategory } from "../types.js";
 import { cite, type LineRef } from "./builder.js";
-import { byDifficulty, type Ctx } from "./context.js";
+import type { Ctx } from "./context.js";
+import { DECOY_PLAN } from "./hardness.js";
 import { spread, type Rng } from "./rng.js";
 
 /**
@@ -13,6 +14,12 @@ import { spread, type Rng } from "./rng.js";
  * Each decoy speaks its category's usual vocabulary ("at capacity", "parse
  * error", "retrying", a deploy), so it reads like that category to anyone
  * matching on keywords.
+ *
+ * T6 adds *timed* decoys (medium and hard, per DECOY_PLAN): the same floods,
+ * but starting just after the fault's first cause line, so "it started with
+ * the incident" no longer rules them out. Their fair clue is the path: no
+ * failing request's trace ever passes through the decoy's service, and the
+ * fault's first signs come before it.
  *
  * Every v2 incident also gets one healthy auxiliary service, so an extra
  * service isn't a giveaway, and the services list is shuffled. All randomness
@@ -42,7 +49,7 @@ export const DECOYS: readonly Decoy[] = [
     service: "status-poller",
     error: () => `healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)`,
     routine: (r) => `poll cycle complete: ${r.int(18, 40)} targets checked in ${r.int(300, 900)}ms`,
-    why: "a health check still polling a deprecated endpoint, failing the same way long before the incident",
+    why: "a health check still polling a deprecated endpoint, which no request depends on",
   },
   {
     key: "metrics-buffer-full",
@@ -106,6 +113,8 @@ export interface PlantedDecoys {
   /** Auxiliary services added to the incident: the decoys plus one healthy one. */
   services: string[];
   decoyServices: string[];
+  /** The decoys whose flood starts with the fault. */
+  timedDecoyServices: string[];
   refs: LineRef[];
   note: () => string;
 }
@@ -116,35 +125,52 @@ export interface PlantedDecoys {
  */
 export function plantDecoys(c: Ctx, rootCause: RootCauseCategory, confusableWith: RootCauseCategory[], pathErrors: number): PlantedDecoys {
   const r = c.hard.rng;
-  const count = byDifficulty(c, 1, 1, 2);
+  const plan = DECOY_PLAN[c.difficulty];
+  const count = plan.chronic + plan.timed;
   const pool = r.shuffle(DECOYS.filter((d) => d.mimics !== rootCause));
   pool.sort((a, b) => Number(confusableWith.includes(b.mimics)) - Number(confusableWith.includes(a.mimics)));
   const chosen = pool.slice(0, count);
   // The healthy one borrows a decoy's name and routine, so no service name is always a decoy.
   const healthy = pool[count];
 
+  // When the fault shows itself: its first cause line, and its first loud line (cause or symptom).
+  const firstCause = c.b.earliest((d) => d.role === "cause") ?? c.onset;
+  const firstLoud = c.b.earliest((d) => (d.role === "cause" || d.role === "symptom") && (d.level === "ERROR" || d.level === "FATAL")) ?? c.onset;
+  // Timed: after the first cause line (never more than a minute before onset), ahead of the loud part where possible.
+  const timedStart = () => {
+    const lo = Math.max(firstCause, c.onset - 60) + 5;
+    const hi = Math.max(lo + 20, firstLoud);
+    return r.float(lo, lo + (hi - lo) * 0.6);
+  };
+
   const routine = (d: Decoy) => {
     for (let at = r.float(0, 120 / c.hard.volume); at < c.end; at += r.float(60 / c.hard.volume, 150 / c.hard.volume)) c.b.log(at, d.service, "INFO", d.routine(r));
   };
 
-  const applied = chosen.map((d) => {
+  // Highest-priority (most confusable) decoys are the timed ones: they are the stronger bait.
+  const applied = chosen.map((d, i) => {
+    const timed = i < plan.timed;
     routine(d);
-    const start = c.end * r.float(0.1, 0.3);
+    const start = timed ? timedStart() : c.end * r.float(0.1, 0.3);
     const n = pathErrors + r.int(3, 8);
-    const refs = spread(r, start, c.end, n).map((at, i) => c.b.log(at, d.service, "ERROR", d.error(r, i), { role: "herring" }));
-    return { d, refs };
+    const refs = spread(r, start, c.end, n).map((at, k) => c.b.log(at, d.service, "ERROR", d.error(r, k), { role: "herring" }));
+    return { d, refs, timed };
   });
   routine(healthy);
 
   return {
     services: [...chosen.map((d) => d.service), healthy.service],
     decoyServices: chosen.map((d) => d.service),
+    timedDecoyServices: applied.filter((a) => a.timed).map((a) => a.d.service),
     refs: applied.flatMap((a) => a.refs),
     note: () =>
       applied
-        .map(({ d, refs }) => {
+        .map(({ d, refs, timed }) => {
           const first = [...refs].sort((x, y) => x.n - y.n).slice(0, 3);
-          return ` Loud decoy: ${d.service} logs a chronic error (${cite(first)} and ${refs.length - first.length} more, starting before onset), ${d.why}.`;
+          const when = timed
+            ? "starting just after the fault began, but no failing request passes through it"
+            : "starting before onset";
+          return ` Loud decoy: ${d.service} logs a ${timed ? "flood of errors" : "chronic error"} (${cite(first)} and ${refs.length - first.length} more, ${when}), ${d.why}.`;
         })
         .join(""),
   };

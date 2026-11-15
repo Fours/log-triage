@@ -1,0 +1,267 @@
+{
+  "score": {
+    "incidentId": "h-017",
+    "difficulty": "hard",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [
+      "bad_deploy"
+    ],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.8,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 7,
+      "precision": 0.875,
+      "recall": 0.7,
+      "f1": 0.7777777777777777
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.006223485000000001,
+    "durationMs": 21894,
+    "iterations": 9,
+    "toolCalls": 15,
+    "tokens": {
+      "input": 20,
+      "output": 4516,
+      "cacheRead": 109911,
+      "cacheWrite": 22915
+    }
+  },
+  "result": {
+    "incidentId": "h-017",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.8,
+          "evidenceLines": [
+            3126,
+            3304,
+            3443,
+            3587,
+            3278,
+            3294,
+            3557,
+            3714
+          ],
+          "reasoning": "The 503s on POST /login come from account-svc's calls to auth-svc POST /tokens. Auth-svc was healthy (ok ~20-80ms) until about 11:09:30. Then it began returning 503s and load-shedding ('queue full'), and its inbound rate reached 3.2x-5x baseline with 700+ requests in flight. Account-svc's AuthClient retry policy has backoff and jitter disabled: it retries 503s immediately, up to 4 attempts (#3126, #3304, #3443, #3587). Each failed login therefore sends several more requests to auth-svc at once. That amplification keeps auth-svc saturated, so it never recovers, and edge-proxy surfaces the exhausted retries as 503s (#3208 onward). The trigger is a load spike on auth-svc whose exact source I could not pin down. The amplifier is the immediate-retry policy with no backoff. Report-cron (missing pandas module since image 2026.10.2, #1068) and status-poller (timeouts to deprecated legacy-inventory, #908) are real errors but unrelated: they do not touch the login path. Accounts-db and session-cache are healthy."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.35,
+          "evidenceLines": [
+            3278,
+            3294,
+            3557,
+            3714
+          ],
+          "reasoning": "Alternative reading: auth-svc's own request queue or inflight limit is too small for this traffic, so it saturates and load-sheds ('queue full', 732 inflight). The GC and heap logs look normal, so this is less likely than the retry amplification, but a queue limit that is too small would explain the same lines."
+        }
+      ],
+      "recommendedAction": "Re-enable exponential backoff with jitter and cap retries in account-svc's auth-svc RetryPolicy, rolling back whatever disabled it if that change was recent. Shed or rate-limit login traffic at edge-proxy so auth-svc can drain its queue. Scale auth-svc or raise its admission limits. Separately, find what drove the inbound spike to auth-svc around 11:09, fix the report-cron image (missing pandas), and point the status-poller healthcheck away from the deprecated legacy-inventory endpoint."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "since": "10:56:00",
+          "until": "10:59:00",
+          "limit": 60
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "edge-proxy",
+          "level": "ERROR",
+          "limit": 20
+        },
+        "output": "12 match(es):\n#3208 2026-10-23T11:10:00Z ERROR edge-proxy [t-9660] POST /login 503 5147ms: upstream account-svc returned 503 (retries exhausted)\n#3254 2026-10-23T11:10:19Z ERROR edge-proxy [t-9685] POST /login 503 25008ms: upstream account-svc returned 503 (retries exhausted)\n#3444 2026-10-23T11:11:24Z ERROR edge-proxy [t-9793] POST /login 503 26349ms: upstream account-svc returned 503 (retries exhausted)\n#3523 2026-10-23T11:11:51Z ERROR edge-proxy [t-9851] POST /login 503 21832ms: upstream account-svc returned 503 (retries exhausted)\n#3669 2026-10-23T11:12:45Z ERROR edge-proxy [t-9931] POST /login 503 12961ms: upstream account-svc returned 503 (retries exhausted)\n#3803 2026-10-23T11:13:37Z ERROR edge-proxy [t-10011] POST /login 503 19629ms: upstream account-svc returned 503 (retries exhausted)\n#3917 2026-10-23T11:14:21Z ERROR edge-proxy [t-10081] POST /login 503 28477ms: upstream account-svc returned 503 (retries exhausted)\n#3944 2026-10-23T11:14:34Z ERROR edge-proxy [t-10103] POST /login 503 21622ms: upstream account-svc returned 503 (retries exhausted)\n#4092 2026-10-23T11:15:23Z ERROR edge-proxy [t-10194] POST /login 503 12605ms: upstream account-svc returned 503 (retries exhausted)\n#4233 2026-10-23T11:16:16Z ERROR edge-proxy [t-10287] POST /login 503 10988ms: upstream account-svc returned 503 (retries exhausted)\n#4393 2026-10-23T11:17:12Z ERROR edge-proxy [t-10389] POST /login 503 8587ms: upstream account-svc returned 503 (retries exhausted)\n#4420 2026-10-23T11:17:21Z ERROR edge-proxy [t-10403] POST /login 503 27889ms: upstream account-svc returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "account-svc",
+          "since": "10:56:00",
+          "until": "11:10:05",
+          "limit": 40
+        },
+        "output": "461 match(es), showing first 40:\n#1 2026-10-23T10:56:00Z INFO account-svc [t-7550] user u-4680 accepted, calling auth-svc POST /tokens\n#7 2026-10-23T10:56:02Z INFO account-svc [t-7556] user u-4684 accepted, calling auth-svc POST /tokens\n#10 2026-10-23T10:56:03Z INFO account-svc [t-7559] user u-4685 accepted, calling auth-svc POST /tokens\n#19 2026-10-23T10:56:06Z INFO account-svc [t-7563] user u-4687 accepted, calling auth-svc POST /tokens\n#26 2026-10-23T10:56:08Z INFO account-svc [t-7566] user u-4690 accepted, calling auth-svc POST /tokens\n#34 2026-10-23T10:56:09Z INFO account-svc [t-7571] user u-4693 accepted, calling auth-svc POST /tokens\n#48 2026-10-23T10:56:12Z INFO account-svc [t-7576] user u-4696 accepted, calling auth-svc POST /tokens\n#53 2026-10-23T10:56:14Z DEBUG account-svc GC pause 21ms (young), heap 43%\n#54 2026-10-23T10:56:15Z INFO account-svc [t-7578] user u-4700 accepted, calling auth-svc POST /tokens\n#64 2026-10-23T10:56:17Z INFO account-svc [t-7587] user u-4706 accepted, calling auth-svc POST /tokens\n#72 2026-10-23T10:56:19Z INFO account-svc [t-7591] user u-4711 accepted, calling auth-svc POST /tokens\n#79 2026-10-23T10:56:21Z INFO account-svc [t-7597] user u-4713 accepted, calling auth-svc POST /tokens\n#86 2026-10-23T10:56:22Z INFO account-svc [t-7603] user u-4717 accepted, calling auth-svc POST /tokens\n#98 2026-10-23T10:56:25Z INFO account-svc [t-7607] user u-4724 accepted, calling auth-svc POST /tokens\n#103 2026-10-23T10:56:27Z INFO account-svc [t-7611] user u-4726 accepted, calling auth-svc POST /tokens\n#108 2026-10-23T10:56:30Z INFO account-svc [t-7617] user u-4730 accepted, calling auth-svc POST /tokens\n#116 2026-10-23T10:56:31Z INFO account-svc [t-7619] user u-4734 accepted, calling auth-svc POST /tokens\n#123 2026-10-23T10:56:34Z INFO account-svc [t-7621] user u-4737 accepted, calling auth-svc POST /tokens\n#128 2026-10-23T10:56:35Z INFO account-svc [t-7629] user u-4742 accepted, calling auth-svc POST /tokens\n#138 2026-10-23T10:56:37Z INFO account-svc [t-7633] user u-4747 accepted, calling auth-svc POST /tokens\n#143 2026-10-23T10:56:38Z DEBUG account-svc GC pause 9ms (young), heap 38%\n#145 2026-10-23T10:56:38Z INFO account-svc [t-7637] user u-4750 accepted, calling auth-svc POST /tokens\n#153 2026-10-23T10:56:41Z INFO account-svc [t-7641] user u-4754 accepted, calling auth-svc POST /tokens\n#159 2026-10-23T10:56:43Z INFO account-svc [t-7646] user u-4759 accepted, calling auth-svc POST /tokens\n#167 2026-10-23T10:56:45Z INFO account-svc [t-7651] user u-4762 accepted, calling auth-svc POST /tokens\n#173 2026-10-23T10:56:47Z INFO account-svc [t-7657] user u-4764 accepted, calling auth-svc POST /tokens\n#184 2026-10-23T10:56:50Z INFO account-svc [t-7663] user u-4767 accepted, calling auth-svc POST /tokens\n#195 2026-10-23T10:56:51Z INFO account-svc [t-7668] user u-4770 accepted, calling auth-svc POST /tokens\n#201 2026-10-23T10:56:53Z INFO account-svc [t-7671] user u-4774 accepted, calling auth-svc POST /tokens\n#204 2026-10-23T10:56:54Z INFO account-svc [t-7673] user u-4776 accepted, calling auth-svc POST /tokens\n#213 2026-10-23T10:56:56Z INFO account-svc [t-7675] user u-4781 accepted, calling auth-svc POST /tokens\n#219 2026-10-23T10:56:58Z DEBUG account-svc GC pause 9ms (young), heap 39%\n#222 2026-10-23T10:56:59Z INFO account-svc [t-7682] user u-4785 accepted, calling auth-svc POST /tokens\n#230 2026-10-23T10:57:01Z INFO account-svc [t-7688] user u-4790 accepted, calling auth-svc POST /tokens\n#236 2026-10-23T10:57:03Z INFO account-svc [t-7691] user u-4792 accepted, calling auth-svc POST /tokens\n#243 2026-10-23T10:57:05Z INFO account-svc [t-7699] user u-4798 accepted, calling auth-svc POST /tokens\n#251 2026-10-23T10:57:07Z INFO account-svc [t-7706] user u-4803 accepted, calling auth-svc POST /tokens\n#258 2026-10-23T10:57:09Z INFO account-svc [t-7711] user u-4809 accepted, calling auth-svc POST /tokens\n#265 2026-10-23T10:57:10Z INFO account-svc [t-7714] user u-4814 accepted, calling auth-svc POST /tokens\n#272 2026-10-23T10:57:11Z INFO account-svc [t-7720] user u-4818 accepted, calling auth-svc POST /tokens"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "accounts-db",
+          "limit": 80
+        },
+        "output": "76 match(es):\n#62 2026-10-23T10:56:16Z INFO accounts-db checkpoint complete: wrote 822 buffers (5.8%)\n#146 2026-10-23T10:56:38Z INFO accounts-db checkpoint complete: wrote 901 buffers (1.4%)\n#224 2026-10-23T10:56:59Z INFO accounts-db checkpoint complete: wrote 796 buffers (2.8%)\n#313 2026-10-23T10:57:21Z INFO accounts-db checkpoint complete: wrote 1050 buffers (4.7%)\n#364 2026-10-23T10:57:35Z INFO accounts-db checkpoint complete: wrote 988 buffers (7.5%)\n#412 2026-10-23T10:57:47Z INFO accounts-db checkpoint complete: wrote 802 buffers (7.2%)\n#491 2026-10-23T10:58:10Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 6\n#568 2026-10-23T10:58:28Z INFO accounts-db checkpoint complete: wrote 219 buffers (3.3%)\n#618 2026-10-23T10:58:42Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 3\n#676 2026-10-23T10:58:56Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 4\n#724 2026-10-23T10:59:09Z INFO accounts-db checkpoint complete: wrote 632 buffers (3.7%)\n#800 2026-10-23T10:59:30Z INFO accounts-db checkpoint complete: wrote 550 buffers (3.1%)\n#851 2026-10-23T10:59:44Z INFO accounts-db checkpoint complete: wrote 346 buffers (3.8%)\n#943 2026-10-23T11:00:06Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 9\n#998 2026-10-23T11:00:22Z INFO accounts-db checkpoint complete: wrote 1365 buffers (2.6%)\n#1074 2026-10-23T11:00:40Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 13\n#1130 2026-10-23T11:00:55Z INFO accounts-db checkpoint complete: wrote 242 buffers (6.2%)\n#1180 2026-10-23T11:01:09Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 9\n#1253 2026-10-23T11:01:29Z INFO accounts-db checkpoint complete: wrote 531 buffers (5.5%)\n#1320 2026-10-23T11:01:46Z INFO accounts-db checkpoint complete: wrote 1214 buffers (4.4%)\n#1375 2026-10-23T11:02:01Z INFO accounts-db checkpoint complete: wrote 1366 buffers (1.0%)\n#1427 2026-10-23T11:02:15Z INFO accounts-db checkpoint complete: wrote 730 buffers (4.9%)\n#1518 2026-10-23T11:02:38Z INFO accounts-db checkpoint complete: wrote 459 buffers (6.7%)\n#1595 2026-10-23T11:02:58Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 6\n#1656 2026-10-23T11:03:14Z INFO accounts-db checkpoint complete: wrote 687 buffers (3.3%)\n#1714 2026-10-23T11:03:28Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 23\n#1785 2026-10-23T11:03:45Z INFO accounts-db checkpoint complete: wrote 1175 buffers (2.2%)\n#1848 2026-10-23T11:04:01Z INFO accounts-db checkpoint complete: wrote 366 buffers (4.8%)\n#1902 2026-10-23T11:04:15Z INFO accounts-db checkpoint complete: wrote 400 buffers (6.8%)\n#1958 2026-10-23T11:04:29Z INFO accounts-db checkpoint complete: wrote 722 buffers (7.4%)\n#2034 2026-10-23T11:04:48Z INFO accounts-db checkpoint complete: wrote 767 buffers (7.4%)\n#2103 2026-10-23T11:05:05Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 15\n#2168 2026-10-23T11:05:20Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 0\n#2230 2026-10-23T11:05:35Z INFO accounts-db checkpoint complete: wrote 602 buffers (3.2%)\n#2284 2026-10-23T11:05:49Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 27\n#2339 2026-10-23T11:06:05Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 4\n#2406 2026-10-23T11:06:22Z INFO accounts-db checkpoint complete: wrote 1286 buffers (1.4%)\n#2470 2026-10-23T11:06:39Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 35\n#2545 2026-10-23T11:06:58Z INFO accounts-db checkpoint complete: wrote 805 buffers (4.1%)\n#2625 2026-10-23T11:07:19Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 10\n#2706 2026-10-23T11:07:40Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 17\n#2798 2026-10-23T11:08:01Z INFO accounts-db checkpoint complete: wrote 1048 buffers (3.2%)\n#2864 2026-10-23T11:08:19Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 11\n#2881 2026-10-23T11:08:23Z WARN accounts-db slow query 1852ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#2942 2026-10-23T11:08:37Z INFO accounts-db checkpoint complete: wrote 742 buffers (6.2%)\n#3022 2026-10-23T11:08:58Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 3\n#3086 2026-10-23T11:09:18Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 17\n#3131 2026-10-23T11:09:34Z INFO accounts-db checkpoint complete: wrote 245 buffers (7.8%)\n#3174 2026-10-23T11:09:48Z INFO accounts-db checkpoint complete: wrote 644 buffers (7.6%)\n#3210 2026-10-23T11:10:01Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 39\n#3258 2026-10-23T11:10:20Z INFO accounts-db checkpoint complete: wrote 737 buffers (5.7%)\n#3317 2026-10-23T11:10:40Z INFO accounts-db checkpoint complete: wrote 567 buffers (7.2%)\n#3382 2026-10-23T11:11:02Z INFO accounts-db checkpoint complete: wrote 941 buffers (7.6%)\n#3447 2026-10-23T11:11:24Z INFO accounts-db checkpoint complete: wrote 1274 buffers (7.2%)\n#3489 2026-10-23T11:11:42Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 37\n#3556 2026-10-23T11:12:03Z INFO accounts-db checkpoint complete: wrote 1188 buffers (4.7%)\n#3602 2026-10-23T11:12:18Z INFO accounts-db checkpoint complete: wrote 703 buffers (6.0%)\n#3647 2026-10-23T11:12:33Z INFO accounts-db checkpoint complete: wrote 1081 buffers (1.9%)\n#3677 2026-10-23T11:12:48Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 25\n#3715 2026-10-23T11:13:04Z INFO accounts-db checkpoint complete: wrote 662 buffers (4.4%)\n#3772 2026-10-23T11:13:26Z INFO accounts-db checkpoint complete: wrote 262 buffers (2.3%)\n#3812 2026-10-23T11:13:42Z INFO accounts-db checkpoint complete: wrote 932 buffers (7.4%)\n#3855 2026-10-23T11:13:59Z INFO accounts-db checkpoint complete: wrote 1131 buffers (5.9%)\n#3908 2026-10-23T11:14:18Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 5\n#3963 2026-10-23T11:14:40Z INFO accounts-db checkpoint complete: wrote 283 buffers (5.1%)\n#4026 2026-10-23T11:15:01Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 32\n#4088 2026-10-23T11:15:22Z INFO accounts-db checkpoint complete: wrote 866 buffers (4.7%)\n#4139 2026-10-23T11:15:40Z INFO accounts-db checkpoint complete: wrote 1224 buffers (2.8%)\n#4185 2026-10-23T11:15:57Z INFO accounts-db checkpoint complete: wrote 877 buffers (7.2%)\n#4228 2026-10-23T11:16:15Z INFO accounts-db checkpoint complete: wrote 565 buffers (2.9%)\n#4288 2026-10-23T11:16:34Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 28\n#4331 2026-10-23T11:16:47Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 36\n#4369 2026-10-23T11:17:00Z INFO accounts-db checkpoint complete: wrote 859 buffers (1.3%)\n#4410 2026-10-23T11:17:18Z INFO accounts-db checkpoint complete: wrote 540 buffers (1.7%)\n#4466 2026-10-23T11:17:40Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 40\n#4505 2026-10-23T11:17:53Z INFO accounts-db checkpoint complete: wrote 556 buffers (6.6%)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "level": "WARN",
+          "limit": 50
+        },
+        "output": "11 match(es):\n#3278 2026-10-23T11:10:26Z ERROR auth-svc [t-9704] load shed: rejected POST /tokens with 503 (queue full)\n#3294 2026-10-23T11:10:33Z WARN auth-svc inbound request rate 3.2x baseline (inflight 732), shedding load with 503\n#3473 2026-10-23T11:11:36Z ERROR auth-svc [t-9818] load shed: rejected POST /tokens with 503 (queue full)\n#3557 2026-10-23T11:12:04Z WARN auth-svc admission control: 685 requests in flight (4.1x normal), rejecting new work\n#3625 2026-10-23T11:12:28Z ERROR auth-svc [t-9914] load shed: rejected POST /tokens with 503 (queue full)\n#3714 2026-10-23T11:13:04Z WARN auth-svc overloaded: request rate at 5.0 times baseline, 718 inflight, returning 503 to callers\n#3791 2026-10-23T11:13:34Z ERROR auth-svc [t-10001] load shed: rejected POST /tokens with 503 (queue full)\n#3882 2026-10-23T11:14:08Z ERROR auth-svc [t-10057] load shed: rejected POST /tokens with 503 (queue full)\n#4065 2026-10-23T11:15:12Z ERROR auth-svc [t-10172] load shed: rejected POST /tokens with 503 (queue full)\n#4311 2026-10-23T11:16:40Z ERROR auth-svc [t-10335] load shed: rejected POST /tokens with 503 (queue full)\n#4478 2026-10-23T11:17:43Z ERROR auth-svc [t-10444] load shed: rejected POST /tokens with 503 (queue full)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "timeout",
+          "since": "11:00:00",
+          "until": "11:10:05",
+          "limit": 40
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 3278,
+          "before": 25,
+          "after": 5
+        },
+        "output": "#3253 2026-10-23T11:10:19Z INFO event-processor processed batch of 98 messages from events.raw (lag 346ms)\n#3254 2026-10-23T11:10:19Z ERROR edge-proxy [t-9685] POST /login 503 25008ms: upstream account-svc returned 503 (retries exhausted)\n#3255 2026-10-23T11:10:19Z INFO account-svc [t-9688] user u-6390 accepted, calling auth-svc POST /tokens\n#3256 2026-10-23T11:10:20Z INFO edge-proxy [t-9688] POST /login 200 171ms\n#3257 2026-10-23T11:10:20Z INFO session-cache stats: hits=11194 misses=434 evicted=0 connected_clients=44\n#3258 2026-10-23T11:10:20Z INFO accounts-db checkpoint complete: wrote 737 buffers (5.7%)\n#3259 2026-10-23T11:10:21Z INFO ingest-api [t-9692] event e-6393 accepted, calling enrichment-svc POST /enrich\n#3260 2026-10-23T11:10:21Z INFO ingest-gateway [t-9692] POST /v1/events 200 74ms\n#3261 2026-10-23T11:10:22Z INFO account-svc [t-9695] user u-6394 accepted, calling auth-svc POST /tokens\n#3262 2026-10-23T11:10:22Z INFO audit-consumer processed batch of 54 messages from audit.events (lag 346ms)\n#3263 2026-10-23T11:10:22Z INFO auth-svc [t-9695] POST /tokens u-6394 ok 68ms\n#3264 2026-10-23T11:10:22Z INFO edge-proxy [t-9695] POST /login 200 107ms\n#3265 2026-10-23T11:10:23Z INFO ingest-api [t-9698] event e-6396 accepted, calling enrichment-svc POST /enrich\n#3266 2026-10-23T11:10:23Z INFO enrichment-svc [t-9698] POST /enrich e-6396 ok 26ms\n#3267 2026-10-23T11:10:23Z INFO geo-cache stats: hits=18122 misses=792 evicted=0 connected_clients=38\n#3268 2026-10-23T11:10:23Z INFO ingest-gateway [t-9698] POST /v1/events 200 50ms\n#3269 2026-10-23T11:10:24Z DEBUG ingest-gateway upstream health: ingest-api ok, enrichment-svc ok\n#3270 2026-10-23T11:10:24Z INFO event-processor processed batch of 39 messages from events.raw (lag 288ms)\n#3271 2026-10-23T11:10:24Z DEBUG ingest-api GC pause 21ms (young), heap 37%\n#3272 2026-10-23T11:10:25Z INFO ingest-api [t-9702] event e-6397 accepted, calling enrichment-svc POST /enrich\n#3273 2026-10-23T11:10:25Z INFO events-db InnoDB: page cleaner flushed 419 pages, buffer pool hit rate 99.7%\n#3274 2026-10-23T11:10:25Z INFO ingest-gateway [t-9702] POST /v1/events 200 56ms\n#3275 2026-10-23T11:10:26Z DEBUG auth-svc GC pause 20ms (young), heap 30%\n#3276 2026-10-23T11:10:26Z INFO audit-consumer processed batch of 68 messages from audit.events (lag 353ms)\n#3277 2026-10-23T11:10:26Z INFO status-poller poll cycle complete: 24 targets checked in 479ms\n#3278 2026-10-23T11:10:26Z ERROR auth-svc [t-9704] load shed: rejected POST /tokens with 503 (queue full)\n#3279 2026-10-23T11:10:27Z INFO ingest-api [t-9705] event e-6400 accepted, calling enrichment-svc POST /enrich\n#3280 2026-10-23T11:10:27Z INFO ingest-gateway [t-9705] POST /v1/events 200 81ms\n#3281 2026-10-23T11:10:28Z INFO metrics-agent flushed 8921 series to remote-write in 172ms\n#3282 2026-10-23T11:10:28Z INFO event-processor processed batch of 87 messages from events.raw (lag 342ms)\n#3283 2026-10-23T11:10:28Z INFO report-cron scheduler heartbeat: 9 jobs registered, next run in 114s"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "status-poller",
+          "level": "ERROR",
+          "limit": 20
+        },
+        "output": "18 match(es):\n#908 2026-10-23T10:59:58Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1270 2026-10-23T11:01:33Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1411 2026-10-23T11:02:11Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1637 2026-10-23T11:03:09Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1996 2026-10-23T11:04:40Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2051 2026-10-23T11:04:52Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2418 2026-10-23T11:06:25Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2530 2026-10-23T11:06:55Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2747 2026-10-23T11:07:50Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3113 2026-10-23T11:09:28Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3318 2026-10-23T11:10:40Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3355 2026-10-23T11:10:53Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3663 2026-10-23T11:12:42Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3749 2026-10-23T11:13:16Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3956 2026-10-23T11:14:39Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4135 2026-10-23T11:15:39Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4336 2026-10-23T11:16:49Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4500 2026-10-23T11:17:51Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "report-cron",
+          "level": "WARN",
+          "limit": 20
+        },
+        "output": "15 match(es):\n#1068 2026-10-23T11:00:39Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1224 2026-10-23T11:01:20Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1403 2026-10-23T11:02:09Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1721 2026-10-23T11:03:29Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2149 2026-10-23T11:05:17Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2417 2026-10-23T11:06:25Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2565 2026-10-23T11:07:02Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3002 2026-10-23T11:08:53Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3185 2026-10-23T11:09:50Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3401 2026-10-23T11:11:09Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3585 2026-10-23T11:12:13Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3867 2026-10-23T11:14:03Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4059 2026-10-23T11:15:10Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4303 2026-10-23T11:16:38Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#4419 2026-10-23T11:17:21Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "account-svc",
+          "level": "WARN",
+          "limit": 40
+        },
+        "output": "4 match(es):\n#3126 2026-10-23T11:09:33Z WARN account-svc [t-9610] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#3304 2026-10-23T11:10:36Z WARN account-svc [t-9715] retry 3/4 for POST /tokens after 503 from auth-svc (delay 0ms)\n#3443 2026-10-23T11:11:24Z WARN account-svc [t-9792] auth-svc unavailable (503), re-sending at once: attempt 4 of 4, no backoff policy\n#3587 2026-10-23T11:12:13Z WARN account-svc [t-9893] RetryPolicy(auth-svc): immediate retry #2, max 4, jitter and backoff off"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "retry",
+          "limit": 40
+        },
+        "output": "3 match(es):\n#3126 2026-10-23T11:09:33Z WARN account-svc [t-9610] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#3304 2026-10-23T11:10:36Z WARN account-svc [t-9715] retry 3/4 for POST /tokens after 503 from auth-svc (delay 0ms)\n#3587 2026-10-23T11:12:13Z WARN account-svc [t-9893] RetryPolicy(auth-svc): immediate retry #2, max 4, jitter and backoff off"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "backoff",
+          "limit": 40
+        },
+        "output": "3 match(es):\n#3126 2026-10-23T11:09:33Z WARN account-svc [t-9610] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#3443 2026-10-23T11:11:24Z WARN account-svc [t-9792] auth-svc unavailable (503), re-sending at once: attempt 4 of 4, no backoff policy\n#3587 2026-10-23T11:12:13Z WARN account-svc [t-9893] RetryPolicy(auth-svc): immediate retry #2, max 4, jitter and backoff off"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "auth-svc",
+          "since": "11:00:00",
+          "until": "11:10:30",
+          "limit": 30
+        },
+        "output": "180 match(es), showing first 30:\n#919 2026-10-23T11:00:01Z INFO auth-svc [t-8151] POST /tokens u-5160 ok 52ms\n#923 2026-10-23T11:00:03Z INFO auth-svc [t-8155] POST /tokens u-5165 ok 31ms\n#930 2026-10-23T11:00:04Z INFO auth-svc [t-8157] POST /tokens u-5168 ok 34ms\n#948 2026-10-23T11:00:08Z DEBUG auth-svc GC pause 16ms (young), heap 28%\n#950 2026-10-23T11:00:09Z INFO auth-svc [t-8168] POST /tokens u-5175 ok 22ms\n#958 2026-10-23T11:00:11Z INFO auth-svc [t-8174] POST /tokens u-5178 ok 25ms\n#968 2026-10-23T11:00:13Z INFO auth-svc [t-8180] POST /tokens u-5183 ok 63ms\n#987 2026-10-23T11:00:19Z INFO auth-svc [t-8193] POST /tokens u-5189 ok 72ms\n#1000 2026-10-23T11:00:22Z INFO auth-svc [t-8202] POST /tokens u-5197 ok 58ms\n#1007 2026-10-23T11:00:24Z INFO auth-svc [t-8206] POST /tokens u-5198 ok 80ms\n#1018 2026-10-23T11:00:26Z INFO auth-svc [t-8217] POST /tokens u-5205 ok 24ms\n#1023 2026-10-23T11:00:28Z INFO auth-svc [t-8219] POST /tokens u-5208 ok 41ms\n#1034 2026-10-23T11:00:32Z INFO auth-svc [t-8228] POST /tokens u-5213 ok 51ms\n#1040 2026-10-23T11:00:33Z DEBUG auth-svc GC pause 25ms (young), heap 31%\n#1047 2026-10-23T11:00:34Z INFO auth-svc [t-8238] POST /tokens u-5224 ok 83ms\n#1055 2026-10-23T11:00:36Z INFO auth-svc [t-8242] POST /tokens u-5228 ok 58ms\n#1071 2026-10-23T11:00:39Z INFO auth-svc [t-8250] POST /tokens u-5236 ok 58ms\n#1089 2026-10-23T11:00:44Z INFO auth-svc [t-8266] POST /tokens u-5248 ok 49ms\n#1095 2026-10-23T11:00:46Z INFO auth-svc [t-8270] POST /tokens u-5251 ok 41ms\n#1105 2026-10-23T11:00:48Z DEBUG auth-svc GC pause 20ms (young), heap 45%\n#1108 2026-10-23T11:00:49Z INFO auth-svc [t-8276] POST /tokens u-5257 ok 33ms\n#1115 2026-10-23T11:00:51Z INFO auth-svc [t-8282] POST /tokens u-5259 ok 63ms\n#1128 2026-10-23T11:00:55Z INFO auth-svc [t-8291] POST /tokens u-5267 ok 81ms\n#1139 2026-10-23T11:00:57Z INFO auth-svc [t-8297] POST /tokens u-5271 ok 88ms\n#1171 2026-10-23T11:01:07Z INFO auth-svc [t-8324] POST /tokens u-5287 ok 78ms\n#1183 2026-10-23T11:01:09Z INFO auth-svc [t-8330] POST /tokens u-5291 ok 81ms\n#1191 2026-10-23T11:01:11Z DEBUG auth-svc GC pause 10ms (young), heap 31%\n#1194 2026-10-23T11:01:12Z INFO auth-svc [t-8339] POST /tokens u-5296 ok 40ms\n#1198 2026-10-23T11:01:14Z INFO auth-svc [t-8342] POST /tokens u-5299 ok 26ms\n#1212 2026-10-23T11:01:17Z INFO auth-svc [t-8351] POST /tokens u-5306 ok 77ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "11:08:00",
+          "until": "11:10:00",
+          "query": "503",
+          "limit": 30
+        },
+        "output": "2 match(es):\n#3126 2026-10-23T11:09:33Z WARN account-svc [t-9610] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#3208 2026-10-23T11:10:00Z ERROR edge-proxy [t-9660] POST /login 503 5147ms: upstream account-svc returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 3126,
+          "before": 15,
+          "after": 3
+        },
+        "output": "#3111 2026-10-23T11:09:27Z DEBUG enrichment-svc GC pause 19ms (young), heap 30%\n#3112 2026-10-23T11:09:28Z INFO events-db InnoDB: page cleaner flushed 279 pages, buffer pool hit rate 99.3%\n#3113 2026-10-23T11:09:28Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3114 2026-10-23T11:09:28Z DEBUG ingest-api GC pause 20ms (young), heap 35%\n#3115 2026-10-23T11:09:28Z INFO status-poller poll cycle complete: 31 targets checked in 491ms\n#3116 2026-10-23T11:09:28Z INFO ingest-api [t-9598] event e-6330 accepted, calling enrichment-svc POST /enrich\n#3117 2026-10-23T11:09:28Z INFO ingest-gateway [t-9598] POST /v1/events 200 95ms\n#3118 2026-10-23T11:09:29Z WARN audit-consumer GC pause 720ms (G1 Old Gen), heap 66% after collection\n#3119 2026-10-23T11:09:29Z INFO audit-consumer processed batch of 90 messages from audit.events (lag 75ms)\n#3120 2026-10-23T11:09:29Z INFO event-processor processed batch of 27 messages from events.raw (lag 112ms)\n#3121 2026-10-23T11:09:30Z INFO metrics-agent flushed 4670 series to remote-write in 125ms\n#3122 2026-10-23T11:09:31Z INFO account-svc [t-9602] user u-6333 accepted, calling auth-svc POST /tokens\n#3123 2026-10-23T11:09:31Z INFO ingest-api [t-9606] event e-6335 accepted, calling enrichment-svc POST /enrich\n#3124 2026-10-23T11:09:31Z INFO edge-proxy [t-9602] POST /login 200 124ms\n#3125 2026-10-23T11:09:31Z INFO ingest-gateway [t-9606] POST /v1/events 200 79ms\n#3126 2026-10-23T11:09:33Z WARN account-svc [t-9610] AuthClient.issueToken got 503, retrying immediately (attempt 2/4, backoff disabled)\n#3127 2026-10-23T11:09:34Z INFO ingest-api [t-9613] event e-6336 accepted, calling enrichment-svc POST /enrich\n#3128 2026-10-23T11:09:34Z INFO enrichment-svc [t-9613] POST /enrich e-6336 ok 74ms\n#3129 2026-10-23T11:09:34Z INFO event-processor processed batch of 115 messages from events.raw (lag 55ms)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"cascading_failure\",\"confidence\":0.8,\"evidenceLines\":[3126,3304,3443,3587,3278,3294,3557,3714],\"reasoning\":\"The 503s on POST /login come from account-svc's calls to auth-svc POST /tokens. Auth-svc was healthy (ok ~20-80ms) until about 11:09:30. Then it began returning 503s and load-shedding ('queue full'), and its inbound rate reached 3.2x-5x baseline with 700+ requests in flight. Account-svc's AuthClient retry policy has backoff and jitter disabled: it retries 503s immediately, up to 4 attempts (#3126, #3304, #3443, #3587). Each failed login therefore sends several more requests to auth-svc at once. That amplification keeps auth-svc saturated, so it never recovers, and edge-proxy surfaces the exhausted retries as 503s (#3208 onward). The trigger is a load spike on auth-svc whose exact source I could not pin down. The amplifier is the immediate-retry policy with no backoff. Report-cron (missing pandas module since image 2026.10.2, #1068) and status-poller (timeouts to deprecated legacy-inventory, #908) are real errors but unrelated: they do not touch the login path. Accounts-db and session-cache are healthy.\",\"recommendedAction\":\"Immediately re-enable exponential backoff with jitter and cap retries in account-svc's auth-svc RetryPolicy (roll back the change that disabled backoff, if one was recent). Shed or rate-limit login traffic at edge-proxy to let auth-svc drain its queue. Scale auth-svc capacity or raise its admission limits. Separately trace what drove the inbound spike to auth-svc at about 11:09, and fix the report-cron image (missing pandas) and the status-poller healthcheck pointing at the deprecated legacy-inventory endpoint.\"},{\"rootCause\":\"resource_exhaustion\",\"confidence\":0.35,\"evidenceLines\":[3278,3294,3557,3714],\"reasoning\":\"Alternative reading: auth-svc's own request queue or inflight limit is too small for this traffic, so it saturates and load-sheds ('queue full', 732 inflight). The GC and heap logs look normal, so this is less likely than the retry amplification, but a queue limit that is too small would explain the same lines.\",\"}]"
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string; recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.8,
+              "evidenceLines": [
+                3126,
+                3304,
+                3443,
+                3587,
+                3278,
+                3294,
+                3557,
+                3714
+              ],
+              "reasoning": "The 503s on POST /login come from account-svc's calls to auth-svc POST /tokens. Auth-svc was healthy (ok ~20-80ms) until about 11:09:30. Then it began returning 503s and load-shedding ('queue full'), and its inbound rate reached 3.2x-5x baseline with 700+ requests in flight. Account-svc's AuthClient retry policy has backoff and jitter disabled: it retries 503s immediately, up to 4 attempts (#3126, #3304, #3443, #3587). Each failed login therefore sends several more requests to auth-svc at once. That amplification keeps auth-svc saturated, so it never recovers, and edge-proxy surfaces the exhausted retries as 503s (#3208 onward). The trigger is a load spike on auth-svc whose exact source I could not pin down. The amplifier is the immediate-retry policy with no backoff. Report-cron (missing pandas module since image 2026.10.2, #1068) and status-poller (timeouts to deprecated legacy-inventory, #908) are real errors but unrelated: they do not touch the login path. Accounts-db and session-cache are healthy.",
+              "recommendedAction": "Immediately re-enable exponential backoff with jitter and cap retries in account-svc's auth-svc RetryPolicy (roll back the change that disabled backoff, if one was recent). Shed or rate-limit login traffic at edge-proxy to let auth-svc drain its queue. Scale auth-svc capacity or raise its admission limits. Separately trace what drove the inbound spike to auth-svc at about 11:09, and fix the report-cron image (missing pandas) and the status-poller healthcheck pointing at the deprecated legacy-inventory endpoint."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.35,
+              "evidenceLines": [
+                3278,
+                3294,
+                3557,
+                3714
+              ],
+              "reasoning": "Alternative reading: auth-svc's own request queue or inflight limit is too small for this traffic, so it saturates and load-sheds ('queue full', 732 inflight). The GC and heap logs look normal, so this is less likely than the retry amplification, but a queue limit that is too small would explain the same lines."
+            }
+          ],
+          "recommendedAction": "Re-enable exponential backoff with jitter and cap retries in account-svc's auth-svc RetryPolicy, rolling back whatever disabled it if that change was recent. Shed or rate-limit login traffic at edge-proxy so auth-svc can drain its queue. Scale auth-svc or raise its admission limits. Separately, find what drove the inbound spike to auth-svc around 11:09, fix the report-cron image (missing pandas), and point the status-poller healthcheck away from the deprecated legacy-inventory endpoint."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 9,
+    "toolCalls": 15,
+    "usage": {
+      "inputTokens": 20,
+      "outputTokens": 4516,
+      "cacheReadTokens": 109911,
+      "cacheWriteTokens": 22915
+    },
+    "durationMs": 21894,
+    "stopReason": "tool_use"
+  }
+}

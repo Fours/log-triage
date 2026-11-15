@@ -1,0 +1,166 @@
+{
+  "score": {
+    "incidentId": "h-013",
+    "difficulty": "hard",
+    "scenario": "poison_message/consumer-crash-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "poison_message",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 8,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.002280715,
+    "durationMs": 8093,
+    "iterations": 4,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 10,
+      "output": 1507,
+      "cacheRead": 21659,
+      "cacheWrite": 10477
+    }
+  },
+  "result": {
+    "incidentId": "h-013",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.88,
+          "evidenceLines": [
+            1972,
+            2030,
+            2128,
+            2289,
+            2010,
+            2102,
+            2267,
+            2553
+          ],
+          "reasoning": "notif-worker crashes deterministically on msg-364842 at Kafka-style offset 371126 of notifications.outbound: expandReferences throws RangeError (call stack overflow). Each restart resumes at the same committed offset (#2010, #2102, #2267, #2553), so the consumer re-hits the same message and crash-loops with growing backoff (10s, 20s, 40s, 80s). The loop is the message being re-consumed, not a resource or deploy problem. The lag rising on notifications.outbound is explained by this consumer being stuck. Alternative considered: GC pauses (#1815, 1069ms) are minor and not the crash cause; the crash is a stack overflow from one payload's recursive references. Other errors (events-db lock timeouts, enrichment-svc timeouts, report-cron pandas ModuleNotFoundError, metrics-agent queue drops) are separate, unrelated symptoms in other services and do not touch notif-worker."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.1,
+          "evidenceLines": [
+            1972,
+            2289
+          ],
+          "reasoning": "Alternative reading: the message payload is malformed or has circular references that were written upstream, making it data_integrity rather than a consumer-side poison message. Only msg-364842 is affected, so the payload is the trigger either way; the fix is the same, skip or dead-letter the offset and fix the upstream record."
+        }
+      ],
+      "recommendedAction": "Skip or dead-letter msg-364842 at offset 371126 on notifications.outbound (move it to a DLQ after saving the payload), so notif-worker can advance past it and drain the lag. Then fix expandReferences to handle deep or circular references, or add a recursion guard, and find which upstream producer emitted the malformed payload. Separately, track the unrelated issues: report-cron's nightly-revenue-report is failing because pandas is missing from image report-cron:2026.10.2, and enrichment-svc / events-db have lock and statement timeouts causing ingest-api and ingest-gateway 504s."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "notif-worker",
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "9 match(es):\n#1815 2026-10-19T18:05:02Z WARN notif-worker GC pause 1069ms (G1 Old Gen), heap 60% after collection\n#1972 2026-10-19T18:05:48Z FATAL notif-worker process crashed on msg-364842@371126: RangeError: call stack overflow in expandReferences\n#1975 2026-10-19T18:05:48Z ERROR notif-worker process exited with code 1, restarting (restart 1, backoff 10s)\n#2030 2026-10-19T18:06:04Z FATAL notif-worker uncaught RangeError (stack size exceeded) while handling offset 371126 (msg-364842)\n#2032 2026-10-19T18:06:04Z ERROR notif-worker process exited with code 1, restarting (restart 2, backoff 20s)\n#2128 2026-10-19T18:06:31Z FATAL notif-worker consumer aborted: recursion limit hit in expandReferences for msg-364842 at offset 371126\n#2129 2026-10-19T18:06:31Z ERROR notif-worker process exited with code 1, restarting (restart 3, backoff 40s)\n#2289 2026-10-19T18:07:18Z FATAL notif-worker unhandled exception processing msg-364842 (offset 371126): RangeError: Maximum call stack size exceeded at expandReferences\n#2291 2026-10-19T18:07:19Z ERROR notif-worker process exited with code 1, restarting (restart 4, backoff 80s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 60
+        },
+        "output": "51 match(es):\n#767 2026-10-19T18:00:16Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#855 2026-10-19T18:00:38Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1108 2026-10-19T18:01:42Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1128 2026-10-19T18:01:46Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)\n#1338 2026-10-19T18:02:43Z ERROR enrichment-svc [t-3103] query canceled: statement timeout 10000ms (UPDATE events WHERE id = e-3387)\n#1354 2026-10-19T18:02:48Z ERROR ingest-api [t-3103] EnrichClient.enrich timed out after 15000ms calling enrichment-svc POST /enrich (e-3387)\n#1416 2026-10-19T18:03:05Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1427 2026-10-19T18:03:08Z ERROR enrichment-svc [t-3161] canceling UPDATE on events for e-3427 due to statement_timeout\n#1445 2026-10-19T18:03:13Z ERROR ingest-api [t-3161] upstream request to enrichment-svc failed: ReadTimeout (read timeout=15s) [e-3427]\n#1528 2026-10-19T18:03:36Z ERROR events-db Lock wait timeout exceeded; try restarting transaction (UPDATE events SET ...)\n#1560 2026-10-19T18:03:47Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1658 2026-10-19T18:04:16Z ERROR enrichment-svc [t-3309] db write events/e-3548 aborted: QueryCanceled after 10.0s\n#1677 2026-10-19T18:04:21Z ERROR ingest-api [t-3309] POST /enrich -> enrichment-svc: context deadline exceeded after 15.0s (e-3548)\n#1864 2026-10-19T18:05:18Z ERROR ingest-gateway [t-3450] POST /v1/events 504 29514ms: upstream ingest-api timed out\n#1885 2026-10-19T18:05:23Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1972 2026-10-19T18:05:48Z FATAL notif-worker process crashed on msg-364842@371126: RangeError: call stack overflow in expandReferences\n#1975 2026-10-19T18:05:48Z ERROR notif-worker process exited with code 1, restarting (restart 1, backoff 10s)\n#2007 2026-10-19T18:05:58Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2025 2026-10-19T18:06:02Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 724 samples\n#2030 2026-10-19T18:06:04Z FATAL notif-worker uncaught RangeError (stack size exceeded) while handling offset 371126 (msg-364842)\n#2032 2026-10-19T18:06:04Z ERROR notif-worker process exited with code 1, restarting (restart 2, backoff 20s)\n#2108 2026-10-19T18:06:27Z ERROR ingest-gateway [t-3609] POST /v1/events 504 21352ms: upstream ingest-api timed out\n#2128 2026-10-19T18:06:31Z FATAL notif-worker consumer aborted: recursion limit hit in expandReferences for msg-364842 at offset 371126\n#2129 2026-10-19T18:06:31Z ERROR notif-worker process exited with code 1, restarting (restart 3, backoff 40s)\n#2205 2026-10-19T18:06:53Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1047 samples\n#2289 2026-10-19T18:07:18Z FATAL notif-worker unhandled exception processing msg-364842 (offset 371126): RangeError: Maximum call stack size exceeded at expandReferences\n#2291 2026-10-19T18:07:19Z ERROR notif-worker process exited with code 1, restarting (restart 4, backoff 80s)\n#2297 2026-10-19T18:07:19Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2375 2026-10-19T18:07:44Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1673 samples\n#2400 2026-10-19T18:07:54Z ERROR ingest-api pool checkout timeout: no connection to enrichment-svc available after 5000ms\n#2462 2026-10-19T18:08:14Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2481 2026-10-19T18:08:20Z ERROR ingest-gateway [t-3863] POST /v1/events 504 6231ms: upstream ingest-api timed out\n#2637 2026-10-19T18:09:07Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2644 2026-10-19T18:09:09Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1091 samples\n#2752 2026-10-19T18:09:42Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2035 samples\n#2841 2026-10-19T18:10:09Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#2934 2026-10-19T18:10:37Z ERROR ingest-gateway [t-4202] POST /v1/events 504 26573ms: upstream ingest-api timed out\n#2972 2026-10-19T18:10:48Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 427 samples\n#2983 2026-10-19T18:10:53Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3026 2026-10-19T18:11:06Z ERROR ingest-gateway [t-4265] POST /v1/events 504 22496ms: upstream ingest-api timed out\n#3222 2026-10-19T18:12:05Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 933 samples\n#3272 2026-10-19T18:12:22Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3274 2026-10-19T18:12:23Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 724 samples\n#3434 2026-10-19T18:13:11Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3507 2026-10-19T18:13:33Z ERROR ingest-gateway [t-4611] POST /v1/events 504 14556ms: upstream ingest-api timed out\n#3579 2026-10-19T18:13:58Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 690 samples\n#3679 2026-10-19T18:14:29Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3772 2026-10-19T18:14:57Z ERROR ingest-gateway [t-4795] POST /v1/events 504 26215ms: upstream ingest-api timed out\n#3777 2026-10-19T18:14:57Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 764 samples\n#3865 2026-10-19T18:15:23Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#3885 2026-10-19T18:15:29Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1524 samples"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "msg-364842",
+          "limit": 50
+        },
+        "output": "4 match(es):\n#1972 2026-10-19T18:05:48Z FATAL notif-worker process crashed on msg-364842@371126: RangeError: call stack overflow in expandReferences\n#2030 2026-10-19T18:06:04Z FATAL notif-worker uncaught RangeError (stack size exceeded) while handling offset 371126 (msg-364842)\n#2128 2026-10-19T18:06:31Z FATAL notif-worker consumer aborted: recursion limit hit in expandReferences for msg-364842 at offset 371126\n#2289 2026-10-19T18:07:18Z FATAL notif-worker unhandled exception processing msg-364842 (offset 371126): RangeError: Maximum call stack size exceeded at expandReferences"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1972,
+          "before": 12,
+          "after": 3
+        },
+        "output": "#1960 2026-10-19T18:05:45Z INFO template-svc [t-3511] POST /render m-3698 ok 60ms\n#1961 2026-10-19T18:05:45Z INFO api-gateway [t-3511] POST /v1/notify 200 177ms\n#1962 2026-10-19T18:05:46Z INFO notification-svc [t-3512] message m-3699 accepted, calling template-svc POST /render\n#1963 2026-10-19T18:05:46Z INFO api-gateway [t-3512] POST /v1/notify 200 184ms\n#1964 2026-10-19T18:05:46Z DEBUG template-svc GC pause 5ms (young), heap 32%\n#1965 2026-10-19T18:05:46Z INFO events-db InnoDB: page cleaner flushed 446 pages, buffer pool hit rate 99.1%\n#1966 2026-10-19T18:05:46Z INFO notif-worker processed batch of 59 messages from notifications.outbound (lag 331ms)\n#1967 2026-10-19T18:05:46Z INFO metrics-agent flushed 4471 series to remote-write in 176ms\n#1968 2026-10-19T18:05:46Z INFO notification-svc [t-3515] message m-3702 accepted, calling template-svc POST /render\n#1969 2026-10-19T18:05:47Z INFO template-svc [t-3515] POST /render m-3702 ok 56ms\n#1970 2026-10-19T18:05:47Z INFO api-gateway [t-3515] POST /v1/notify 200 133ms\n#1971 2026-10-19T18:05:47Z INFO notification-svc [t-3518] message m-3704 accepted, calling template-svc POST /render\n#1972 2026-10-19T18:05:48Z FATAL notif-worker process crashed on msg-364842@371126: RangeError: call stack overflow in expandReferences\n#1973 2026-10-19T18:05:48Z INFO template-svc [t-3518] POST /render m-3704 ok 41ms\n#1974 2026-10-19T18:05:48Z INFO api-gateway [t-3518] POST /v1/notify 200 86ms\n#1975 2026-10-19T18:05:48Z ERROR notif-worker process exited with code 1, restarting (restart 1, backoff 10s)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "reference",
+          "limit": 30
+        },
+        "output": "3 match(es):\n#1972 2026-10-19T18:05:48Z FATAL notif-worker process crashed on msg-364842@371126: RangeError: call stack overflow in expandReferences\n#2128 2026-10-19T18:06:31Z FATAL notif-worker consumer aborted: recursion limit hit in expandReferences for msg-364842 at offset 371126\n#2289 2026-10-19T18:07:18Z FATAL notif-worker unhandled exception processing msg-364842 (offset 371126): RangeError: Maximum call stack size exceeded at expandReferences"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "371126",
+          "limit": 30
+        },
+        "output": "8 match(es):\n#1972 2026-10-19T18:05:48Z FATAL notif-worker process crashed on msg-364842@371126: RangeError: call stack overflow in expandReferences\n#2010 2026-10-19T18:05:59Z INFO notif-worker resuming notifications.outbound at committed offset 371126\n#2030 2026-10-19T18:06:04Z FATAL notif-worker uncaught RangeError (stack size exceeded) while handling offset 371126 (msg-364842)\n#2102 2026-10-19T18:06:25Z INFO notif-worker resuming notifications.outbound at committed offset 371126\n#2128 2026-10-19T18:06:31Z FATAL notif-worker consumer aborted: recursion limit hit in expandReferences for msg-364842 at offset 371126\n#2267 2026-10-19T18:07:12Z INFO notif-worker resuming notifications.outbound at committed offset 371126\n#2289 2026-10-19T18:07:18Z FATAL notif-worker unhandled exception processing msg-364842 (offset 371126): RangeError: Maximum call stack size exceeded at expandReferences\n#2553 2026-10-19T18:08:39Z INFO notif-worker resuming notifications.outbound at committed offset 371126"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.88,
+              "evidenceLines": [
+                1972,
+                2030,
+                2128,
+                2289,
+                2010,
+                2102,
+                2267,
+                2553
+              ],
+              "reasoning": "notif-worker crashes deterministically on msg-364842 at Kafka-style offset 371126 of notifications.outbound: expandReferences throws RangeError (call stack overflow). Each restart resumes at the same committed offset (#2010, #2102, #2267, #2553), so the consumer re-hits the same message and crash-loops with growing backoff (10s, 20s, 40s, 80s). The loop is the message being re-consumed, not a resource or deploy problem. The lag rising on notifications.outbound is explained by this consumer being stuck. Alternative considered: GC pauses (#1815, 1069ms) are minor and not the crash cause; the crash is a stack overflow from one payload's recursive references. Other errors (events-db lock timeouts, enrichment-svc timeouts, report-cron pandas ModuleNotFoundError, metrics-agent queue drops) are separate, unrelated symptoms in other services and do not touch notif-worker.",
+              "reasoning_short": "n/a"
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.1,
+              "evidenceLines": [
+                1972,
+                2289
+              ],
+              "reasoning": "Alternative reading: the message payload is malformed or has circular references that were written upstream, making it data_integrity rather than a consumer-side poison message. Only msg-364842 is affected, so the payload is the trigger either way; the fix is the same, skip or dead-letter the offset and fix the upstream record."
+            }
+          ],
+          "recommendedAction": "Skip or dead-letter msg-364842 at offset 371126 on notifications.outbound (move it to a DLQ after saving the payload), so notif-worker can advance past it and drain the lag. Then fix expandReferences to handle deep or circular references, or add a recursion guard, and find which upstream producer emitted the malformed payload. Separately, track the unrelated issues: report-cron's nightly-revenue-report is failing because pandas is missing from image report-cron:2026.10.2, and enrichment-svc / events-db have lock and statement timeouts causing ingest-api and ingest-gateway 504s."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1507,
+      "cacheReadTokens": 21659,
+      "cacheWriteTokens": 10477
+    },
+    "durationMs": 8093,
+    "stopReason": "tool_use"
+  }
+}

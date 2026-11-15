@@ -1,0 +1,167 @@
+{
+  "score": {
+    "incidentId": "h-041",
+    "difficulty": "hard",
+    "scenario": "resource_exhaustion/db-disk-full",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 8,
+      "correct": 8,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "secondaryCited": 5,
+    "costUsd": 0.00324357,
+    "durationMs": 11936,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 2635,
+      "cacheRead": 24557,
+      "cacheWrite": 13436
+    }
+  },
+  "result": {
+    "incidentId": "h-041",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.88,
+          "evidenceLines": [
+            818,
+            1666,
+            2354,
+            2366,
+            2614,
+            2633,
+            2731,
+            2852
+          ],
+          "reasoning": "The checkout 500s originate from the postgres data volume running out of disk. Postgres warned of disk usage at 95% (#818, 20:15:26Z) and 99% (#1666, 20:18:59Z), with WAL/binlog growing about 650-750MB/h. From 20:22:06Z postgres failed to extend data files with 'No space left on device' (#2354). order-service then failed orders inserts with DiskFullError / SQLSTATE 53100 (#2366, #2633, #2852). Those failures surface at the gateway as POST /checkout 500s (#2278, #2431, #3528). The alert window matches this onset. Reads do not write, so they stay healthy."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.3,
+          "evidenceLines": [
+            2748,
+            2755,
+            2818,
+            2870,
+            2940,
+            3013
+          ],
+          "reasoning": "A separate fault affects login, not checkout. Migration 0128_add_status_v2 ran non-transactionally: step 1 renamed accounts.status_v2 to status_v2_old and committed, then step 2 hit a lock timeout and was not rolled back. account-svc and accounts-db now fail with 'column status_v2 does not exist' (SQLSTATE 42703), which causes edge-proxy POST /login 500s from 20:24:46Z. This is a real, separate data_integrity fault and does not explain the checkout alert. Handle it as a second incident."
+        }
+      ],
+      "recommendedAction": "Immediately free disk space on the postgres data volume (identify and clear WAL/binlog growth, or expand the volume), then confirm order-service inserts recover and checkout 500s drop. Add disk-usage alerting at 85-90% so this is caught earlier. Separately, repair migration 0128_add_status_v2: restore accounts.status_v2 from status_v2_old and re-run the migration transactionally, since login is failing. Lower priority: flag-sync invalid staging-2 flag reloads and billing-reconciler invoice_archive checksum noise."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "since": "2026-10-01T20:12:00Z",
+          "until": "2026-10-01T20:14:30Z",
+          "limit": 60
+        },
+        "output": "1 match(es):\n#78 2026-10-01T20:12:20Z WARN order-service [t-6595] PaymentClient.charge slow: 2685ms calling payment-svc POST /charge (soft threshold 2000ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 60
+        },
+        "output": "65 match(es), showing first 60:\n#1228 2026-10-01T20:17:08Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#1453 2026-10-01T20:18:05Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#1643 2026-10-01T20:18:53Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#1900 2026-10-01T20:19:56Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2017 2026-10-01T20:20:25Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#2140 2026-10-01T20:20:56Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2219 2026-10-01T20:21:15Z ERROR billing-reconciler invoice_archive row inv-454697 violates checksum constraint, skipping (archive partition 2019-Q3)\n#2274 2026-10-01T20:21:32Z ERROR billing-reconciler invoice_archive row inv-340109 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2278 2026-10-01T20:21:34Z ERROR api-gateway [t-8062] POST /checkout 500 10144ms: upstream order-service returned 500 Internal Server Error\n#2342 2026-10-01T20:22:02Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2354 2026-10-01T20:22:06Z ERROR postgres could not extend file \"base/16384/25390\": No space left on device\n#2366 2026-10-01T20:22:10Z ERROR order-service [t-8109] orders.insert(o-4153) -> DiskFullError\n#2420 2026-10-01T20:22:28Z ERROR billing-reconciler invoice_archive row inv-915908 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2431 2026-10-01T20:22:33Z ERROR api-gateway [t-8145] POST /checkout 500 26726ms: upstream order-service returned 500 Internal Server Error\n#2478 2026-10-01T20:22:48Z ERROR billing-reconciler invoice_archive row inv-323119 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2527 2026-10-01T20:23:04Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2547 2026-10-01T20:23:08Z ERROR api-gateway [t-8210] POST /checkout 500 23421ms: upstream order-service returned 500 Internal Server Error\n#2605 2026-10-01T20:23:26Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#2614 2026-10-01T20:23:29Z ERROR postgres could not extend file \"base/16384/39153\": No space left on device\n#2628 2026-10-01T20:23:34Z ERROR billing-reconciler invoice_archive row inv-328433 violates checksum constraint, skipping (archive partition 2019-Q1)\n#2633 2026-10-01T20:23:38Z ERROR order-service [t-8260] write path failed for o-4275: postgres returned SQLSTATE 53100\n#2698 2026-10-01T20:23:58Z ERROR api-gateway [t-8300] POST /checkout 500 10674ms: upstream order-service returned 500 Internal Server Error\n#2721 2026-10-01T20:24:05Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#2731 2026-10-01T20:24:09Z ERROR postgres could not extend file \"base/16384/38785\": No space left on device\n#2739 2026-10-01T20:24:12Z ERROR billing-reconciler invoice_archive row inv-316774 violates checksum constraint, skipping (archive partition 2019-Q4)\n#2802 2026-10-01T20:24:29Z ERROR api-gateway [t-8374] POST /checkout 500 11044ms: upstream order-service returned 500 Internal Server Error\n#2836 2026-10-01T20:24:40Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2852 2026-10-01T20:24:45Z ERROR order-service [t-8406] insert into orders failed for o-4374: could not extend file\n#2857 2026-10-01T20:24:46Z ERROR edge-proxy [t-8410] POST /login 500 29953ms: upstream account-svc returned 500 Internal Server Error\n#2870 2026-10-01T20:24:50Z ERROR accounts-db ERROR:  column accounts.status_v2 does not exist (SQLSTATE 42703)\n#2896 2026-10-01T20:24:59Z ERROR billing-reconciler invoice_archive row inv-191297 violates checksum constraint, skipping (archive partition 2019-Q2)\n#2937 2026-10-01T20:25:17Z ERROR api-gateway [t-8447] POST /checkout 500 19122ms: upstream order-service returned 500 Internal Server Error\n#2940 2026-10-01T20:25:18Z ERROR account-svc [t-8448] query on accounts failed for u-4410: column \"status_v2\" does not exist\n#2961 2026-10-01T20:25:30Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2980 2026-10-01T20:25:36Z ERROR edge-proxy [t-8475] POST /login 500 18974ms: upstream account-svc returned 500 Internal Server Error\n#2989 2026-10-01T20:25:39Z ERROR billing-reconciler invoice_archive row inv-496346 violates checksum constraint, skipping (archive partition 2019-Q3)\n#3013 2026-10-01T20:25:50Z ERROR accounts-db statement failed: undefined_column, no attribute status_v2 on accounts\n#3040 2026-10-01T20:26:03Z ERROR api-gateway [t-8496] POST /checkout 500 22950ms: upstream order-service returned 500 Internal Server Error\n#3051 2026-10-01T20:26:06Z ERROR billing-reconciler invoice_archive row inv-428205 violates checksum constraint, skipping (archive partition 2019-Q2)\n#3086 2026-10-01T20:26:20Z ERROR edge-proxy [t-8532] POST /login 500 7509ms: upstream account-svc returned 500 Internal Server Error\n#3087 2026-10-01T20:26:21Z ERROR billing-reconciler invoice_archive row inv-539461 violates checksum constraint, skipping (archive partition 2019-Q1)\n#3122 2026-10-01T20:26:39Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3156 2026-10-01T20:26:51Z ERROR api-gateway [t-8559] POST /checkout 500 23667ms: upstream order-service returned 500 Internal Server Error\n#3166 2026-10-01T20:26:54Z ERROR account-svc [t-8568] query on accounts failed for u-4498: column \"status_v2\" does not exist\n#3191 2026-10-01T20:27:05Z ERROR edge-proxy [t-8589] POST /login 500 24897ms: upstream account-svc returned 500 Internal Server Error\n#3233 2026-10-01T20:27:18Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3243 2026-10-01T20:27:20Z ERROR accounts-db column \"status_v2\" of relation \"accounts\" does not exist at character 53\n#3260 2026-10-01T20:27:26Z ERROR billing-reconciler invoice_archive row inv-852310 violates checksum constraint, skipping (archive partition 2019-Q4)\n#3277 2026-10-01T20:27:34Z ERROR api-gateway [t-8644] POST /checkout 500 28801ms: upstream order-service returned 500 Internal Server Error\n#3310 2026-10-01T20:27:45Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#3322 2026-10-01T20:27:48Z ERROR billing-reconciler invoice_archive row inv-982407 violates checksum constraint, skipping (archive partition 2019-Q4)\n#3330 2026-10-01T20:27:52Z ERROR edge-proxy [t-8678] POST /login 500 22035ms: upstream account-svc returned 500 Internal Server Error\n#3389 2026-10-01T20:28:15Z ERROR account-svc [t-8722] query on accounts failed for u-4601: column \"status_v2\" does not exist\n#3429 2026-10-01T20:28:28Z ERROR api-gateway [t-8736] POST /checkout 500 20587ms: upstream order-service returned 500 Internal Server Error\n#3431 2026-10-01T20:28:29Z ERROR accounts-db ERROR:  column accounts.status_v2 does not exist (SQLSTATE 42703)\n#3452 2026-10-01T20:28:38Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#3456 2026-10-01T20:28:38Z ERROR edge-proxy [t-8750] POST /login 500 14934ms: upstream account-svc returned 500 Internal Server Error\n#3459 2026-10-01T20:28:39Z ERROR billing-reconciler invoice_archive row inv-117451 violates checksum constraint, skipping (archive partition 2019-Q2)\n#3489 2026-10-01T20:28:52Z ERROR billing-reconciler invoice_archive row inv-651127 violates checksum constraint, skipping (archive partition 2019-Q2)\n#3528 2026-10-01T20:29:09Z ERROR api-gateway [t-8782] POST /checkout 500 28982ms: upstream order-service returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "postgres",
+          "since": "2026-10-01T20:12:00Z",
+          "until": "2026-10-01T20:23:00Z",
+          "limit": 60
+        },
+        "output": "59 match(es):\n#10 2026-10-01T20:12:01Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 36\n#40 2026-10-01T20:12:11Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 17\n#98 2026-10-01T20:12:25Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 12\n#149 2026-10-01T20:12:37Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 1\n#187 2026-10-01T20:12:46Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 12\n#237 2026-10-01T20:12:59Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 40\n#293 2026-10-01T20:13:14Z INFO postgres checkpoint complete: wrote 1197 buffers (2.1%)\n#355 2026-10-01T20:13:27Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 38\n#407 2026-10-01T20:13:40Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 11\n#462 2026-10-01T20:13:54Z INFO postgres checkpoint complete: wrote 1097 buffers (7.8%)\n#512 2026-10-01T20:14:09Z INFO postgres checkpoint complete: wrote 1036 buffers (1.1%)\n#549 2026-10-01T20:14:17Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 39\n#579 2026-10-01T20:14:27Z INFO postgres checkpoint complete: wrote 761 buffers (2.3%)\n#619 2026-10-01T20:14:37Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 31\n#674 2026-10-01T20:14:51Z INFO postgres checkpoint complete: wrote 619 buffers (7.0%)\n#714 2026-10-01T20:15:01Z INFO postgres checkpoint complete: wrote 1210 buffers (5.6%)\n#763 2026-10-01T20:15:13Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 13\n#804 2026-10-01T20:15:23Z INFO postgres checkpoint complete: wrote 247 buffers (4.6%)\n#818 2026-10-01T20:15:26Z INFO postgres disk usage 95% on /var/lib/postgresql/data (WAL/binlog growth 754MB/h)\n#853 2026-10-01T20:15:36Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 5\n#895 2026-10-01T20:15:47Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 10\n#932 2026-10-01T20:15:56Z INFO postgres checkpoint complete: wrote 245 buffers (6.5%)\n#971 2026-10-01T20:16:06Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 22\n#1014 2026-10-01T20:16:15Z INFO postgres checkpoint complete: wrote 1277 buffers (2.2%)\n#1057 2026-10-01T20:16:27Z INFO postgres checkpoint complete: wrote 1162 buffers (3.6%)\n#1108 2026-10-01T20:16:40Z INFO postgres checkpoint complete: wrote 425 buffers (4.6%)\n#1160 2026-10-01T20:16:53Z INFO postgres checkpoint complete: wrote 1137 buffers (2.0%)\n#1207 2026-10-01T20:17:04Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 28\n#1268 2026-10-01T20:17:19Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 25\n#1316 2026-10-01T20:17:30Z INFO postgres checkpoint complete: wrote 273 buffers (2.6%)\n#1375 2026-10-01T20:17:44Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 11\n#1424 2026-10-01T20:17:57Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 6\n#1475 2026-10-01T20:18:12Z INFO postgres checkpoint complete: wrote 1228 buffers (7.8%)\n#1530 2026-10-01T20:18:25Z INFO postgres checkpoint complete: wrote 523 buffers (4.7%)\n#1569 2026-10-01T20:18:34Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 30\n#1620 2026-10-01T20:18:48Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 23\n#1661 2026-10-01T20:18:58Z INFO postgres checkpoint complete: wrote 584 buffers (7.0%)\n#1666 2026-10-01T20:18:59Z INFO postgres disk usage 99% on /var/lib/postgresql/data (WAL/binlog growth 654MB/h)\n#1708 2026-10-01T20:19:08Z INFO postgres checkpoint complete: wrote 1369 buffers (7.1%)\n#1761 2026-10-01T20:19:23Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 13\n#1816 2026-10-01T20:19:37Z INFO postgres checkpoint complete: wrote 980 buffers (2.3%)\n#1868 2026-10-01T20:19:48Z INFO postgres checkpoint complete: wrote 230 buffers (7.8%)\n#1921 2026-10-01T20:20:01Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 3\n#1968 2026-10-01T20:20:14Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 27\n#2014 2026-10-01T20:20:25Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 14\n#2059 2026-10-01T20:20:36Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 18\n#2104 2026-10-01T20:20:48Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 25\n#2167 2026-10-01T20:21:02Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 36\n#2188 2026-10-01T20:21:07Z WARN postgres slow query 1831ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#2230 2026-10-01T20:21:17Z INFO postgres checkpoint complete: wrote 929 buffers (7.9%)\n#2272 2026-10-01T20:21:31Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 11\n#2307 2026-10-01T20:21:45Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 28\n#2324 2026-10-01T20:21:55Z INFO postgres checkpoint complete: wrote 1303 buffers (3.5%)\n#2354 2026-10-01T20:22:06Z ERROR postgres could not extend file \"base/16384/25390\": No space left on device\n#2361 2026-10-01T20:22:09Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 2\n#2398 2026-10-01T20:22:20Z INFO postgres checkpoint complete: wrote 1224 buffers (1.6%)\n#2428 2026-10-01T20:22:32Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 18\n#2465 2026-10-01T20:22:43Z INFO postgres checkpoint complete: wrote 804 buffers (1.2%)\n#2508 2026-10-01T20:22:58Z INFO postgres checkpoint complete: wrote 774 buffers (5.6%)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "status_v2",
+          "limit": 10
+        },
+        "output": "11 match(es), showing first 10:\n#2748 2026-10-01T20:24:13Z INFO account-svc migrate: applying 0128_add_status_v2 (3 steps) to accounts-db\n#2755 2026-10-01T20:24:15Z INFO account-svc migrate: 0128_add_status_v2 step 1/3 ok: renamed column accounts.status_v2 -> status_v2_old\n#2818 2026-10-01T20:24:32Z INFO account-svc migrate: 0128_add_status_v2 step 2/3 failed: lock timeout on accounts; step 1 already committed (non-transactional DDL), not rolled back\n#2870 2026-10-01T20:24:50Z ERROR accounts-db ERROR:  column accounts.status_v2 does not exist (SQLSTATE 42703)\n#2940 2026-10-01T20:25:18Z ERROR account-svc [t-8448] query on accounts failed for u-4410: column \"status_v2\" does not exist\n#3013 2026-10-01T20:25:50Z ERROR accounts-db statement failed: undefined_column, no attribute status_v2 on accounts\n#3166 2026-10-01T20:26:54Z ERROR account-svc [t-8568] query on accounts failed for u-4498: column \"status_v2\" does not exist\n#3243 2026-10-01T20:27:20Z ERROR accounts-db column \"status_v2\" of relation \"accounts\" does not exist at character 53\n#3389 2026-10-01T20:28:15Z ERROR account-svc [t-8722] query on accounts failed for u-4601: column \"status_v2\" does not exist\n#3431 2026-10-01T20:28:29Z ERROR accounts-db ERROR:  column accounts.status_v2 does not exist (SQLSTATE 42703)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"resource_exhaustion\",\"confidence\":0.88,\"evidenceLines\":[818,1666,2354,2366,2614,2633,2731,2852],\"reasoning\":\"The checkout 500s originate from the postgres data volume running out of disk. Postgres warned disk usage at 95% (#818, 20:15:26Z) and 99% (#1666, 20:18:59Z), with WAL/binlog growing ~650-750MB/h. The disk filled, and from 20:22:06Z postgres failed to extend data files with 'No space left on device' (#2354). order-service then failed its orders inserts with DiskFullError / SQLSTATE 53100 (#2366, #2633, #2852). Those write failures surface at the gateway as POST /checkout 500s (#2278, #2431, #3528). The 4-minute alert window matches this. The earlier warnings show the disk was filling for several minutes before the failures, so the disk-space alert should have fired earlier. Reads are unaffected because they do not write.\",\"hypotheses_note\":\"\"},{\"rootCause\":\"data_integrity\",\"confidence\":0.3,\"evidenceLines\":[2748,2755,2818,2870,2940,3013],\"reasoning\":\"A separate fault affects login, not checkout. Migration 0128_add_status_v2 ran non-transactionally: step 1 renamed accounts.status_v2 to status_v2_old and committed, then step 2 hit a lock timeout and was not rolled back. account-svc and accounts-db now fail with 'column status_v2 does not exist' (SQLSTATE 42703), which causes edge-proxy POST /login 500s from 20:24:46Z. This is a real, separate data_integrity fault, but it does not explain the checkout alert. It should be handled as a second incident.\",\"hypothesesNote\":\"\"}],\"recommendedAction\":\"Immediately free disk space on the postgres data volume (identify and clear WAL/binlog growth, or expand the volume), then confirm order-service inserts recover and checkout 500s drop. Add disk-usage alerting at 85-90% so this is caught earlier. Separately, roll back or repair migration 0128_add_status_v2: restore accounts.status_v2 from status_v2_old and complete the migration in a transactional, retry-safe way, since login is failing. Also investigate why flag-sync keeps reporting invalid staging-2 flags, and why billing-reconciler reports invoice_archive checksum violations, as lower-priority noise.\"}]"
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string; recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.88,
+              "evidenceLines": [
+                818,
+                1666,
+                2354,
+                2366,
+                2614,
+                2633,
+                2731,
+                2852
+              ],
+              "reasoning": "The checkout 500s originate from the postgres data volume running out of disk. Postgres warned of disk usage at 95% (#818, 20:15:26Z) and 99% (#1666, 20:18:59Z), with WAL/binlog growing about 650-750MB/h. From 20:22:06Z postgres failed to extend data files with 'No space left on device' (#2354). order-service then failed orders inserts with DiskFullError / SQLSTATE 53100 (#2366, #2633, #2852). Those failures surface at the gateway as POST /checkout 500s (#2278, #2431, #3528). The alert window matches this onset. Reads do not write, so they stay healthy."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.3,
+              "evidenceLines": [
+                2748,
+                2755,
+                2818,
+                2870,
+                2940,
+                3013
+              ],
+              "reasoning": "A separate fault affects login, not checkout. Migration 0128_add_status_v2 ran non-transactionally: step 1 renamed accounts.status_v2 to status_v2_old and committed, then step 2 hit a lock timeout and was not rolled back. account-svc and accounts-db now fail with 'column status_v2 does not exist' (SQLSTATE 42703), which causes edge-proxy POST /login 500s from 20:24:46Z. This is a real, separate data_integrity fault and does not explain the checkout alert. Handle it as a second incident."
+            }
+          ],
+          "recommendedAction": "Immediately free disk space on the postgres data volume (identify and clear WAL/binlog growth, or expand the volume), then confirm order-service inserts recover and checkout 500s drop. Add disk-usage alerting at 85-90% so this is caught earlier. Separately, repair migration 0128_add_status_v2: restore accounts.status_v2 from status_v2_old and re-run the migration transactionally, since login is failing. Lower priority: flag-sync invalid staging-2 flag reloads and billing-reconciler invoice_archive checksum noise."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 2635,
+      "cacheReadTokens": 24557,
+      "cacheWriteTokens": 13436
+    },
+    "durationMs": 11936,
+    "stopReason": "tool_use"
+  }
+}

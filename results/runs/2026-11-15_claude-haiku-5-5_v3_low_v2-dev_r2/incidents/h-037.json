@@ -1,0 +1,216 @@
+{
+  "score": {
+    "incidentId": "h-037",
+    "difficulty": "easy",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.8,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 4,
+      "precision": 0.5714285714285714,
+      "recall": 1,
+      "f1": 0.7272727272727273
+    },
+    "herringsCited": 0,
+    "costUsd": 0.0034251000000000004,
+    "durationMs": 12296,
+    "iterations": 5,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 12,
+      "output": 2857,
+      "cacheRead": 34990,
+      "cacheWrite": 13164
+    }
+  },
+  "result": {
+    "incidentId": "h-037",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.8,
+          "evidenceLines": [
+            1073,
+            1114,
+            1096,
+            1165,
+            1202,
+            1147,
+            1262
+          ],
+          "reasoning": "The session-cache node was replaced at 04:04:34 and came back with 0 keys and no RDB snapshot (#1073). Its stats lines stop after that restart. Within about 30s, account-svc's session-cache miss ratio jumped to 96% against a 3% baseline (#1114), so every login read fell through to accounts-db. accounts-db then hit its connection ceiling (495/500, CPU 98%, #1096, #1165) and slow queries began on SELECT * FROM accounts by id (#1202). account-svc queries timed out (#1147), and edge-proxy began returning 504s on POST /login (#1262, #1333). The trigger is a single cache restart, which is survivable alone. The damage comes from the miss storm amplifying load on the database. The status-poller timeouts against legacy-inventory (#429 and later) are a deprecated-endpoint red herring that started before the onset and do not affect login."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.15,
+          "evidenceLines": [
+            1096,
+            1165,
+            1202
+          ],
+          "reasoning": "accounts-db connection slots and CPU were exhausted (495/500, 499/500, CPU 94-98%). This is the saturated resource, but it was driven by the cache-miss load rather than originating on its own, so it is a secondary reading."
+        }
+      ],
+      "recommendedAction": "Restore or warm session-cache (repopulate from accounts-db, or fail over to a replica with a snapshot). Throttle or coalesce cache-miss loads to accounts-db and add connection-pool headroom. Add RDB persistence or a warm-up step to node replacement. Separately, remove or fix the legacy-inventory health check in status-poller."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "25 match(es):\n#429 2026-10-11T03:55:49Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#570 2026-10-11T03:57:40Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#730 2026-10-11T03:59:50Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#874 2026-10-11T04:01:48Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1067 2026-10-11T04:04:30Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1073 2026-10-11T04:04:34Z WARN session-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#1096 2026-10-11T04:05:07Z WARN accounts-db connections 495/500 (active 414), CPU 98%\n#1101 2026-10-11T04:05:14Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1114 2026-10-11T04:05:29Z WARN account-svc session-cache miss ratio 96% over last 30s (baseline 3%), loading from accounts-db\n#1147 2026-10-11T04:06:11Z ERROR account-svc [t-7808] query on accounts timed out after 5000ms (u-7244)\n#1165 2026-10-11T04:06:35Z WARN accounts-db too many clients: 499 of 500 connection slots used, CPU at 94%\n#1202 2026-10-11T04:07:25Z WARN accounts-db slow query 8603ms: SELECT * FROM accounts WHERE id = $1\n#1215 2026-10-11T04:07:42Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1262 2026-10-11T04:08:48Z ERROR edge-proxy [t-7851] POST /login 504 7244ms: upstream account-svc timed out\n#1303 2026-10-11T04:09:38Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1333 2026-10-11T04:10:21Z ERROR edge-proxy [t-7872] POST /login 504 26012ms: upstream account-svc timed out\n#1423 2026-10-11T04:12:23Z WARN accounts-db slow query 3935ms: SELECT * FROM accounts WHERE id = $1\n#1434 2026-10-11T04:12:31Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1509 2026-10-11T04:14:21Z ERROR edge-proxy [t-7920] POST /login 504 7945ms: upstream account-svc timed out\n#1542 2026-10-11T04:15:10Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1583 2026-10-11T04:16:09Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1597 2026-10-11T04:16:31Z WARN accounts-db slow query 4868ms: SELECT * FROM accounts WHERE id = $1\n#1608 2026-10-11T04:16:45Z ERROR edge-proxy [t-7944] POST /login 504 8904ms: upstream account-svc timed out\n#1689 2026-10-11T04:18:46Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1719 2026-10-11T04:19:16Z ERROR account-svc [t-7975] query on accounts timed out after 5000ms (u-7352)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "session-cache",
+          "limit": 40
+        },
+        "output": "89 match(es), showing first 40:\n#3 2026-10-11T03:50:03Z INFO session-cache stats: hits=18147 misses=871 evicted=0 connected_clients=36\n#16 2026-10-11T03:50:14Z INFO session-cache stats: hits=9958 misses=747 evicted=0 connected_clients=46\n#28 2026-10-11T03:50:23Z INFO session-cache stats: hits=18285 misses=242 evicted=0 connected_clients=43\n#35 2026-10-11T03:50:31Z INFO session-cache stats: hits=18785 misses=385 evicted=0 connected_clients=44\n#50 2026-10-11T03:50:43Z INFO session-cache stats: hits=14474 misses=671 evicted=0 connected_clients=52\n#64 2026-10-11T03:50:54Z INFO session-cache stats: hits=14654 misses=888 evicted=0 connected_clients=52\n#74 2026-10-11T03:51:02Z INFO session-cache stats: hits=11012 misses=404 evicted=0 connected_clients=39\n#86 2026-10-11T03:51:11Z INFO session-cache stats: hits=16822 misses=636 evicted=0 connected_clients=39\n#93 2026-10-11T03:51:19Z INFO session-cache stats: hits=10239 misses=319 evicted=0 connected_clients=41\n#107 2026-10-11T03:51:29Z INFO session-cache stats: hits=18010 misses=415 evicted=0 connected_clients=47\n#123 2026-10-11T03:51:41Z INFO session-cache stats: hits=8293 misses=413 evicted=0 connected_clients=31\n#131 2026-10-11T03:51:52Z INFO session-cache stats: hits=19877 misses=673 evicted=0 connected_clients=44\n#145 2026-10-11T03:52:03Z INFO session-cache stats: hits=10170 misses=235 evicted=0 connected_clients=47\n#163 2026-10-11T03:52:13Z INFO session-cache stats: hits=11782 misses=636 evicted=0 connected_clients=43\n#175 2026-10-11T03:52:25Z INFO session-cache stats: hits=8088 misses=360 evicted=0 connected_clients=52\n#189 2026-10-11T03:52:35Z INFO session-cache stats: hits=10779 misses=297 evicted=0 connected_clients=39\n#200 2026-10-11T03:52:46Z INFO session-cache stats: hits=17186 misses=436 evicted=0 connected_clients=47\n#212 2026-10-11T03:52:57Z INFO session-cache stats: hits=9433 misses=261 evicted=0 connected_clients=50\n#227 2026-10-11T03:53:09Z INFO session-cache stats: hits=16942 misses=264 evicted=0 connected_clients=47\n#237 2026-10-11T03:53:19Z INFO session-cache stats: hits=12130 misses=788 evicted=0 connected_clients=35\n#250 2026-10-11T03:53:27Z INFO session-cache stats: hits=17656 misses=248 evicted=0 connected_clients=59\n#261 2026-10-11T03:53:38Z INFO session-cache stats: hits=12295 misses=442 evicted=0 connected_clients=41\n#275 2026-10-11T03:53:49Z INFO session-cache stats: hits=19937 misses=362 evicted=0 connected_clients=58\n#287 2026-10-11T03:53:57Z INFO session-cache stats: hits=16491 misses=604 evicted=0 connected_clients=40\n#294 2026-10-11T03:54:05Z INFO session-cache stats: hits=15050 misses=310 evicted=0 connected_clients=44\n#305 2026-10-11T03:54:14Z INFO session-cache stats: hits=17664 misses=527 evicted=0 connected_clients=43\n#320 2026-10-11T03:54:23Z INFO session-cache stats: hits=9485 misses=614 evicted=0 connected_clients=58\n#333 2026-10-11T03:54:36Z INFO session-cache stats: hits=14327 misses=821 evicted=0 connected_clients=43\n#347 2026-10-11T03:54:46Z INFO session-cache stats: hits=12001 misses=437 evicted=0 connected_clients=50\n#361 2026-10-11T03:54:57Z INFO session-cache stats: hits=18261 misses=397 evicted=0 connected_clients=30\n#375 2026-10-11T03:55:09Z INFO session-cache stats: hits=14061 misses=641 evicted=0 connected_clients=44\n#386 2026-10-11T03:55:20Z INFO session-cache stats: hits=16044 misses=727 evicted=0 connected_clients=51\n#401 2026-10-11T03:55:28Z INFO session-cache stats: hits=8125 misses=518 evicted=0 connected_clients=30\n#410 2026-10-11T03:55:37Z INFO session-cache stats: hits=11827 misses=243 evicted=0 connected_clients=30\n#423 2026-10-11T03:55:46Z INFO session-cache stats: hits=17735 misses=828 evicted=0 connected_clients=37\n#443 2026-10-11T03:55:58Z INFO session-cache stats: hits=18847 misses=360 evicted=0 connected_clients=35\n#455 2026-10-11T03:56:07Z INFO session-cache stats: hits=10515 misses=893 evicted=0 connected_clients=42\n#464 2026-10-11T03:56:15Z INFO session-cache stats: hits=10123 misses=352 evicted=0 connected_clients=42\n#478 2026-10-11T03:56:27Z INFO session-cache stats: hits=10203 misses=761 evicted=0 connected_clients=36\n#490 2026-10-11T03:56:35Z INFO session-cache stats: hits=10363 misses=360 evicted=0 connected_clients=42"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "since": "04:04:00",
+          "until": "04:06:00",
+          "limit": 60
+        },
+        "output": "104 match(es), showing first 60:\n#1035 2026-10-11T04:04:00Z INFO account-svc [t-7767] user u-7218 accepted, calling auth-svc POST /tokens\n#1036 2026-10-11T04:04:00Z INFO edge-proxy [t-7767] POST /login 200 136ms\n#1037 2026-10-11T04:04:01Z INFO metrics-agent flushed 4736 series to remote-write in 115ms\n#1038 2026-10-11T04:04:03Z INFO status-poller poll cycle complete: 30 targets checked in 549ms\n#1039 2026-10-11T04:04:05Z INFO audit-consumer processed batch of 84 messages from audit.events (lag 339ms)\n#1040 2026-10-11T04:04:05Z INFO account-svc [t-7771] user u-7219 accepted, calling auth-svc POST /tokens\n#1041 2026-10-11T04:04:05Z INFO auth-svc [t-7771] POST /tokens u-7219 ok 35ms\n#1042 2026-10-11T04:04:06Z INFO edge-proxy [t-7771] POST /login 200 157ms\n#1043 2026-10-11T04:04:06Z INFO session-cache stats: hits=18442 misses=448 evicted=0 connected_clients=45\n#1044 2026-10-11T04:04:08Z INFO account-svc [t-7773] user u-7220 accepted, calling auth-svc POST /tokens\n#1045 2026-10-11T04:04:08Z INFO auth-svc [t-7773] POST /tokens u-7220 ok 63ms\n#1046 2026-10-11T04:04:08Z INFO edge-proxy [t-7773] POST /login 200 129ms\n#1047 2026-10-11T04:04:09Z DEBUG auth-svc GC pause 10ms (young), heap 35%\n#1048 2026-10-11T04:04:10Z INFO audit-consumer processed batch of 43 messages from audit.events (lag 106ms)\n#1049 2026-10-11T04:04:11Z DEBUG account-svc GC pause 22ms (young), heap 36%\n#1050 2026-10-11T04:04:11Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 17\n#1051 2026-10-11T04:04:14Z INFO account-svc [t-7777] user u-7221 accepted, calling auth-svc POST /tokens\n#1052 2026-10-11T04:04:14Z INFO edge-proxy [t-7777] POST /login 200 142ms\n#1053 2026-10-11T04:04:14Z INFO session-cache stats: hits=9419 misses=858 evicted=0 connected_clients=45\n#1054 2026-10-11T04:04:17Z INFO audit-consumer processed batch of 61 messages from audit.events (lag 222ms)\n#1055 2026-10-11T04:04:17Z DEBUG edge-proxy upstream health: account-svc ok, auth-svc ok\n#1056 2026-10-11T04:04:18Z INFO metrics-agent flushed 6987 series to remote-write in 82ms\n#1057 2026-10-11T04:04:19Z INFO account-svc [t-7780] user u-7224 accepted, calling auth-svc POST /tokens\n#1058 2026-10-11T04:04:20Z INFO edge-proxy [t-7780] POST /login 200 129ms\n#1059 2026-10-11T04:04:21Z INFO status-poller poll cycle complete: 40 targets checked in 725ms\n#1060 2026-10-11T04:04:22Z INFO audit-consumer processed batch of 91 messages from audit.events (lag 49ms)\n#1061 2026-10-11T04:04:23Z INFO session-cache stats: hits=19969 misses=885 evicted=0 connected_clients=41\n#1062 2026-10-11T04:04:25Z INFO account-svc [t-7784] user u-7226 accepted, calling auth-svc POST /tokens\n#1063 2026-10-11T04:04:25Z INFO edge-proxy [t-7784] POST /login 200 150ms\n#1064 2026-10-11T04:04:27Z INFO audit-consumer processed batch of 75 messages from audit.events (lag 376ms)\n#1065 2026-10-11T04:04:28Z INFO metrics-agent flushed 5652 series to remote-write in 144ms\n#1066 2026-10-11T04:04:28Z INFO accounts-db checkpoint complete: wrote 428 buffers (3.3%)\n#1067 2026-10-11T04:04:30Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1068 2026-10-11T04:04:31Z INFO account-svc [t-7788] user u-7227 accepted, calling auth-svc POST /tokens\n#1069 2026-10-11T04:04:31Z INFO edge-proxy [t-7788] POST /login 200 166ms\n#1070 2026-10-11T04:04:31Z INFO audit-consumer processed batch of 77 messages from audit.events (lag 308ms)\n#1071 2026-10-11T04:04:32Z DEBUG auth-svc GC pause 15ms (young), heap 30%\n#1072 2026-10-11T04:04:33Z INFO session-cache stats: hits=14118 misses=716 evicted=0 connected_clients=33\n#1073 2026-10-11T04:04:34Z WARN session-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys\n#1074 2026-10-11T04:04:36Z DEBUG account-svc GC pause 16ms (young), heap 48%\n#1075 2026-10-11T04:04:37Z INFO audit-consumer processed batch of 92 messages from audit.events (lag 342ms)\n#1076 2026-10-11T04:04:37Z INFO account-svc [t-7790] user u-7229 accepted, calling auth-svc POST /tokens\n#1077 2026-10-11T04:04:37Z INFO auth-svc [t-7790] POST /tokens u-7229 ok 72ms\n#1078 2026-10-11T04:04:37Z INFO edge-proxy [t-7790] POST /login 200 87ms\n#1079 2026-10-11T04:04:39Z INFO status-poller poll cycle complete: 37 targets checked in 590ms\n#1080 2026-10-11T04:04:42Z INFO accounts-db checkpoint complete: wrote 517 buffers (3.5%)\n#1081 2026-10-11T04:04:42Z INFO audit-consumer processed batch of 102 messages from audit.events (lag 64ms)\n#1082 2026-10-11T04:04:42Z INFO metrics-agent flushed 8517 series to remote-write in 176ms\n#1083 2026-10-11T04:04:46Z INFO audit-consumer processed batch of 44 messages from audit.events (lag 348ms)\n#1084 2026-10-11T04:04:49Z DEBUG account-svc GC pause 23ms (young), heap 46%\n#1085 2026-10-11T04:04:52Z INFO audit-consumer processed batch of 120 messages from audit.events (lag 147ms)\n#1086 2026-10-11T04:04:55Z INFO metrics-agent flushed 6657 series to remote-write in 95ms\n#1087 2026-10-11T04:04:56Z DEBUG auth-svc GC pause 4ms (young), heap 32%\n#1088 2026-10-11T04:04:57Z INFO status-poller poll cycle complete: 36 targets checked in 548ms\n#1089 2026-10-11T04:04:58Z INFO audit-consumer processed batch of 72 messages from audit.events (lag 71ms)\n#1090 2026-10-11T04:04:59Z INFO account-svc [t-7792] user u-7231 accepted, calling auth-svc POST /tokens\n#1091 2026-10-11T04:04:59Z INFO edge-proxy [t-7792] POST /login 200 149ms\n#1092 2026-10-11T04:05:00Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 15\n#1093 2026-10-11T04:05:02Z DEBUG account-svc GC pause 10ms (young), heap 37%\n#1094 2026-10-11T04:05:04Z INFO audit-consumer processed batch of 113 messages from audit.events (lag 344ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "session-cache",
+          "since": "04:03:00",
+          "limit": 30
+        },
+        "output": "12 match(es):\n#965 2026-10-11T04:03:02Z INFO session-cache stats: hits=12309 misses=423 evicted=0 connected_clients=35\n#980 2026-10-11T04:03:12Z INFO session-cache stats: hits=16288 misses=566 evicted=0 connected_clients=51\n#985 2026-10-11T04:03:20Z INFO session-cache stats: hits=9053 misses=234 evicted=0 connected_clients=53\n#998 2026-10-11T04:03:29Z INFO session-cache stats: hits=14314 misses=464 evicted=0 connected_clients=58\n#1006 2026-10-11T04:03:37Z INFO session-cache stats: hits=13007 misses=244 evicted=0 connected_clients=57\n#1018 2026-10-11T04:03:47Z INFO session-cache stats: hits=17020 misses=513 evicted=0 connected_clients=38\n#1031 2026-10-11T04:03:57Z INFO session-cache stats: hits=19185 misses=652 evicted=0 connected_clients=44\n#1043 2026-10-11T04:04:06Z INFO session-cache stats: hits=18442 misses=448 evicted=0 connected_clients=45\n#1053 2026-10-11T04:04:14Z INFO session-cache stats: hits=9419 misses=858 evicted=0 connected_clients=45\n#1061 2026-10-11T04:04:23Z INFO session-cache stats: hits=19969 misses=885 evicted=0 connected_clients=41\n#1072 2026-10-11T04:04:33Z INFO session-cache stats: hits=14118 misses=716 evicted=0 connected_clients=33\n#1073 2026-10-11T04:04:34Z WARN session-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.8,
+              "evidenceLines": [
+                1073,
+                1114,
+                1096,
+                1165,
+                1202,
+                1147,
+                1262
+              ],
+              "reasoning": "The session-cache node was replaced at 04:04:34 and came back with 0 keys and no RDB snapshot (#1073). Its stats lines stop after that restart. Within about 30s, account-svc's session-cache miss ratio jumped to 96% against a 3% baseline (#1114), so every login read fell through to accounts-db. accounts-db then hit its connection ceiling (495/500, CPU 98%, #1096, #1165) and slow queries began on SELECT * FROM accounts by id (#1202). account-svc queries timed out (#1147), and edge-proxy began returning 504s on POST /login (#1262, #1333). The trigger is a single cache restart, which is survivable alone. The damage comes from the miss storm amplifying load on the database. The status-poller timeouts against legacy-inventory (#429 and later) are a deprecated-endpoint red herring that started before the onset and do not affect login.",
+              "recommendedAction": "Restore or warm session-cache (or repopulate from accounts-db / failover to a replica with snapshot). Throttle or coalesce cache-miss loads to accounts-db and add connection-pool headroom. Add RDB persistence or a warm-up step to node replacement. Separately, remove or fix the legacy-inventory health check in status-poller."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.15,
+              "evidenceLines": [
+                1096,
+                1165,
+                1202
+              ],
+              "reasoning": "accounts-db connection slots and CPU were exhausted (495/500, 499/500, CPU 94-98%). This is the saturated resource, but it was driven by the cache-miss load rather than originating on its own, so it is a secondary reading."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.8,
+              "evidenceLines": [
+                1073,
+                1114,
+                1096,
+                1165,
+                1202,
+                1147,
+                1262
+              ],
+              "reasoning": "The session-cache node was replaced at 04:04:34 and came back with 0 keys and no RDB snapshot (#1073). Its stats lines stop after that restart. Within about 30s, account-svc's session-cache miss ratio jumped to 96% against a 3% baseline (#1114), so every login read fell through to accounts-db. accounts-db then hit its connection ceiling (495/500, CPU 98%, #1096, #1165) and slow queries began on SELECT * FROM accounts by id (#1202). account-svc queries timed out (#1147), and edge-proxy began returning 504s on POST /login (#1262, #1333). The trigger is a single cache restart, which is survivable alone. The damage comes from the miss storm amplifying load on the database. The status-poller timeouts against legacy-inventory (#429 and later) are a deprecated-endpoint red herring that started before the onset and do not affect login.",
+              "recommendedAction": "Restore or warm session-cache (or repopulate from accounts-db / failover to a replica with snapshot). Throttle or coalesce cache-miss loads to accounts-db and add connection-pool headroom. Add RDB persistence or a warm-up step to node replacement. Separately, remove or fix the legacy-inventory health check in status-poller."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.15,
+              "evidenceLines": [
+                1096,
+                1165,
+                1202
+              ],
+              "reasoning": "accounts-db connection slots and CPU were exhausted (495/500, 499/500, CPU 94-98%). This is the saturated resource, but it was driven by the cache-miss load rather than originating on its own, so it is a secondary reading."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "recommendedAction": "Restore or warm session-cache (repopulate from accounts-db, or fail over to a replica with a snapshot). Throttle or coalesce cache-miss loads to accounts-db and add connection-pool headroom. Add RDB persistence or a warm-up step to node replacement. Separately, remove or fix the legacy-inventory health check in status-poller.",
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.8,
+              "evidenceLines": [
+                1073,
+                1114,
+                1096,
+                1165,
+                1202,
+                1147,
+                1262
+              ],
+              "reasoning": "The session-cache node was replaced at 04:04:34 and came back with 0 keys and no RDB snapshot (#1073). Its stats lines stop after that restart. Within about 30s, account-svc's session-cache miss ratio jumped to 96% against a 3% baseline (#1114), so every login read fell through to accounts-db. accounts-db then hit its connection ceiling (495/500, CPU 98%, #1096, #1165) and slow queries began on SELECT * FROM accounts by id (#1202). account-svc queries timed out (#1147), and edge-proxy began returning 504s on POST /login (#1262, #1333). The trigger is a single cache restart, which is survivable alone. The damage comes from the miss storm amplifying load on the database. The status-poller timeouts against legacy-inventory (#429 and later) are a deprecated-endpoint red herring that started before the onset and do not affect login."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.15,
+              "evidenceLines": [
+                1096,
+                1165,
+                1202
+              ],
+              "reasoning": "accounts-db connection slots and CPU were exhausted (495/500, 499/500, CPU 94-98%). This is the saturated resource, but it was driven by the cache-miss load rather than originating on its own, so it is a secondary reading."
+            }
+          ]
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 5,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 2857,
+      "cacheReadTokens": 34990,
+      "cacheWriteTokens": 13164
+    },
+    "durationMs": 12296,
+    "stopReason": "tool_use"
+  }
+}

@@ -1,0 +1,195 @@
+{
+  "score": {
+    "incidentId": "h-012",
+    "difficulty": "medium",
+    "scenario": "resource_exhaustion/db-disk-full",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 6,
+      "precision": 1,
+      "recall": 0.75,
+      "f1": 0.8571428571428571
+    },
+    "herringsCited": 0,
+    "secondaryCited": 3,
+    "costUsd": 0.004146690000000001,
+    "durationMs": 16507,
+    "iterations": 6,
+    "toolCalls": 7,
+    "tokens": {
+      "input": 14,
+      "output": 3686,
+      "cacheRead": 48304,
+      "cacheWrite": 14554
+    }
+  },
+  "result": {
+    "incidentId": "h-012",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.9,
+          "evidenceLines": [
+            501,
+            895,
+            1167,
+            1169,
+            1251,
+            1338
+          ],
+          "reasoning": "accounts-db's data volume filled up. WAL/binlog growth ran at 595MB/h, and disk usage hit 95% at #501 and 99% at #895. Writes then failed with 'could not extend file ... No space left on device' (#1169). account-svc's account inserts and user saves failed with disk-full errors (#1167, #1251, #1338). Those failures directly cause the POST /login 500s: edge-proxy reports 'upstream account-svc returned 500' (#1207, #1344, #1395, #1603). Reads stay healthy because only writes need new disk space. Alternative considered: the tenant_id migration failure (#637-#663, #779) is real but affects order-service/checkout (#989, #1314), not the login path, so it is a separate fault."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.3,
+          "evidenceLines": [
+            645,
+            663,
+            779,
+            989,
+            1314
+          ],
+          "reasoning": "A separate, real fault: migration 0072_add_tenant_id renamed orders.tenant_id to tenant_id_old, then failed at step 2 on a lock timeout. Step 1 was not rolled back because DDL is non-transactional. Order queries now fail with undefined column tenant_id, causing /checkout 500s. This explains checkout errors but not the /login 500s, so it is a secondary incident."
+        }
+      ],
+      "recommendedAction": "Immediately free space on accounts-db: archive or purge WAL/binlog segments, check for an inactive replication slot or stuck archiver holding WAL, and extend the volume. Then verify account-svc writes recover and /login 500s drop. Add disk-usage alerting well before 95%. Separately, fix migration 0072 by restoring orders.tenant_id from tenant_id_old (or completing the migration safely) to clear the checkout 500s."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "since": "2026-10-22T13:29:00Z",
+          "until": "2026-10-22T13:33:00Z",
+          "limit": 60
+        },
+        "output": "1 match(es):\n#501 2026-10-22T13:32:54Z WARN accounts-db disk usage 95% on /var/lib/postgresql/data (WAL/binlog growth 595MB/h)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "postgres",
+          "limit": 30
+        },
+        "output": "58 match(es), showing first 30:\n#49 2026-10-22T13:29:25Z INFO postgres checkpoint complete: wrote 777 buffers (3.2%)\n#93 2026-10-22T13:29:47Z INFO postgres checkpoint complete: wrote 867 buffers (5.5%)\n#148 2026-10-22T13:30:11Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 0\n#194 2026-10-22T13:30:33Z INFO postgres checkpoint complete: wrote 430 buffers (1.1%)\n#242 2026-10-22T13:30:55Z INFO postgres checkpoint complete: wrote 393 buffers (2.2%)\n#301 2026-10-22T13:31:23Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 13\n#351 2026-10-22T13:31:48Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 17\n#395 2026-10-22T13:32:08Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 21\n#441 2026-10-22T13:32:28Z INFO postgres checkpoint complete: wrote 644 buffers (5.0%)\n#482 2026-10-22T13:32:47Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 15\n#541 2026-10-22T13:33:15Z INFO postgres checkpoint complete: wrote 1387 buffers (4.6%)\n#582 2026-10-22T13:33:33Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 25\n#643 2026-10-22T13:33:59Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 9\n#685 2026-10-22T13:34:18Z INFO postgres checkpoint complete: wrote 305 buffers (2.1%)\n#736 2026-10-22T13:34:41Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 0\n#767 2026-10-22T13:34:58Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 20\n#779 2026-10-22T13:35:06Z ERROR postgres statement failed: undefined_column, no attribute tenant_id on orders\n#810 2026-10-22T13:35:20Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 32\n#840 2026-10-22T13:35:37Z INFO postgres checkpoint complete: wrote 867 buffers (7.4%)\n#865 2026-10-22T13:35:58Z INFO postgres checkpoint complete: wrote 451 buffers (2.7%)\n#890 2026-10-22T13:36:16Z INFO postgres checkpoint complete: wrote 342 buffers (3.6%)\n#898 2026-10-22T13:36:21Z ERROR postgres column \"tenant_id\" of relation \"orders\" does not exist at character 90\n#912 2026-10-22T13:36:33Z INFO postgres checkpoint complete: wrote 572 buffers (2.6%)\n#943 2026-10-22T13:36:50Z INFO postgres checkpoint complete: wrote 404 buffers (4.1%)\n#972 2026-10-22T13:37:09Z ERROR postgres ERROR:  column orders.tenant_id does not exist (SQLSTATE 42703)\n#981 2026-10-22T13:37:12Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 4\n#1009 2026-10-22T13:37:32Z INFO postgres checkpoint complete: wrote 1221 buffers (5.4%)\n#1038 2026-10-22T13:37:52Z INFO postgres checkpoint complete: wrote 587 buffers (2.7%)\n#1078 2026-10-22T13:38:17Z INFO postgres checkpoint complete: wrote 836 buffers (2.3%)\n#1108 2026-10-22T13:38:37Z ERROR postgres statement failed: undefined_column, no attribute tenant_id on orders"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "accounts-db",
+          "limit": 30
+        },
+        "output": "56 match(es), showing first 30:\n#27 2026-10-22T13:29:13Z INFO accounts-db checkpoint complete: wrote 433 buffers (5.8%)\n#75 2026-10-22T13:29:37Z INFO accounts-db checkpoint complete: wrote 361 buffers (5.6%)\n#125 2026-10-22T13:30:00Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 6\n#175 2026-10-22T13:30:26Z INFO accounts-db checkpoint complete: wrote 994 buffers (7.9%)\n#241 2026-10-22T13:30:55Z INFO accounts-db checkpoint complete: wrote 286 buffers (1.9%)\n#276 2026-10-22T13:31:12Z INFO accounts-db checkpoint complete: wrote 566 buffers (4.5%)\n#326 2026-10-22T13:31:35Z INFO accounts-db checkpoint complete: wrote 710 buffers (4.6%)\n#378 2026-10-22T13:32:00Z INFO accounts-db checkpoint complete: wrote 1127 buffers (5.8%)\n#438 2026-10-22T13:32:27Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 28\n#497 2026-10-22T13:32:52Z INFO accounts-db checkpoint complete: wrote 500 buffers (5.2%)\n#501 2026-10-22T13:32:54Z WARN accounts-db disk usage 95% on /var/lib/postgresql/data (WAL/binlog growth 595MB/h)\n#555 2026-10-22T13:33:21Z INFO accounts-db checkpoint complete: wrote 1117 buffers (5.9%)\n#602 2026-10-22T13:33:42Z INFO accounts-db checkpoint complete: wrote 213 buffers (3.2%)\n#665 2026-10-22T13:34:09Z INFO accounts-db checkpoint complete: wrote 1118 buffers (7.0%)\n#705 2026-10-22T13:34:26Z INFO accounts-db checkpoint complete: wrote 214 buffers (6.1%)\n#759 2026-10-22T13:34:52Z INFO accounts-db checkpoint complete: wrote 1002 buffers (1.3%)\n#800 2026-10-22T13:35:15Z INFO accounts-db checkpoint complete: wrote 294 buffers (6.4%)\n#839 2026-10-22T13:35:37Z INFO accounts-db checkpoint complete: wrote 738 buffers (1.7%)\n#874 2026-10-22T13:36:05Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 13\n#895 2026-10-22T13:36:18Z WARN accounts-db disk usage 99% on /var/lib/postgresql/data (WAL/binlog growth 816MB/h)\n#899 2026-10-22T13:36:21Z INFO accounts-db checkpoint complete: wrote 1030 buffers (6.5%)\n#933 2026-10-22T13:36:44Z INFO accounts-db checkpoint complete: wrote 656 buffers (5.1%)\n#974 2026-10-22T13:37:09Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 34\n#1016 2026-10-22T13:37:36Z INFO accounts-db checkpoint complete: wrote 1351 buffers (7.7%)\n#1047 2026-10-22T13:37:56Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 0\n#1090 2026-10-22T13:38:23Z INFO accounts-db checkpoint complete: wrote 584 buffers (1.5%)\n#1128 2026-10-22T13:38:48Z INFO accounts-db checkpoint complete: wrote 824 buffers (7.2%)\n#1154 2026-10-22T13:39:07Z INFO accounts-db automatic vacuum of table \"accounts\": index scans: 1, pages removed 27\n#1169 2026-10-22T13:39:16Z ERROR accounts-db could not extend file \"base/16384/25695\": No space left on device\n#1177 2026-10-22T13:39:23Z INFO accounts-db checkpoint complete: wrote 1307 buffers (4.0%)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 60
+        },
+        "output": "39 match(es):\n#776 2026-10-22T13:35:04Z ERROR api-gateway [t-6215] POST /checkout 500 8925ms: upstream order-service returned 500 Internal Server Error\n#779 2026-10-22T13:35:06Z ERROR postgres statement failed: undefined_column, no attribute tenant_id on orders\n#898 2026-10-22T13:36:21Z ERROR postgres column \"tenant_id\" of relation \"orders\" does not exist at character 90\n#972 2026-10-22T13:37:09Z ERROR postgres ERROR:  column orders.tenant_id does not exist (SQLSTATE 42703)\n#989 2026-10-22T13:37:19Z ERROR order-service [t-6327] query on orders failed for o-1888: column \"tenant_id\" does not exist\n#1091 2026-10-22T13:38:23Z ERROR billing-reconciler invoice_archive row inv-673346 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1102 2026-10-22T13:38:33Z ERROR api-gateway [t-6389] POST /checkout 500 7271ms: upstream order-service returned 500 Internal Server Error\n#1108 2026-10-22T13:38:37Z ERROR postgres statement failed: undefined_column, no attribute tenant_id on orders\n#1167 2026-10-22T13:39:14Z ERROR account-svc [t-6418] insert into accounts failed for u-1956: could not extend file\n#1169 2026-10-22T13:39:16Z ERROR accounts-db could not extend file \"base/16384/25695\": No space left on device\n#1206 2026-10-22T13:39:38Z ERROR billing-reconciler invoice_archive row inv-435599 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1207 2026-10-22T13:39:39Z ERROR edge-proxy [t-6442] POST /login 500 27761ms: upstream account-svc returned 500 Internal Server Error\n#1251 2026-10-22T13:40:19Z ERROR account-svc [t-6463] could not save user u-1981: database rejected the write (disk full)\n#1269 2026-10-22T13:40:36Z ERROR accounts-db could not extend file \"base/16384/30820\": No space left on device\n#1272 2026-10-22T13:40:36Z ERROR api-gateway [t-6472] POST /checkout 500 27557ms: upstream order-service returned 500 Internal Server Error\n#1280 2026-10-22T13:40:41Z ERROR billing-reconciler invoice_archive row inv-458285 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1310 2026-10-22T13:41:10Z ERROR billing-reconciler invoice_archive row inv-786358 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1314 2026-10-22T13:41:15Z ERROR order-service [t-6489] query on orders failed for o-1999: column \"tenant_id\" does not exist\n#1329 2026-10-22T13:41:28Z ERROR api-gateway [t-6494] POST /checkout 500 6571ms: upstream order-service returned 500 Internal Server Error\n#1338 2026-10-22T13:41:31Z ERROR account-svc [t-6503] accounts.insert(u-2007) -> DiskFullError\n#1343 2026-10-22T13:41:32Z ERROR accounts-db could not extend file \"base/16384/30138\": No space left on device\n#1344 2026-10-22T13:41:32Z ERROR edge-proxy [t-6509] POST /login 500 27946ms: upstream account-svc returned 500 Internal Server Error\n#1377 2026-10-22T13:42:01Z ERROR billing-reconciler invoice_archive row inv-890904 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1394 2026-10-22T13:42:17Z ERROR order-service [t-6523] query on orders failed for o-2018: column \"tenant_id\" does not exist\n#1395 2026-10-22T13:42:19Z ERROR edge-proxy [t-6526] POST /login 500 23504ms: upstream account-svc returned 500 Internal Server Error\n#1485 2026-10-22T13:43:39Z ERROR billing-reconciler invoice_archive row inv-261389 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1500 2026-10-22T13:43:51Z ERROR edge-proxy [t-6568] POST /login 500 10861ms: upstream account-svc returned 500 Internal Server Error\n#1508 2026-10-22T13:43:55Z ERROR api-gateway [t-6575] POST /checkout 500 15816ms: upstream order-service returned 500 Internal Server Error\n#1555 2026-10-22T13:44:39Z ERROR billing-reconciler invoice_archive row inv-288754 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1603 2026-10-22T13:45:18Z ERROR edge-proxy [t-6611] POST /login 500 8947ms: upstream account-svc returned 500 Internal Server Error\n#1611 2026-10-22T13:45:23Z ERROR billing-reconciler invoice_archive row inv-395233 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1631 2026-10-22T13:45:41Z ERROR api-gateway [t-6622] POST /checkout 500 29940ms: upstream order-service returned 500 Internal Server Error\n#1676 2026-10-22T13:46:24Z ERROR edge-proxy [t-6640] POST /login 500 25468ms: upstream account-svc returned 500 Internal Server Error\n#1683 2026-10-22T13:46:33Z ERROR billing-reconciler invoice_archive row inv-217169 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1761 2026-10-22T13:47:34Z ERROR billing-reconciler invoice_archive row inv-240675 violates checksum constraint, skipping (archive partition 2019-Q4)\n#1794 2026-10-22T13:48:02Z ERROR edge-proxy [t-6684] POST /login 500 9319ms: upstream account-svc returned 500 Internal Server Error\n#1805 2026-10-22T13:48:14Z ERROR order-service [t-6685] query on orders failed for o-2134: column \"tenant_id\" does not exist\n#1814 2026-10-22T13:48:20Z ERROR api-gateway [t-6694] POST /checkout 500 14324ms: upstream order-service returned 500 Internal Server Error\n#1823 2026-10-22T13:48:27Z ERROR billing-reconciler invoice_archive row inv-999170 violates checksum constraint, skipping (archive partition 2019-Q4)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "tenant_id",
+          "limit": 30
+        },
+        "output": "11 match(es):\n#637 2026-10-22T13:33:57Z INFO order-service migrate: applying 0072_add_tenant_id (3 steps) to postgres\n#645 2026-10-22T13:33:59Z INFO order-service migrate: 0072_add_tenant_id step 1/3 ok: renamed column orders.tenant_id -> tenant_id_old\n#663 2026-10-22T13:34:08Z INFO order-service migrate: 0072_add_tenant_id step 2/3 failed: lock timeout on orders; step 1 already committed (non-transactional DDL), not rolled back\n#779 2026-10-22T13:35:06Z ERROR postgres statement failed: undefined_column, no attribute tenant_id on orders\n#898 2026-10-22T13:36:21Z ERROR postgres column \"tenant_id\" of relation \"orders\" does not exist at character 90\n#972 2026-10-22T13:37:09Z ERROR postgres ERROR:  column orders.tenant_id does not exist (SQLSTATE 42703)\n#989 2026-10-22T13:37:19Z ERROR order-service [t-6327] query on orders failed for o-1888: column \"tenant_id\" does not exist\n#1108 2026-10-22T13:38:37Z ERROR postgres statement failed: undefined_column, no attribute tenant_id on orders\n#1314 2026-10-22T13:41:15Z ERROR order-service [t-6489] query on orders failed for o-1999: column \"tenant_id\" does not exist\n#1394 2026-10-22T13:42:17Z ERROR order-service [t-6523] query on orders failed for o-2018: column \"tenant_id\" does not exist\n#1805 2026-10-22T13:48:14Z ERROR order-service [t-6685] query on orders failed for o-2134: column \"tenant_id\" does not exist"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "WAL",
+          "limit": 30
+        },
+        "output": "2 match(es):\n#501 2026-10-22T13:32:54Z WARN accounts-db disk usage 95% on /var/lib/postgresql/data (WAL/binlog growth 595MB/h)\n#895 2026-10-22T13:36:18Z WARN accounts-db disk usage 99% on /var/lib/postgresql/data (WAL/binlog growth 816MB/h)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "account-svc",
+          "since": "2026-10-22T13:38:00Z",
+          "until": "2026-10-22T13:40:00Z",
+          "limit": 30
+        },
+        "output": "27 match(es):\n#1056 2026-10-22T13:38:01Z INFO account-svc [t-6369] user u-1917 accepted, calling auth-svc POST /tokens\n#1059 2026-10-22T13:38:05Z INFO account-svc [t-6371] user u-1919 accepted, calling auth-svc POST /tokens\n#1062 2026-10-22T13:38:06Z INFO account-svc [t-6372] user u-1921 accepted, calling auth-svc POST /tokens\n#1067 2026-10-22T13:38:10Z INFO account-svc [t-6374] user u-1923 accepted, calling auth-svc POST /tokens\n#1072 2026-10-22T13:38:14Z INFO account-svc [t-6376] user u-1924 accepted, calling auth-svc POST /tokens\n#1080 2026-10-22T13:38:18Z DEBUG account-svc GC pause 25ms (young), heap 35%\n#1081 2026-10-22T13:38:19Z INFO account-svc [t-6379] user u-1925 accepted, calling auth-svc POST /tokens\n#1085 2026-10-22T13:38:21Z INFO account-svc [t-6383] user u-1927 accepted, calling auth-svc POST /tokens\n#1092 2026-10-22T13:38:25Z INFO account-svc [t-6384] user u-1930 accepted, calling auth-svc POST /tokens\n#1097 2026-10-22T13:38:30Z INFO account-svc [t-6387] user u-1931 accepted, calling auth-svc POST /tokens\n#1104 2026-10-22T13:38:35Z INFO account-svc [t-6392] user u-1934 accepted, calling auth-svc POST /tokens\n#1109 2026-10-22T13:38:37Z DEBUG account-svc GC pause 25ms (young), heap 47%\n#1112 2026-10-22T13:38:39Z INFO account-svc [t-6396] user u-1935 accepted, calling auth-svc POST /tokens\n#1116 2026-10-22T13:38:43Z INFO account-svc [t-6397] user u-1937 accepted, calling auth-svc POST /tokens\n#1123 2026-10-22T13:38:47Z INFO account-svc [t-6398] user u-1939 accepted, calling auth-svc POST /tokens\n#1130 2026-10-22T13:38:53Z INFO account-svc [t-6400] user u-1941 accepted, calling auth-svc POST /tokens\n#1144 2026-10-22T13:39:00Z INFO account-svc [t-6408] user u-1947 accepted, calling auth-svc POST /tokens\n#1159 2026-10-22T13:39:09Z DEBUG account-svc GC pause 20ms (young), heap 37%\n#1161 2026-10-22T13:39:12Z INFO account-svc [t-6414] user u-1952 accepted, calling auth-svc POST /tokens\n#1167 2026-10-22T13:39:14Z ERROR account-svc [t-6418] insert into accounts failed for u-1956: could not extend file\n#1180 2026-10-22T13:39:27Z INFO account-svc [t-6425] user u-1961 accepted, calling auth-svc POST /tokens\n#1188 2026-10-22T13:39:30Z DEBUG account-svc GC pause 23ms (young), heap 48%\n#1189 2026-10-22T13:39:31Z INFO account-svc [t-6433] user u-1964 accepted, calling auth-svc POST /tokens\n#1197 2026-10-22T13:39:36Z INFO account-svc [t-6437] user u-1965 accepted, calling auth-svc POST /tokens\n#1208 2026-10-22T13:39:44Z INFO account-svc [t-6443] user u-1971 accepted, calling auth-svc POST /tokens\n#1219 2026-10-22T13:39:53Z INFO account-svc [t-6445] user u-1973 accepted, calling auth-svc POST /tokens\n#1224 2026-10-22T13:39:57Z INFO account-svc [t-6448] user u-1974 accepted, calling auth-svc POST /tokens"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"resource_exhaustion\",\"confidence\":0.9,\"evidenceLines\":[501,895,1167,1169,1251,1338],\"reasoning\":\"accounts-db's data volume filled up. WAL/binlog growth ran at 595MB/h, and disk usage hit 95% at #501 and 99% at #895. Writes then began failing with 'could not extend file ... No space left on device' (#1169). account-svc's account inserts and user saves failed with disk-full errors (#1167, #1251, #1338). Those failures are the direct cause of the POST /login 500s: edge-proxy reports 'upstream account-svc returned 500' (#1207, #1344, #1395, #1603). The alert's reads-healthy pattern fits, since only writes need new disk space. Alternative considered: the tenant_id migration failure (#637-#663, #779) is real but affects order-service/checkout (#989, #1314), not the login path, so it is a separate fault. The billing-reconciler checksum errors are also unrelated to login.\",\"}, {\"rootCause\":\"data_integrity\",\"confidence\":0.3,\"evidenceLines\":[645,663,779,989,1314],\"reasoning\":\"A separate, real fault: migration 0072_add_tenant_id renamed orders.tenant_id to tenant_id_old, then failed at step 2 on a lock timeout. Step 1 was not rolled back because DDL is non-transactional. Order queries now fail with undefined column tenant_id, causing /checkout 500s. This explains checkout errors but not the /login 500s, so it is a secondary incident.\",\"}]",
+          "recommendedAction": "Immediately free space on accounts-db: archive or purge WAL/binlog segments, check for an inactive replication slot or a stuck archiver holding WAL, and extend the volume. Then verify account-svc writes recover and /login 500s drop. Add disk-usage alerting well before 95%. Separately, fix migration 0072 by restoring orders.tenant_id from tenant_id_old (or completing the migration) and re-running it safely, since it is causing checkout 500s."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"resource_exhaustion\",\"confidence\":0.9,\"evidenceLines\":[501,895,1167,1169,1251,1338],\"reasoning\":\"accounts-db's data volume filled up. WAL/binlog growth ran at 595MB/h, and disk usage hit 95% at #501 and 99% at #895. Writes then failed with 'could not extend file ... No space left on device' (#1169). account-svc's account inserts and user saves failed with disk-full errors (#1167, #1251, #1338). Those failures directly cause the POST /login 500s: edge-proxy reports 'upstream account-svc returned 500' (#1207, #1344, #1395, #1603). Reads stay healthy because only writes need new disk space. Alternative considered: the tenant_id migration failure (#637-#663, #779) is real but affects order-service/checkout (#989, #1314), not the login path, so it is a separate fault.\",\"},{\"rootCause\":\"data_integrity\",\"confidence\":0.3,\"evidenceLines\":[645,663,779,989,1314],\"reasoning\":\"A separate, real fault: migration 0072_add_tenant_id renamed orders.tenant_id to tenant_id_old, then failed at step 2 on a lock timeout. Step 1 was not rolled back because DDL is non-transactional. Order queries now fail with undefined column tenant_id, causing /checkout 500s. This explains checkout errors but not the /login 500s, so it is a secondary incident.\"}]",
+          "recommendedAction": "Immediately free space on accounts-db: archive or purge WAL/binlog segments, check for an inactive replication slot or stuck archiver holding WAL, and extend the volume. Then verify account-svc writes recover and /login 500s drop. Add disk-usage alerting well before 95%. Separately, fix migration 0072 by restoring orders.tenant_id from tenant_id_old (or completing the migration safely) to clear the checkout 500s."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.9,
+              "evidenceLines": [
+                501,
+                895,
+                1167,
+                1169,
+                1251,
+                1338
+              ],
+              "reasoning": "accounts-db's data volume filled up. WAL/binlog growth ran at 595MB/h, and disk usage hit 95% at #501 and 99% at #895. Writes then failed with 'could not extend file ... No space left on device' (#1169). account-svc's account inserts and user saves failed with disk-full errors (#1167, #1251, #1338). Those failures directly cause the POST /login 500s: edge-proxy reports 'upstream account-svc returned 500' (#1207, #1344, #1395, #1603). Reads stay healthy because only writes need new disk space. Alternative considered: the tenant_id migration failure (#637-#663, #779) is real but affects order-service/checkout (#989, #1314), not the login path, so it is a separate fault."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.3,
+              "evidenceLines": [
+                645,
+                663,
+                779,
+                989,
+                1314
+              ],
+              "reasoning": "A separate, real fault: migration 0072_add_tenant_id renamed orders.tenant_id to tenant_id_old, then failed at step 2 on a lock timeout. Step 1 was not rolled back because DDL is non-transactional. Order queries now fail with undefined column tenant_id, causing /checkout 500s. This explains checkout errors but not the /login 500s, so it is a secondary incident."
+            }
+          ],
+          "recommendedAction": "Immediately free space on accounts-db: archive or purge WAL/binlog segments, check for an inactive replication slot or stuck archiver holding WAL, and extend the volume. Then verify account-svc writes recover and /login 500s drop. Add disk-usage alerting well before 95%. Separately, fix migration 0072 by restoring orders.tenant_id from tenant_id_old (or completing the migration safely) to clear the checkout 500s."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 7,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 3686,
+      "cacheReadTokens": 48304,
+      "cacheWriteTokens": 14554
+    },
+    "durationMs": 16507,
+    "stopReason": "tool_use"
+  }
+}

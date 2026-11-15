@@ -1,0 +1,224 @@
+{
+  "score": {
+    "incidentId": "h-034",
+    "difficulty": "easy",
+    "scenario": "dependency_timeout/db-lock-wait",
+    "truth": "dependency_timeout",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.8,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 7,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 5,
+    "costUsd": 0.00365246,
+    "durationMs": 13107,
+    "iterations": 6,
+    "toolCalls": 8,
+    "tokens": {
+      "input": 14,
+      "output": 2950,
+      "cacheRead": 44056,
+      "cacheWrite": 13884
+    }
+  },
+  "result": {
+    "incidentId": "h-034",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.8,
+          "evidenceLines": [
+            884,
+            963,
+            1010,
+            999,
+            1089,
+            1093,
+            1005
+          ],
+          "reasoning": "The origin is a postgres transaction 85595 from application_name=payment-svc-reconciler that went 'idle in transaction' while holding a RowExclusiveLock on the orders table (#884, 01:34:46Z). It never committed or released. Subsequent UPDATE orders statements queue behind it: postgres reports processes 6347 and 20554 waiting for ShareLock on that transaction (#963, #1010). payment-svc's UPDATE on orders then hits statement_timeout (#999, #1089). order-service's /charge calls to payment-svc time out (#1005, #1093), its connection pool to payment-svc saturates (#1174, #1246), and api-gateway returns 504s (#1123, #1225, #1376, #1413). The pool exhaustion and 504s are downstream amplification and are not cited as the cause. Before 01:34:46 the checkout path was healthy (200s around 115-240ms). The billing-reconciler checksum errors (#308, #601, #683, etc.) are a separate, low-frequency archive issue and are a red herring for this alert."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.15,
+          "evidenceLines": [
+            308,
+            601,
+            683,
+            974,
+            1147
+          ],
+          "reasoning": "billing-reconciler repeatedly logs invoice_archive rows violating a checksum constraint and skipping them. This is real data corruption but it does not touch the orders table or the checkout path, and it began before the latency onset, so it is unlikely to be the cause of the 504s."
+        }
+      ],
+      "recommendedAction": "Terminate the idle-in-transaction session from payment-svc-reconciler holding the lock on orders (transaction 85595, e.g. pg_terminate_backend) to release the ShareLock waiters. Then find why the reconciler leaves transactions open and add idle_in_transaction_session_timeout. Drain the payment-svc connection pool and confirm 504s recover. Separately, triage the invoice_archive checksum violations in billing-reconciler as a data-integrity follow-up."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "20 match(es):\n#308 2026-10-01T01:27:06Z ERROR billing-reconciler invoice_archive row inv-711106 violates checksum constraint, skipping (archive partition 2019-Q2)\n#601 2026-10-01T01:31:00Z ERROR billing-reconciler invoice_archive row inv-130555 violates checksum constraint, skipping (archive partition 2019-Q1)\n#683 2026-10-01T01:32:03Z ERROR billing-reconciler invoice_archive row inv-288275 violates checksum constraint, skipping (archive partition 2019-Q4)\n#884 2026-10-01T01:34:46Z WARN postgres transaction 85595 (application_name=payment-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"orders\"\n#963 2026-10-01T01:36:00Z WARN postgres process 6347 still waiting for ShareLock on transaction 85595 after 1000.000 ms (UPDATE orders SET ...)\n#974 2026-10-01T01:36:06Z ERROR billing-reconciler invoice_archive row inv-948196 violates checksum constraint, skipping (archive partition 2019-Q3)\n#999 2026-10-01T01:36:34Z ERROR payment-svc [t-3786] canceling UPDATE on orders for o-8954 due to statement_timeout\n#1005 2026-10-01T01:36:39Z ERROR order-service [t-3786] upstream request to payment-svc failed: ReadTimeout (read timeout=15s) [o-8954]\n#1010 2026-10-01T01:36:49Z WARN postgres process 20554 still waiting for ShareLock on transaction 85595 after 1000.000 ms (UPDATE orders SET ...)\n#1089 2026-10-01T01:38:18Z ERROR payment-svc [t-3812] query canceled: statement timeout 10000ms (UPDATE orders WHERE id = o-8974)\n#1093 2026-10-01T01:38:23Z ERROR order-service [t-3812] PaymentClient.charge timed out after 15000ms calling payment-svc POST /charge (o-8974)\n#1123 2026-10-01T01:38:51Z ERROR api-gateway [t-3821] POST /checkout 504 29030ms: upstream order-service timed out\n#1147 2026-10-01T01:39:17Z ERROR billing-reconciler invoice_archive row inv-404462 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1174 2026-10-01T01:39:49Z WARN order-service HTTP connection pool to payment-svc at capacity (50/50 in use), 34 requests queued\n#1225 2026-10-01T01:40:43Z ERROR api-gateway [t-3854] POST /checkout 504 20655ms: upstream order-service timed out\n#1237 2026-10-01T01:40:58Z ERROR billing-reconciler invoice_archive row inv-588417 violates checksum constraint, skipping (archive partition 2019-Q3)\n#1246 2026-10-01T01:41:11Z ERROR order-service pool checkout timeout: no connection to payment-svc available after 5000ms\n#1376 2026-10-01T01:43:45Z ERROR api-gateway [t-3893] POST /checkout 504 11416ms: upstream order-service timed out\n#1392 2026-10-01T01:44:10Z ERROR billing-reconciler invoice_archive row inv-757216 violates checksum constraint, skipping (archive partition 2019-Q2)\n#1413 2026-10-01T01:44:29Z ERROR api-gateway [t-3905] POST /checkout 504 26468ms: upstream order-service timed out"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "billing-reconciler",
+          "limit": 30
+        },
+        "output": "108 match(es), showing first 30:\n#19 2026-10-01T01:23:13Z INFO billing-reconciler reconciled 365 current-period invoices, 0 discrepancies\n#30 2026-10-01T01:23:23Z INFO billing-reconciler reconciled 898 current-period invoices, 0 discrepancies\n#50 2026-10-01T01:23:39Z INFO billing-reconciler reconciled 782 current-period invoices, 0 discrepancies\n#61 2026-10-01T01:23:48Z INFO billing-reconciler reconciled 846 current-period invoices, 0 discrepancies\n#84 2026-10-01T01:24:06Z INFO billing-reconciler reconciled 591 current-period invoices, 0 discrepancies\n#101 2026-10-01T01:24:18Z INFO billing-reconciler reconciled 847 current-period invoices, 0 discrepancies\n#114 2026-10-01T01:24:28Z INFO billing-reconciler reconciled 402 current-period invoices, 0 discrepancies\n#130 2026-10-01T01:24:39Z INFO billing-reconciler reconciled 430 current-period invoices, 0 discrepancies\n#144 2026-10-01T01:24:51Z INFO billing-reconciler reconciled 724 current-period invoices, 0 discrepancies\n#157 2026-10-01T01:25:02Z INFO billing-reconciler reconciled 574 current-period invoices, 0 discrepancies\n#170 2026-10-01T01:25:15Z INFO billing-reconciler reconciled 685 current-period invoices, 0 discrepancies\n#192 2026-10-01T01:25:31Z INFO billing-reconciler reconciled 862 current-period invoices, 0 discrepancies\n#203 2026-10-01T01:25:40Z INFO billing-reconciler reconciled 352 current-period invoices, 0 discrepancies\n#211 2026-10-01T01:25:48Z INFO billing-reconciler reconciled 400 current-period invoices, 0 discrepancies\n#229 2026-10-01T01:26:06Z INFO billing-reconciler reconciled 811 current-period invoices, 0 discrepancies\n#241 2026-10-01T01:26:14Z INFO billing-reconciler reconciled 648 current-period invoices, 0 discrepancies\n#259 2026-10-01T01:26:27Z INFO billing-reconciler reconciled 832 current-period invoices, 0 discrepancies\n#273 2026-10-01T01:26:41Z INFO billing-reconciler reconciled 357 current-period invoices, 0 discrepancies\n#292 2026-10-01T01:26:52Z INFO billing-reconciler reconciled 1027 current-period invoices, 0 discrepancies\n#308 2026-10-01T01:27:06Z ERROR billing-reconciler invoice_archive row inv-711106 violates checksum constraint, skipping (archive partition 2019-Q2)\n#314 2026-10-01T01:27:10Z INFO billing-reconciler reconciled 591 current-period invoices, 0 discrepancies\n#339 2026-10-01T01:27:29Z INFO billing-reconciler reconciled 532 current-period invoices, 0 discrepancies\n#356 2026-10-01T01:27:45Z INFO billing-reconciler reconciled 1067 current-period invoices, 0 discrepancies\n#370 2026-10-01T01:28:00Z INFO billing-reconciler reconciled 672 current-period invoices, 0 discrepancies\n#384 2026-10-01T01:28:13Z INFO billing-reconciler reconciled 1142 current-period invoices, 0 discrepancies\n#404 2026-10-01T01:28:28Z INFO billing-reconciler reconciled 1152 current-period invoices, 0 discrepancies\n#426 2026-10-01T01:28:45Z INFO billing-reconciler reconciled 833 current-period invoices, 0 discrepancies\n#440 2026-10-01T01:28:54Z INFO billing-reconciler reconciled 609 current-period invoices, 0 discrepancies\n#452 2026-10-01T01:29:05Z INFO billing-reconciler reconciled 346 current-period invoices, 0 discrepancies\n#463 2026-10-01T01:29:15Z INFO billing-reconciler reconciled 564 current-period invoices, 0 discrepancies"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "85595",
+          "limit": 30
+        },
+        "output": "3 match(es):\n#884 2026-10-01T01:34:46Z WARN postgres transaction 85595 (application_name=payment-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"orders\"\n#963 2026-10-01T01:36:00Z WARN postgres process 6347 still waiting for ShareLock on transaction 85595 after 1000.000 ms (UPDATE orders SET ...)\n#1010 2026-10-01T01:36:49Z WARN postgres process 20554 still waiting for ShareLock on transaction 85595 after 1000.000 ms (UPDATE orders SET ...)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "payment-svc",
+          "since": "01:30:00",
+          "until": "01:35:00",
+          "limit": 40
+        },
+        "output": "51 match(es), showing first 40:\n#524 2026-10-01T01:30:01Z INFO payment-svc [t-3574] POST /charge o-8791 ok 55ms\n#530 2026-10-01T01:30:04Z INFO payment-svc [t-3577] POST /charge o-8792 ok 85ms\n#532 2026-10-01T01:30:04Z DEBUG payment-svc GC pause 7ms (young), heap 33%\n#536 2026-10-01T01:30:06Z INFO payment-svc [t-3579] POST /charge o-8793 ok 78ms\n#542 2026-10-01T01:30:12Z INFO payment-svc [t-3581] POST /charge o-8795 ok 74ms\n#555 2026-10-01T01:30:23Z DEBUG payment-svc GC pause 24ms (young), heap 37%\n#558 2026-10-01T01:30:25Z INFO payment-svc [t-3588] POST /charge o-8803 ok 65ms\n#565 2026-10-01T01:30:32Z INFO payment-svc [t-3592] POST /charge o-8806 ok 38ms\n#577 2026-10-01T01:30:39Z DEBUG payment-svc GC pause 19ms (young), heap 31%\n#581 2026-10-01T01:30:42Z INFO payment-svc [t-3598] POST /charge o-8811 ok 84ms\n#598 2026-10-01T01:31:00Z INFO payment-svc [t-3612] POST /charge o-8817 ok 20ms\n#605 2026-10-01T01:31:03Z INFO payment-svc [t-3615] POST /charge o-8819 ok 24ms\n#607 2026-10-01T01:31:03Z DEBUG payment-svc GC pause 10ms (young), heap 42%\n#629 2026-10-01T01:31:22Z INFO payment-svc [t-3625] POST /charge o-8829 ok 33ms\n#631 2026-10-01T01:31:23Z DEBUG payment-svc GC pause 6ms (young), heap 37%\n#636 2026-10-01T01:31:26Z INFO payment-svc [t-3628] POST /charge o-8832 ok 88ms\n#643 2026-10-01T01:31:32Z INFO payment-svc [t-3630] POST /charge o-8834 ok 20ms\n#653 2026-10-01T01:31:41Z INFO payment-svc [t-3633] POST /charge o-8838 ok 56ms\n#658 2026-10-01T01:31:45Z DEBUG payment-svc GC pause 21ms (young), heap 41%\n#660 2026-10-01T01:31:47Z INFO payment-svc [t-3636] POST /charge o-8841 ok 76ms\n#665 2026-10-01T01:31:50Z INFO payment-svc [t-3640] POST /charge o-8844 ok 39ms\n#672 2026-10-01T01:31:55Z INFO payment-svc [t-3641] POST /charge o-8847 ok 22ms\n#676 2026-10-01T01:31:58Z INFO payment-svc [t-3642] POST /charge o-8849 ok 54ms\n#681 2026-10-01T01:32:00Z INFO payment-svc [t-3646] POST /charge o-8850 ok 58ms\n#688 2026-10-01T01:32:05Z INFO payment-svc [t-3647] POST /charge o-8851 ok 31ms\n#690 2026-10-01T01:32:06Z DEBUG payment-svc GC pause 5ms (young), heap 37%\n#702 2026-10-01T01:32:17Z INFO payment-svc [t-3656] POST /charge o-8856 ok 81ms\n#709 2026-10-01T01:32:21Z INFO payment-svc [t-3657] POST /charge o-8859 ok 83ms\n#712 2026-10-01T01:32:23Z DEBUG payment-svc GC pause 16ms (young), heap 42%\n#732 2026-10-01T01:32:41Z DEBUG payment-svc GC pause 18ms (young), heap 36%\n#734 2026-10-01T01:32:43Z INFO payment-svc [t-3674] POST /charge o-8867 ok 62ms\n#740 2026-10-01T01:32:49Z INFO payment-svc [t-3676] POST /charge o-8868 ok 35ms\n#746 2026-10-01T01:32:55Z INFO payment-svc [t-3680] POST /charge o-8870 ok 35ms\n#755 2026-10-01T01:33:01Z DEBUG payment-svc GC pause 16ms (young), heap 44%\n#768 2026-10-01T01:33:11Z INFO payment-svc [t-3686] POST /charge o-8877 ok 85ms\n#772 2026-10-01T01:33:17Z INFO payment-svc [t-3690] POST /charge o-8880 ok 29ms\n#780 2026-10-01T01:33:21Z DEBUG payment-svc GC pause 12ms (young), heap 35%\n#792 2026-10-01T01:33:33Z INFO payment-svc [t-3699] POST /charge o-8884 ok 78ms\n#797 2026-10-01T01:33:36Z INFO payment-svc [t-3703] POST /charge o-8885 ok 56ms\n#801 2026-10-01T01:33:40Z DEBUG payment-svc GC pause 13ms (young), heap 32%"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 884,
+          "before": 15,
+          "after": 5
+        },
+        "output": "#869 2026-10-01T01:34:33Z INFO payment-svc [t-3735] POST /charge o-8913 ok 30ms\n#870 2026-10-01T01:34:33Z INFO api-gateway [t-3735] POST /checkout 200 115ms\n#871 2026-10-01T01:34:35Z INFO billing-reconciler reconciled 493 current-period invoices, 0 discrepancies\n#872 2026-10-01T01:34:37Z INFO order-consumer processed batch of 119 messages from orders.events (lag 188ms)\n#873 2026-10-01T01:34:37Z INFO metrics-agent flushed 5505 series to remote-write in 46ms\n#874 2026-10-01T01:34:37Z INFO postgres checkpoint complete: wrote 1010 buffers (7.2%)\n#875 2026-10-01T01:34:38Z DEBUG payment-svc GC pause 14ms (young), heap 28%\n#876 2026-10-01T01:34:39Z INFO order-service [t-3739] order o-8914 accepted, calling payment-svc POST /charge\n#877 2026-10-01T01:34:39Z DEBUG api-gateway upstream health: order-service ok, payment-svc ok\n#878 2026-10-01T01:34:40Z INFO api-gateway [t-3739] POST /checkout 200 141ms\n#879 2026-10-01T01:34:41Z INFO redis stats: hits=17963 misses=825 evicted=0 connected_clients=30\n#880 2026-10-01T01:34:42Z INFO order-consumer processed batch of 67 messages from orders.events (lag 79ms)\n#881 2026-10-01T01:34:46Z INFO order-service [t-3741] order o-8915 accepted, calling payment-svc POST /charge\n#882 2026-10-01T01:34:46Z INFO payment-svc [t-3741] POST /charge o-8915 ok 74ms\n#883 2026-10-01T01:34:46Z INFO api-gateway [t-3741] POST /checkout 200 240ms\n#884 2026-10-01T01:34:46Z WARN postgres transaction 85595 (application_name=payment-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"orders\"\n#885 2026-10-01T01:34:46Z INFO billing-reconciler reconciled 733 current-period invoices, 0 discrepancies\n#886 2026-10-01T01:34:46Z INFO order-consumer processed batch of 68 messages from orders.events (lag 383ms)\n#887 2026-10-01T01:34:49Z INFO postgres checkpoint complete: wrote 498 buffers (3.9%)\n#888 2026-10-01T01:34:50Z DEBUG order-service GC pause 24ms (young), heap 41%\n#889 2026-10-01T01:34:50Z INFO order-service [t-3745] order o-8918 accepted, calling payment-svc POST /charge"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "postgres",
+          "until": "01:35:00",
+          "limit": 40
+        },
+        "output": "46 match(es), showing first 40:\n#18 2026-10-01T01:23:13Z INFO postgres checkpoint complete: wrote 802 buffers (5.6%)\n#41 2026-10-01T01:23:30Z INFO postgres checkpoint complete: wrote 925 buffers (6.4%)\n#59 2026-10-01T01:23:46Z INFO postgres checkpoint complete: wrote 866 buffers (3.4%)\n#74 2026-10-01T01:23:58Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 22\n#91 2026-10-01T01:24:11Z INFO postgres checkpoint complete: wrote 1079 buffers (6.1%)\n#115 2026-10-01T01:24:29Z INFO postgres checkpoint complete: wrote 1320 buffers (7.7%)\n#139 2026-10-01T01:24:47Z INFO postgres checkpoint complete: wrote 442 buffers (7.7%)\n#162 2026-10-01T01:25:07Z INFO postgres checkpoint complete: wrote 283 buffers (2.6%)\n#174 2026-10-01T01:25:19Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 34\n#199 2026-10-01T01:25:37Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 10\n#219 2026-10-01T01:25:55Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 2\n#242 2026-10-01T01:26:15Z INFO postgres checkpoint complete: wrote 560 buffers (6.7%)\n#267 2026-10-01T01:26:34Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 2\n#285 2026-10-01T01:26:46Z INFO postgres checkpoint complete: wrote 370 buffers (2.2%)\n#305 2026-10-01T01:27:02Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 18\n#319 2026-10-01T01:27:14Z INFO postgres checkpoint complete: wrote 1174 buffers (3.3%)\n#343 2026-10-01T01:27:33Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 29\n#360 2026-10-01T01:27:46Z INFO postgres checkpoint complete: wrote 1242 buffers (7.1%)\n#374 2026-10-01T01:28:03Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 21\n#387 2026-10-01T01:28:15Z INFO postgres checkpoint complete: wrote 843 buffers (7.2%)\n#409 2026-10-01T01:28:33Z INFO postgres checkpoint complete: wrote 1269 buffers (7.5%)\n#434 2026-10-01T01:28:50Z INFO postgres checkpoint complete: wrote 307 buffers (5.2%)\n#454 2026-10-01T01:29:06Z INFO postgres checkpoint complete: wrote 1362 buffers (6.2%)\n#475 2026-10-01T01:29:22Z INFO postgres checkpoint complete: wrote 497 buffers (2.7%)\n#491 2026-10-01T01:29:35Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 23\n#512 2026-10-01T01:29:48Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 12\n#533 2026-10-01T01:30:04Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 40\n#552 2026-10-01T01:30:21Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 24\n#568 2026-10-01T01:30:33Z INFO postgres checkpoint complete: wrote 1165 buffers (6.2%)\n#587 2026-10-01T01:30:48Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 27\n#613 2026-10-01T01:31:07Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 20\n#634 2026-10-01T01:31:26Z INFO postgres checkpoint complete: wrote 318 buffers (2.9%)\n#657 2026-10-01T01:31:44Z INFO postgres checkpoint complete: wrote 824 buffers (5.0%)\n#678 2026-10-01T01:31:58Z INFO postgres checkpoint complete: wrote 637 buffers (2.7%)\n#698 2026-10-01T01:32:13Z INFO postgres automatic vacuum of table \"orders\": index scans: 1, pages removed 21\n#719 2026-10-01T01:32:31Z INFO postgres checkpoint complete: wrote 895 buffers (3.4%)\n#742 2026-10-01T01:32:50Z INFO postgres checkpoint complete: wrote 691 buffers (3.2%)\n#761 2026-10-01T01:33:05Z INFO postgres checkpoint complete: wrote 313 buffers (5.9%)\n#781 2026-10-01T01:33:22Z INFO postgres checkpoint complete: wrote 642 buffers (6.4%)\n#795 2026-10-01T01:33:34Z INFO postgres checkpoint complete: wrote 1042 buffers (3.2%)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "reconcil",
+          "service": "payment-svc",
+          "limit": 30
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "lock",
+          "limit": 30
+        },
+        "output": "3 match(es):\n#884 2026-10-01T01:34:46Z WARN postgres transaction 85595 (application_name=payment-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"orders\"\n#963 2026-10-01T01:36:00Z WARN postgres process 6347 still waiting for ShareLock on transaction 85595 after 1000.000 ms (UPDATE orders SET ...)\n#1010 2026-10-01T01:36:49Z WARN postgres process 20554 still waiting for ShareLock on transaction 85595 after 1000.000 ms (UPDATE orders SET ...)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.8,
+              "evidenceLines": [
+                884,
+                963,
+                1010,
+                999,
+                1089,
+                1093,
+                1005
+              ],
+              "reasoning": "The origin is a postgres transaction 85595 from application_name=payment-svc-reconciler that went 'idle in transaction' while holding a RowExclusiveLock on the orders table (#884, 01:34:46Z). It never committed or released. Subsequent UPDATE orders statements queue behind it: postgres reports processes 6347 and 20554 waiting for ShareLock on that transaction (#963, #1010). payment-svc's UPDATE on orders then hits statement_timeout (#999, #1089). order-service's /charge calls to payment-svc time out (#1005, #1093), its connection pool to payment-svc saturates (#1174, #1246), and api-gateway returns 504s (#1123, #1225, #1376, #1413). The pool exhaustion and 504s are downstream amplification and are not cited as the cause. Before 01:34:46 the checkout path was healthy (200s around 115-240ms). The billing-reconciler 'checksum constraint' errors (#308, #601, #683, etc.) are a separate, low-frequency archive issue and do not explain the latency. They are a red herring for this alert.",
+              "recommendedAction": "Identify and terminate the idle-in-transaction session from payment-svc-reconciler holding the lock on orders (transaction 85595), e.g. pg_terminate_backend on its pid, to release the ShareLock waiters. Then find why the reconciler leaves transactions open (missing commit/rollback or an await inside a transaction) and add idle_in_transaction_session_timeout. Afterwards, drain the payment-svc connection pool and confirm 504s recover. Separately, triage the invoice_archive checksum violations in billing-reconciler as a data-integrity follow-up."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.15,
+              "evidenceLines": [
+                308,
+                601,
+                683,
+                974,
+                1147
+              ],
+              "reasoning": "billing-reconciler repeatedly logs invoice_archive rows violating a checksum constraint and skipping them. This is real data corruption but it does not touch the orders table or the checkout path, and it began before the latency onset, so it is unlikely to be the cause of the 504s."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.8,
+              "evidenceLines": [
+                884,
+                963,
+                1010,
+                999,
+                1089,
+                1093,
+                1005
+              ],
+              "reasoning": "The origin is a postgres transaction 85595 from application_name=payment-svc-reconciler that went 'idle in transaction' while holding a RowExclusiveLock on the orders table (#884, 01:34:46Z). It never committed or released. Subsequent UPDATE orders statements queue behind it: postgres reports processes 6347 and 20554 waiting for ShareLock on that transaction (#963, #1010). payment-svc's UPDATE on orders then hits statement_timeout (#999, #1089). order-service's /charge calls to payment-svc time out (#1005, #1093), its connection pool to payment-svc saturates (#1174, #1246), and api-gateway returns 504s (#1123, #1225, #1376, #1413). The pool exhaustion and 504s are downstream amplification and are not cited as the cause. Before 01:34:46 the checkout path was healthy (200s around 115-240ms). The billing-reconciler checksum errors (#308, #601, #683, etc.) are a separate, low-frequency archive issue and are a red herring for this alert.",
+              "recommendedAction": "Identify and terminate the idle-in-transaction session from payment-svc-reconciler holding the lock on orders (transaction 85595), e.g. pg_terminate_backend on its pid, to release the ShareLock waiters. Then find why the reconciler leaves transactions open (missing commit/rollback or an await inside a transaction) and add idle_in_transaction_session_timeout. Afterwards, drain the payment-svc connection pool and confirm 504s recover. Separately, triage the invoice_archive checksum violations in billing-reconciler as a data-integrity follow-up."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.15,
+              "evidenceLines": [
+                308,
+                601,
+                683,
+                974,
+                1147
+              ],
+              "reasoning": "billing-reconciler repeatedly logs invoice_archive rows violating a checksum constraint and skipping them. This is real data corruption but it does not touch the orders table or the checkout path, and it began before the latency onset, so it is unlikely to be the cause of the 504s."
+            }
+          ],
+          "recommendedAction": "Terminate the idle-in-transaction session from payment-svc-reconciler holding the lock on orders (transaction 85595, e.g. pg_terminate_backend) to release the ShareLock waiters. Then find why the reconciler leaves transactions open and add idle_in_transaction_session_timeout. Drain the payment-svc connection pool and confirm 504s recover. Separately, triage the invoice_archive checksum violations in billing-reconciler as a data-integrity follow-up."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 8,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 2950,
+      "cacheReadTokens": 44056,
+      "cacheWriteTokens": 13884
+    },
+    "durationMs": 13107,
+    "stopReason": "tool_use"
+  }
+}

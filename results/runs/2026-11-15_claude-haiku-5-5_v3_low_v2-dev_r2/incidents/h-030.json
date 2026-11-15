@@ -1,0 +1,224 @@
+{
+  "score": {
+    "incidentId": "h-030",
+    "difficulty": "medium",
+    "scenario": "config_error/rotated-credential",
+    "truth": "config_error",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "config_error",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 4,
+      "correct": 4,
+      "precision": 1,
+      "recall": 0.8,
+      "f1": 0.888888888888889
+    },
+    "herringsCited": 0,
+    "secondaryCited": 4,
+    "costUsd": 0.00413277,
+    "durationMs": 15325,
+    "iterations": 7,
+    "toolCalls": 8,
+    "tokens": {
+      "input": 16,
+      "output": 3625,
+      "cacheRead": 56067,
+      "cacheWrite": 14064
+    }
+  },
+  "result": {
+    "incidentId": "h-030",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "config_error",
+          "confidence": 0.9,
+          "evidenceLines": [
+            1496,
+            1615,
+            1788,
+            1836
+          ],
+          "reasoning": "At 22:51:32 template-svc reloaded MAILER_API_KEY from the secrets store as version 16, and logged that version 15 was revoked (#1496). Every email send after that fails: the provider returns 401 invalid_api_key / credentials not accepted (#1615, #1788, #1836). template-svc's render path then fails, so notification-svc gets 502 from TemplateClient.render (#1630, #2073, #2250), and POST /v1/notify returns 502 at api-gateway after roughly 20-30s timeouts (#1607, #1718, #2313). The 502s at the gateway and notification-svc are downstream symptoms and are not cited as the cause. The rotation is the origin: the new key version was not accepted by the provider, or the old one was revoked too early."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.25,
+          "evidenceLines": [
+            1908,
+            1990,
+            2055,
+            2100
+          ],
+          "reasoning": "A separate thread: enrichment-svc gets 503 ServiceUnavailable and 500 InternalError from S3 us-east-1 PutObject starting at 22:55:49 (#1908, #1990, #2055, #2100). This drives ingest-api 'storage write failed' and ingest-gateway /v1/events 500s (#1956, #2204, #1922). It does not touch POST /v1/notify, so it is probably a red herring for this alert."
+        }
+      ],
+      "recommendedAction": "Verify that key version 16 is valid and authorized with api.mailer.example. If it is not, roll template-svc back to key version 15, or re-issue the key and reload it. Confirm that revoking version 15 was intended. Then confirm the 401 rate drops and the notify 502 rate recovers. Track the S3 PutObject 503/500s on enrichment-svc separately."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "since": "22:40:00",
+          "until": "22:41:00",
+          "limit": 60
+        },
+        "output": "tool error: since (22:40:00) is after until (22:41:00)",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 60
+        },
+        "output": "42 match(es):\n#1592 2026-10-13T22:52:28Z ERROR webhook-dispatcher customer webhook https://hooks.acme-97.example/ingest returned 502 Bad Gateway (attempt 1/10)\n#1607 2026-10-13T22:52:41Z ERROR api-gateway [t-5245] POST /v1/notify 502 29894ms: upstream notification-svc returned 502 Bad Gateway\n#1615 2026-10-13T22:52:45Z ERROR template-svc [t-5246] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#1630 2026-10-13T22:52:54Z ERROR notification-svc [t-5252] TemplateClient.render failed: template-svc returned 502 (upstream email provider error)\n#1696 2026-10-13T22:53:37Z ERROR webhook-dispatcher customer webhook https://hooks.acme-93.example/ingest returned 502 Bad Gateway (attempt 2/10)\n#1701 2026-10-13T22:53:39Z ERROR template-svc [t-5286] POST /v3/send -> 401 {\"error\":\"invalid_api_key\"}\n#1718 2026-10-13T22:53:49Z ERROR api-gateway [t-5291] POST /v1/notify 502 21845ms: upstream notification-svc returned 502 Bad Gateway\n#1787 2026-10-13T22:54:32Z ERROR notification-svc [t-5326] TemplateClient.render failed: template-svc returned 502 (upstream email provider error)\n#1788 2026-10-13T22:54:33Z ERROR template-svc [t-5330] email provider auth failed: HTTP 401, credentials not accepted by api.mailer.example\n#1790 2026-10-13T22:54:35Z ERROR webhook-dispatcher customer webhook https://hooks.acme-95.example/ingest returned 502 Bad Gateway (attempt 3/10)\n#1834 2026-10-13T22:55:00Z ERROR webhook-dispatcher customer webhook https://hooks.acme-36.example/ingest returned 502 Bad Gateway (attempt 4/10)\n#1836 2026-10-13T22:55:00Z ERROR template-svc [t-5364] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#1861 2026-10-13T22:55:14Z ERROR api-gateway [t-5375] POST /v1/notify 502 29477ms: upstream notification-svc returned 502 Bad Gateway\n#1905 2026-10-13T22:55:48Z ERROR webhook-dispatcher customer webhook https://hooks.acme-51.example/ingest returned 502 Bad Gateway (attempt 5/10)\n#1908 2026-10-13T22:55:49Z ERROR enrichment-svc [t-5396] aws-sdk PutObjectCommand failed for key e-4530.json: ServiceUnavailable (HTTP 503), requestId=EE70776\n#1922 2026-10-13T22:56:08Z ERROR ingest-gateway [t-5399] POST /v1/events 500 27191ms: upstream ingest-api returned 500 Internal Server Error\n#1953 2026-10-13T22:56:34Z ERROR webhook-dispatcher customer webhook https://hooks.acme-14.example/ingest returned 502 Bad Gateway (attempt 6/10)\n#1956 2026-10-13T22:56:37Z ERROR ingest-api [t-5416] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#1968 2026-10-13T22:56:46Z ERROR api-gateway [t-5422] POST /v1/notify 502 20557ms: upstream notification-svc returned 502 Bad Gateway\n#1986 2026-10-13T22:57:03Z ERROR ingest-gateway [t-5428] POST /v1/events 500 12658ms: upstream ingest-api returned 500 Internal Server Error\n#1990 2026-10-13T22:57:07Z ERROR enrichment-svc [t-5431] PutObject s3://ingest-artifacts-prod/e-4544.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id DFE6271)\n#2004 2026-10-13T22:57:20Z ERROR webhook-dispatcher customer webhook https://hooks.acme-97.example/ingest returned 502 Bad Gateway (attempt 7/10)\n#2039 2026-10-13T22:57:55Z ERROR ingest-gateway [t-5440] POST /v1/events 500 16092ms: upstream ingest-api returned 500 Internal Server Error\n#2055 2026-10-13T22:58:08Z ERROR enrichment-svc [t-5446] S3 upload of e-4559.json returned 503 ServiceUnavailable (us-east-1, 8A558E9)\n#2070 2026-10-13T22:58:19Z ERROR ingest-api [t-5456] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#2073 2026-10-13T22:58:22Z ERROR notification-svc [t-5459] TemplateClient.render failed: template-svc returned 502 (upstream email provider error)\n#2077 2026-10-13T22:58:24Z ERROR ingest-gateway [t-5463] POST /v1/events 500 25806ms: upstream ingest-api returned 500 Internal Server Error\n#2097 2026-10-13T22:58:38Z ERROR webhook-dispatcher customer webhook https://hooks.acme-39.example/ingest returned 502 Bad Gateway (attempt 8/10)\n#2100 2026-10-13T22:58:40Z ERROR enrichment-svc [t-5476] aws-sdk PutObjectCommand failed for key e-4577.json: ServiceUnavailable (HTTP 503), requestId=080F9BA\n#2123 2026-10-13T22:58:55Z ERROR api-gateway [t-5483] POST /v1/notify 502 12821ms: upstream notification-svc returned 502 Bad Gateway\n#2144 2026-10-13T22:59:12Z ERROR api-gateway [t-5494] POST /v1/notify 502 27268ms: upstream notification-svc returned 502 Bad Gateway\n#2145 2026-10-13T22:59:12Z ERROR ingest-gateway [t-5497] POST /v1/events 500 12211ms: upstream ingest-api returned 500 Internal Server Error\n#2150 2026-10-13T22:59:15Z ERROR webhook-dispatcher customer webhook https://hooks.acme-18.example/ingest returned 502 Bad Gateway (attempt 9/10)\n#2204 2026-10-13T23:00:10Z ERROR ingest-api [t-5511] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#2208 2026-10-13T23:00:13Z ERROR webhook-dispatcher customer webhook https://hooks.acme-42.example/ingest returned 502 Bad Gateway (attempt 10/10)\n#2220 2026-10-13T23:00:29Z ERROR webhook-dispatcher customer webhook https://hooks.acme-88.example/ingest returned 502 Bad Gateway (attempt 1/10)\n#2226 2026-10-13T23:00:34Z ERROR ingest-gateway [t-5522] POST /v1/events 500 7436ms: upstream ingest-api returned 500 Internal Server Error\n#2250 2026-10-13T23:01:00Z ERROR notification-svc [t-5527] TemplateClient.render failed: template-svc returned 502 (upstream email provider error)\n#2253 2026-10-13T23:01:02Z ERROR ingest-api [t-5528] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#2267 2026-10-13T23:01:11Z ERROR ingest-gateway [t-5539] POST /v1/events 500 14735ms: upstream ingest-api returned 500 Internal Server Error\n#2304 2026-10-13T23:01:42Z ERROR webhook-dispatcher customer webhook https://hooks.acme-70.example/ingest returned 502 Bad Gateway (attempt 2/10)\n#2313 2026-10-13T23:01:50Z ERROR api-gateway [t-5555] POST /v1/notify 502 21574ms: upstream notification-svc returned 502 Bad Gateway"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "since": "22:40:00",
+          "until": "22:52:50",
+          "limit": 60
+        },
+        "output": "tool error: since (22:40:00) is after until (22:52:50)",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "api key",
+          "limit": 50
+        },
+        "output": "2 match(es):\n#1615 2026-10-13T22:52:45Z ERROR template-svc [t-5246] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#1836 2026-10-13T22:55:00Z ERROR template-svc [t-5364] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "since": "2026-10-13T22:40:00Z",
+          "until": "2026-10-13T22:52:50Z",
+          "limit": 60
+        },
+        "output": "125 match(es), showing first 60:\n#17 2026-10-13T22:40:09Z DEBUG template-svc GC pause 19ms (young), heap 39%\n#33 2026-10-13T22:40:18Z INFO template-svc [t-4277] POST /render m-3631 ok 42ms\n#44 2026-10-13T22:40:22Z INFO template-svc [t-4281] POST /render m-3635 ok 86ms\n#62 2026-10-13T22:40:29Z INFO template-svc [t-4295] POST /render m-3646 ok 41ms\n#74 2026-10-13T22:40:35Z INFO template-svc [t-4304] POST /render m-3651 ok 48ms\n#82 2026-10-13T22:40:40Z INFO template-svc [t-4309] POST /render m-3655 ok 90ms\n#84 2026-10-13T22:40:40Z DEBUG template-svc GC pause 17ms (young), heap 44%\n#98 2026-10-13T22:40:46Z INFO template-svc [t-4322] POST /render m-3660 ok 46ms\n#148 2026-10-13T22:41:13Z DEBUG template-svc GC pause 6ms (young), heap 31%\n#201 2026-10-13T22:41:40Z INFO template-svc [t-4399] POST /render m-3714 ok 56ms\n#211 2026-10-13T22:41:45Z INFO template-svc [t-4402] POST /render m-3719 ok 23ms\n#215 2026-10-13T22:41:47Z DEBUG template-svc GC pause 11ms (young), heap 45%\n#219 2026-10-13T22:41:47Z INFO template-svc [t-4403] POST /render m-3722 ok 20ms\n#225 2026-10-13T22:41:51Z INFO template-svc [t-4410] POST /render m-3724 ok 67ms\n#235 2026-10-13T22:41:55Z INFO template-svc [t-4421] POST /render m-3729 ok 63ms\n#243 2026-10-13T22:41:59Z INFO template-svc [t-4427] POST /render m-3733 ok 61ms\n#267 2026-10-13T22:42:10Z INFO template-svc [t-4441] POST /render m-3744 ok 54ms\n#273 2026-10-13T22:42:12Z DEBUG template-svc GC pause 16ms (young), heap 45%\n#308 2026-10-13T22:42:31Z INFO template-svc [t-4463] POST /render m-3763 ok 22ms\n#316 2026-10-13T22:42:34Z INFO template-svc [t-4469] POST /render m-3767 ok 26ms\n#318 2026-10-13T22:42:34Z DEBUG template-svc GC pause 15ms (young), heap 30%\n#340 2026-10-13T22:42:45Z INFO template-svc [t-4482] POST /render m-3781 ok 57ms\n#356 2026-10-13T22:42:53Z INFO template-svc [t-4494] POST /render m-3790 ok 26ms\n#362 2026-10-13T22:42:57Z DEBUG template-svc GC pause 4ms (young), heap 28%\n#364 2026-10-13T22:42:57Z INFO template-svc [t-4500] POST /render m-3795 ok 28ms\n#379 2026-10-13T22:43:05Z INFO template-svc [t-4507] POST /render m-3802 ok 81ms\n#396 2026-10-13T22:43:13Z INFO template-svc [t-4516] POST /render m-3808 ok 33ms\n#403 2026-10-13T22:43:17Z INFO template-svc [t-4521] POST /render m-3812 ok 58ms\n#410 2026-10-13T22:43:21Z DEBUG template-svc GC pause 4ms (young), heap 41%\n#442 2026-10-13T22:43:37Z INFO template-svc [t-4546] POST /render m-3835 ok 28ms\n#463 2026-10-13T22:43:48Z DEBUG template-svc GC pause 12ms (young), heap 41%\n#492 2026-10-13T22:43:59Z INFO template-svc [t-4578] POST /render m-3866 ok 43ms\n#507 2026-10-13T22:44:08Z INFO template-svc [t-4594] POST /render m-3874 ok 20ms\n#517 2026-10-13T22:44:11Z INFO template-svc [t-4598] POST /render m-3879 ok 54ms\n#526 2026-10-13T22:44:16Z INFO template-svc [t-4603] POST /render m-3882 ok 24ms\n#543 2026-10-13T22:44:23Z DEBUG template-svc GC pause 5ms (young), heap 41%\n#562 2026-10-13T22:44:32Z INFO template-svc [t-4626] POST /render m-3898 ok 72ms\n#570 2026-10-13T22:44:37Z INFO template-svc [t-4632] POST /render m-3901 ok 90ms\n#582 2026-10-13T22:44:42Z DEBUG template-svc GC pause 22ms (young), heap 41%\n#587 2026-10-13T22:44:44Z INFO template-svc [t-4650] POST /render m-3911 ok 49ms\n#598 2026-10-13T22:44:49Z INFO template-svc [t-4657] POST /render m-3918 ok 36ms\n#612 2026-10-13T22:44:54Z INFO template-svc [t-4663] POST /render m-3922 ok 72ms\n#624 2026-10-13T22:45:00Z INFO template-svc [t-4669] POST /render m-3930 ok 24ms\n#633 2026-10-13T22:45:03Z DEBUG template-svc GC pause 8ms (young), heap 38%\n#639 2026-10-13T22:45:07Z INFO template-svc [t-4680] POST /render m-3938 ok 78ms\n#647 2026-10-13T22:45:11Z INFO template-svc [t-4686] POST /render m-3941 ok 84ms\n#663 2026-10-13T22:45:17Z INFO template-svc [t-4696] POST /render m-3948 ok 81ms\n#686 2026-10-13T22:45:26Z DEBUG template-svc GC pause 9ms (young), heap 44%\n#689 2026-10-13T22:45:27Z INFO template-svc [t-4710] POST /render m-3960 ok 20ms\n#703 2026-10-13T22:45:32Z INFO template-svc [t-4720] POST /render m-3969 ok 40ms\n#721 2026-10-13T22:45:40Z INFO template-svc [t-4727] POST /render m-3978 ok 69ms\n#729 2026-10-13T22:45:43Z INFO template-svc [t-4733] POST /render m-3983 ok 41ms\n#734 2026-10-13T22:45:45Z INFO template-svc [t-4737] POST /render m-3984 ok 52ms\n#744 2026-10-13T22:45:49Z INFO template-svc [t-4745] POST /render m-3989 ok 27ms\n#756 2026-10-13T22:45:54Z INFO template-svc [t-4750] POST /render m-3992 ok 87ms\n#762 2026-10-13T22:45:57Z INFO template-svc [t-4753] POST /render m-3994 ok 77ms\n#770 2026-10-13T22:46:02Z DEBUG template-svc GC pause 11ms (young), heap 28%\n#780 2026-10-13T22:46:06Z INFO template-svc [t-4766] POST /render m-4003 ok 40ms\n#827 2026-10-13T22:46:28Z DEBUG template-svc GC pause 25ms (young), heap 33%\n#830 2026-10-13T22:46:29Z INFO template-svc [t-4795] POST /render m-4028 ok 53ms"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1615,
+          "before": 8,
+          "after": 3
+        },
+        "output": "#1607 2026-10-13T22:52:41Z ERROR api-gateway [t-5245] POST /v1/notify 502 29894ms: upstream notification-svc returned 502 Bad Gateway\n#1608 2026-10-13T22:52:41Z INFO enrichment-svc [t-5243] POST /enrich e-4419 ok 20ms\n#1609 2026-10-13T22:52:41Z INFO ingest-gateway [t-5243] POST /v1/events 200 94ms\n#1610 2026-10-13T22:52:41Z INFO redis stats: hits=12813 misses=435 evicted=0 connected_clients=37\n#1611 2026-10-13T22:52:43Z INFO events-db InnoDB: page cleaner flushed 279 pages, buffer pool hit rate 98.8%\n#1612 2026-10-13T22:52:43Z DEBUG template-svc GC pause 22ms (young), heap 36%\n#1613 2026-10-13T22:52:43Z DEBUG notification-svc GC pause 12ms (young), heap 39%\n#1614 2026-10-13T22:52:45Z DEBUG ingest-gateway upstream health: ingest-api ok, enrichment-svc ok\n#1615 2026-10-13T22:52:45Z ERROR template-svc [t-5246] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#1616 2026-10-13T22:52:45Z INFO geo-cache stats: hits=11391 misses=822 evicted=0 connected_clients=30\n#1617 2026-10-13T22:52:46Z INFO ingest-api [t-5247] event e-4421 accepted, calling enrichment-svc POST /enrich\n#1618 2026-10-13T22:52:46Z INFO enrichment-svc [t-5247] POST /enrich e-4421 ok 85ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "mailer",
+          "limit": 50
+        },
+        "output": "4 match(es):\n#1496 2026-10-13T22:51:32Z INFO template-svc secrets: reloaded MAILER_API_KEY from secrets store (version 16, previous 15 revoked)\n#1615 2026-10-13T22:52:45Z ERROR template-svc [t-5246] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send\n#1788 2026-10-13T22:54:33Z ERROR template-svc [t-5330] email provider auth failed: HTTP 401, credentials not accepted by api.mailer.example\n#1836 2026-10-13T22:55:00Z ERROR template-svc [t-5364] email provider rejected request: 401 Unauthorized (invalid API key) POST https://api.mailer.example/v3/send"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "credential",
+          "limit": 50
+        },
+        "output": "1 match(es):\n#1788 2026-10-13T22:54:33Z ERROR template-svc [t-5330] email provider auth failed: HTTP 401, credentials not accepted by api.mailer.example"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "config_error",
+              "confidence": 0.9,
+              "evidenceLines": [
+                1496,
+                1615,
+                1788,
+                1836
+              ],
+              "reasoning": "At 22:51:32 template-svc reloaded MAILER_API_KEY from the secrets store as version 16, and logged that version 15 was revoked (#1496). Every email send after that fails: the provider returns 401 invalid_api_key / credentials not accepted (#1615, #1788, #1836). template-svc's render path then fails, so notification-svc gets 502 from TemplateClient.render (#1630, #2073, #2250), and POST /v1/notify returns 502 at api-gateway after roughly 20-30s timeouts (#1607, #1718, #2313). The 502s at the gateway and notification-svc are downstream symptoms and are not cited as the cause. The rotation is the origin: the new key version was not accepted by the provider, or the old one was revoked too early.",
+              "recommendedAction": "Verify that key version 16 is valid and authorized with api.mailer.example. If it is not, roll template-svc back to key version 15, or re-issue the key and reload it. Confirm that revoking version 15 was intended. Then confirm the 401 rate drops and the notify 502 rate recovers."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.25,
+              "evidenceLines": [
+                1908,
+                1990,
+                2055,
+                2100
+              ],
+              "reasoning": "A separate thread: enrichment-svc gets 503 ServiceUnavailable and 500 InternalError from S3 us-east-1 PutObject starting at 22:55:49 (#1908, #1990, #2055, #2100). This drives ingest-api 'storage write failed' and ingest-gateway /v1/events 500s (#1956, #2204, #1922). It does not touch POST /v1/notify, so it is probably a red herring for this alert. It could still add load or latency, so it should be tracked separately."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\": \"config_error\", \"confidence\": 0.9, \"evidenceLines\": [1496, 1615, 1788, 1836], \"reasoning\": \"At 22:51:32 template-svc reloaded MAILER_API_KEY from the secrets store as version 16, and logged that version 15 was revoked (#1496). Every email send after that fails: the provider returns 401 invalid_api_key / credentials not accepted (#1615, #1788, #1836). template-svc's render path then fails, so notification-svc gets 502 from TemplateClient.render (#1630, #2073, #2250), and POST /v1/notify returns 502 at api-gateway after roughly 20-30s timeouts (#1607, #1718, #2313). The 502s at the gateway and notification-svc are downstream symptoms and are not cited as the cause. The rotation is the origin: the new key version was not accepted by the provider, or the old one was revoked too early.\", \"recommendedAction\": \"Verify that key version 16 is valid and authorized with api.mailer.example. If it is not, roll template-svc back to key version 15, or re-issue the key and reload it. Confirm that revoking version 15 was intended. Then confirm the 401 rate drops and the notify 502 rate recovers.\"}, {\"rootCause\": \"external_outage\", \"confidence\": 0.25, \"evidenceLines\": [1908, 1990, 2055, 2100], \"reasoning\": \"A separate thread: enrichment-svc gets 503 ServiceUnavailable and 500 InternalError from S3 us-east-1 PutObject starting at 22:55:49 (#1908, #1990, #2055, #2100). This drives ingest-api 'storage write failed' and ingest-gateway /v1/events 500s (#1956, #2204, #1922). It does not touch POST /v1/notify, so it is probably a red herring for this alert. It could still add load or latency, so it should be tracked separately.\"}]\", \"recommendedAction\": \"Verify that key version 16 is valid and authorized with api.mailer.example. If it is not, roll template-svc back to key version 15, or re-issue the key and reload it. Confirm that revoking version 15 was intended. Then confirm the 401 rate drops and the notify 522 rate recovers.\"}"
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string; recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "config_error",
+              "confidence": 0.9,
+              "evidenceLines": [
+                1496,
+                1615,
+                1788,
+                1836
+              ],
+              "reasoning": "At 22:51:32 template-svc reloaded MAILER_API_KEY from the secrets store as version 16, and logged that version 15 was revoked (#1496). Every email send after that fails: the provider returns 401 invalid_api_key / credentials not accepted (#1615, #1788, #1836). template-svc's render path then fails, so notification-svc gets 502 from TemplateClient.render (#1630, #2073, #2250), and POST /v1/notify returns 502 at api-gateway after roughly 20-30s timeouts (#1607, #1718, #2313). The 502s at the gateway and notification-svc are downstream symptoms and are not cited as the cause. The rotation is the origin: the new key version was not accepted by the provider, or the old one was revoked too early."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.25,
+              "evidenceLines": [
+                1908,
+                1990,
+                2055,
+                2100
+              ],
+              "reasoning": "A separate thread: enrichment-svc gets 503 ServiceUnavailable and 500 InternalError from S3 us-east-1 PutObject starting at 22:55:49 (#1908, #1990, #2055, #2100). This drives ingest-api 'storage write failed' and ingest-gateway /v1/events 500s (#1956, #2204, #1922). It does not touch POST /v1/notify, so it is probably a red herring for this alert."
+            }
+          ],
+          "recommendedAction": "Verify that key version 16 is valid and authorized with api.mailer.example. If it is not, roll template-svc back to key version 15, or re-issue the key and reload it. Confirm that revoking version 15 was intended. Then confirm the 401 rate drops and the notify 502 rate recovers. Track the S3 PutObject 503/500s on enrichment-svc separately."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 7,
+    "toolCalls": 8,
+    "usage": {
+      "inputTokens": 16,
+      "outputTokens": 3625,
+      "cacheReadTokens": 56067,
+      "cacheWriteTokens": 14064
+    },
+    "durationMs": 15325,
+    "stopReason": "tool_use"
+  }
+}

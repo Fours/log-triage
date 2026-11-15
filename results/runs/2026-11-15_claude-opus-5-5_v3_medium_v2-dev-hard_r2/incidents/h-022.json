@@ -1,0 +1,187 @@
+{
+  "score": {
+    "incidentId": "h-022",
+    "difficulty": "hard",
+    "scenario": "cascading_failure/cache-stampede",
+    "truth": "cascading_failure",
+    "acceptable": [
+      "resource_exhaustion"
+    ],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.88,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 9,
+      "correct": 5,
+      "precision": 0.5555555555555556,
+      "recall": 0.8333333333333334,
+      "f1": 0.6666666666666667
+    },
+    "herringsCited": 0,
+    "secondaryCited": 3,
+    "costUsd": 0.0996,
+    "durationMs": 17480,
+    "iterations": 4,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 10,
+      "output": 1752,
+      "cacheRead": 21225,
+      "cacheWrite": 12055
+    }
+  },
+  "result": {
+    "incidentId": "h-022",
+    "model": "claude-opus-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.88,
+          "evidenceLines": [
+            3116,
+            3196,
+            3326,
+            3233,
+            3355,
+            3502,
+            3631,
+            3684,
+            3764
+          ],
+          "reasoning": "Until 18:38, redis-cache shows steady hit ratios of about 95% and catalog-db shows only routine checkpoint and vacuum lines. At 18:38:02 redis-cache restarted after a node replacement and found no RDB snapshot, so it came back with 0 keys (#3116); it logs nothing after that. Within 30s search-api reports a 98% cache miss ratio (baseline 6%) and sends every lookup to catalog-db (#3196, #3326). That is a cache stampede. catalog-db then climbs to 481 and later 498 of 500 connections with CPU at 96-100% (#3233, #3355), and simple point lookups on products take 4-8s (#3502, #3631). search-api product queries start timing out at 5000ms (#3684, #3764). web-bff 504s on /search start at 18:40:24 and match the alert. The cache restart alone was survivable; the damage came from every miss going to the database. Noise I ruled out: the status-poller timeouts against the deprecated legacy-inventory endpoint, metrics-agent exporter drops, the audit-consumer poison message from 18:40:33 (it starts after the onset and doesn't touch the search path), one 3s catalog-svc blip at 18:34, one slow audit_log seq scan, and a GC pause in index-worker."
+        },
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.07,
+          "evidenceLines": [
+            3233,
+            3355,
+            3554
+          ],
+          "reasoning": "catalog-db running out of connections and CPU could be read as resource exhaustion. But it only happens after the cache was wiped, so it is a symptom of the stampede."
+        },
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.03,
+          "evidenceLines": [
+            3515,
+            3555,
+            3621
+          ],
+          "reasoning": "audit-consumer keeps crashing on msg-853789. This starts after the search latency began and is on an unrelated path."
+        }
+      ],
+      "recommendedAction": "Reduce the load on catalog-db: rate-limit or shed search traffic, and add single-flight/request coalescing on cache misses in search-api so only one request per key reloads from the database. Warm redis-cache with hot product keys. Then enable RDB/AOF persistence or replica failover on redis-cache so a node replacement doesn't bring it back empty. Separately, fix audit-consumer: dead-letter msg-853789 and its recursion bug."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "82 match(es), showing first 60:\n#1389 2026-10-03T18:30:52Z WARN web-bff disk usage 76% on /var/log (threshold 75%)\n#1506 2026-10-03T18:31:18Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2291 samples\n#1793 2026-10-03T18:32:34Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1273 samples\n#2001 2026-10-03T18:33:25Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 402 samples\n#2196 2026-10-03T18:34:15Z WARN search-api [t-3600] CatalogClient.getBatch slow: 3019ms calling catalog-svc GET /products/batch (soft threshold 2000ms)\n#2296 2026-10-03T18:34:39Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 361 samples\n#2642 2026-10-03T18:36:05Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2325 samples\n#2809 2026-10-03T18:36:45Z WARN catalog-db slow query 2178ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#2889 2026-10-03T18:37:07Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1358 samples\n#3123 2026-10-03T18:38:05Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 731 samples\n#3157 2026-10-03T18:38:17Z WARN index-worker GC pause 1025ms (G1 Old Gen), heap 58% after collection\n#3233 2026-10-03T18:38:45Z WARN catalog-db too many clients: 481 of 500 connection slots used, CPU at 96%\n#3262 2026-10-03T18:38:52Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3355 2026-10-03T18:39:29Z WARN catalog-db resource monitor: cpu=100% conns=498/500\n#3370 2026-10-03T18:39:36Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3384 2026-10-03T18:39:42Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 842 samples\n#3440 2026-10-03T18:40:04Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3495 2026-10-03T18:40:24Z ERROR web-bff [t-4399] GET /search 504 18709ms: upstream search-api timed out\n#3502 2026-10-03T18:40:27Z WARN catalog-db slow query 8516ms: SELECT * FROM products WHERE id = $1\n#3515 2026-10-03T18:40:33Z FATAL audit-consumer uncaught RangeError (stack size exceeded) while handling offset 604678 (msg-853789)\n#3516 2026-10-03T18:40:33Z ERROR audit-consumer process exited with code 1, restarting (restart 1, backoff 10s)\n#3554 2026-10-03T18:40:46Z WARN catalog-db catalog-db near its connection limit (496/500), load climbing (CPU 99%)\n#3555 2026-10-03T18:40:46Z FATAL audit-consumer unhandled exception processing msg-853789 (offset 604678): RangeError: Maximum call stack size exceeded at expandReferences\n#3556 2026-10-03T18:40:47Z ERROR audit-consumer process exited with code 1, restarting (restart 2, backoff 20s)\n#3569 2026-10-03T18:40:54Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1989 samples\n#3584 2026-10-03T18:40:58Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3621 2026-10-03T18:41:14Z FATAL audit-consumer process crashed on msg-853789@604678: RangeError: call stack overflow in expandReferences\n#3624 2026-10-03T18:41:14Z ERROR audit-consumer process exited with code 1, restarting (restart 3, backoff 40s)\n#3631 2026-10-03T18:41:16Z WARN catalog-db slow query 4070ms: SELECT * FROM products WHERE id = $1\n#3650 2026-10-03T18:41:23Z ERROR web-bff [t-4493] GET /search 504 15772ms: upstream search-api timed out\n#3674 2026-10-03T18:41:32Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3684 2026-10-03T18:41:37Z ERROR search-api [t-4522] query on products timed out after 5000ms (p-3617)\n#3727 2026-10-03T18:41:56Z ERROR web-bff [t-4547] GET /search 504 17701ms: upstream search-api timed out\n#3729 2026-10-03T18:41:56Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2230 samples\n#3764 2026-10-03T18:42:13Z ERROR search-api [t-4564] query on products timed out after 5000ms (p-3651)\n#3824 2026-10-03T18:42:34Z WARN account-svc publish to audit.events slow: broker reports consumer group audit-consumer lag 1917\n#3825 2026-10-03T18:42:34Z WARN catalog-db slow query 7074ms: SELECT * FROM products WHERE id = $1\n#3869 2026-10-03T18:42:50Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3892 2026-10-03T18:43:01Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1690 samples\n#3902 2026-10-03T18:43:05Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3916 2026-10-03T18:43:08Z ERROR web-bff [t-4667] GET /search 504 8217ms: upstream search-api timed out\n#4023 2026-10-03T18:43:55Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4080 2026-10-03T18:44:17Z ERROR web-bff [t-4744] GET /search 504 25468ms: upstream search-api timed out\n#4089 2026-10-03T18:44:20Z WARN account-svc publish to audit.events slow: broker reports consumer group audit-consumer lag 3120\n#4211 2026-10-03T18:45:07Z WARN catalog-db slow query 7694ms: SELECT * FROM products WHERE id = $1\n#4219 2026-10-03T18:45:09Z WARN account-svc publish to audit.events slow: broker reports consumer group audit-consumer lag 3105\n#4224 2026-10-03T18:45:10Z ERROR web-bff [t-4834] GET /search 504 19027ms: upstream search-api timed out\n#4227 2026-10-03T18:45:10Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4243 2026-10-03T18:45:16Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2130 samples\n#4337 2026-10-03T18:45:49Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4348 2026-10-03T18:45:53Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 375 samples\n#4368 2026-10-03T18:46:04Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4388 2026-10-03T18:46:14Z ERROR search-api [t-4936] query on products timed out after 5000ms (p-3955)\n#4447 2026-10-03T18:46:39Z ERROR web-bff [t-4982] GET /search 504 13994ms: upstream search-api timed out\n#4454 2026-10-03T18:46:40Z WARN catalog-db slow query 6805ms: SELECT * FROM products WHERE id = $1\n#4513 2026-10-03T18:47:04Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4526 2026-10-03T18:47:09Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 213 samples\n#4571 2026-10-03T18:47:26Z WARN account-svc publish to audit.events slow: broker reports consumer group audit-consumer lag 6356\n#4675 2026-10-03T18:48:06Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#4690 2026-10-03T18:48:09Z ERROR web-bff [t-5144] GET /search 504 18249ms: upstream search-api timed out"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "redis-cache",
+          "since": "18:35:00",
+          "limit": 40
+        },
+        "output": "25 match(es):\n#2394 2026-10-03T18:35:04Z INFO redis-cache stats: hits=18766 misses=538 evicted=0 connected_clients=34\n#2427 2026-10-03T18:35:12Z INFO redis-cache stats: hits=11537 misses=215 evicted=0 connected_clients=57\n#2459 2026-10-03T18:35:19Z INFO redis-cache stats: hits=14689 misses=416 evicted=0 connected_clients=47\n#2494 2026-10-03T18:35:28Z INFO redis-cache stats: hits=10768 misses=251 evicted=0 connected_clients=35\n#2527 2026-10-03T18:35:35Z INFO redis-cache stats: hits=15200 misses=718 evicted=0 connected_clients=60\n#2560 2026-10-03T18:35:43Z INFO redis-cache stats: hits=18039 misses=260 evicted=0 connected_clients=53\n#2589 2026-10-03T18:35:51Z INFO redis-cache stats: hits=13894 misses=852 evicted=0 connected_clients=30\n#2616 2026-10-03T18:35:57Z INFO redis-cache stats: hits=16978 misses=740 evicted=0 connected_clients=45\n#2644 2026-10-03T18:36:05Z INFO redis-cache stats: hits=8591 misses=401 evicted=0 connected_clients=42\n#2666 2026-10-03T18:36:11Z INFO redis-cache stats: hits=19773 misses=831 evicted=0 connected_clients=33\n#2692 2026-10-03T18:36:17Z INFO redis-cache stats: hits=17070 misses=244 evicted=0 connected_clients=40\n#2728 2026-10-03T18:36:26Z INFO redis-cache stats: hits=9946 misses=642 evicted=0 connected_clients=59\n#2762 2026-10-03T18:36:34Z INFO redis-cache stats: hits=8103 misses=733 evicted=0 connected_clients=46\n#2793 2026-10-03T18:36:41Z INFO redis-cache stats: hits=8938 misses=458 evicted=0 connected_clients=46\n#2831 2026-10-03T18:36:51Z INFO redis-cache stats: hits=17876 misses=212 evicted=0 connected_clients=40\n#2854 2026-10-03T18:36:57Z INFO redis-cache stats: hits=9658 misses=327 evicted=0 connected_clients=55\n#2887 2026-10-03T18:37:06Z INFO redis-cache stats: hits=14180 misses=680 evicted=0 connected_clients=32\n#2922 2026-10-03T18:37:15Z INFO redis-cache stats: hits=15498 misses=593 evicted=0 connected_clients=42\n#2956 2026-10-03T18:37:23Z INFO redis-cache stats: hits=18204 misses=704 evicted=0 connected_clients=34\n#2985 2026-10-03T18:37:29Z INFO redis-cache stats: hits=18986 misses=673 evicted=0 connected_clients=42\n#3013 2026-10-03T18:37:36Z INFO redis-cache stats: hits=15262 misses=829 evicted=0 connected_clients=39\n#3043 2026-10-03T18:37:44Z INFO redis-cache stats: hits=11087 misses=209 evicted=0 connected_clients=52\n#3068 2026-10-03T18:37:51Z INFO redis-cache stats: hits=16951 misses=365 evicted=0 connected_clients=50\n#3097 2026-10-03T18:37:57Z INFO redis-cache stats: hits=13680 misses=282 evicted=0 connected_clients=55\n#3116 2026-10-03T18:38:02Z INFO redis-cache restarted after node replacement; no RDB snapshot found, starting with 0 keys"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "cache",
+          "since": "18:33:00",
+          "until": "18:40:00",
+          "limit": 40
+        },
+        "output": "2 match(es):\n#3196 2026-10-03T18:38:30Z INFO search-api redis-cache miss ratio 98% over last 30s (baseline 6%), loading from catalog-db\n#3326 2026-10-03T18:39:19Z INFO search-api redis-cache miss ratio 95% over last 30s (baseline 5%), loading from catalog-db"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-db",
+          "since": "18:33:00",
+          "until": "18:39:00",
+          "limit": 40
+        },
+        "output": "32 match(es):\n#1927 2026-10-03T18:33:07Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 8\n#1979 2026-10-03T18:33:20Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 27\n#2048 2026-10-03T18:33:35Z INFO catalog-db checkpoint complete: wrote 210 buffers (5.1%)\n#2104 2026-10-03T18:33:50Z INFO catalog-db checkpoint complete: wrote 878 buffers (1.3%)\n#2157 2026-10-03T18:34:04Z INFO catalog-db checkpoint complete: wrote 812 buffers (7.7%)\n#2190 2026-10-03T18:34:13Z INFO catalog-db checkpoint complete: wrote 684 buffers (8.0%)\n#2251 2026-10-03T18:34:28Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 25\n#2286 2026-10-03T18:34:38Z INFO catalog-db checkpoint complete: wrote 995 buffers (6.6%)\n#2346 2026-10-03T18:34:52Z INFO catalog-db checkpoint complete: wrote 1043 buffers (1.9%)\n#2389 2026-10-03T18:35:02Z INFO catalog-db checkpoint complete: wrote 793 buffers (6.7%)\n#2444 2026-10-03T18:35:15Z INFO catalog-db checkpoint complete: wrote 356 buffers (2.6%)\n#2482 2026-10-03T18:35:25Z INFO catalog-db checkpoint complete: wrote 1011 buffers (1.1%)\n#2523 2026-10-03T18:35:35Z INFO catalog-db checkpoint complete: wrote 1039 buffers (6.4%)\n#2562 2026-10-03T18:35:43Z INFO catalog-db checkpoint complete: wrote 527 buffers (6.3%)\n#2612 2026-10-03T18:35:56Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 3\n#2647 2026-10-03T18:36:06Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 1\n#2680 2026-10-03T18:36:15Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 24\n#2720 2026-10-03T18:36:25Z INFO catalog-db checkpoint complete: wrote 932 buffers (5.8%)\n#2771 2026-10-03T18:36:36Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 22\n#2809 2026-10-03T18:36:45Z WARN catalog-db slow query 2178ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#2821 2026-10-03T18:36:48Z INFO catalog-db checkpoint complete: wrote 722 buffers (6.7%)\n#2872 2026-10-03T18:37:03Z INFO catalog-db checkpoint complete: wrote 736 buffers (3.0%)\n#2933 2026-10-03T18:37:17Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 31\n#2993 2026-10-03T18:37:31Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 14\n#3042 2026-10-03T18:37:44Z INFO catalog-db checkpoint complete: wrote 1192 buffers (6.5%)\n#3096 2026-10-03T18:37:57Z INFO catalog-db checkpoint complete: wrote 557 buffers (3.1%)\n#3138 2026-10-03T18:38:12Z INFO catalog-db checkpoint complete: wrote 542 buffers (7.4%)\n#3185 2026-10-03T18:38:27Z INFO catalog-db checkpoint complete: wrote 586 buffers (5.4%)\n#3212 2026-10-03T18:38:37Z INFO catalog-db checkpoint complete: wrote 347 buffers (6.0%)\n#3233 2026-10-03T18:38:45Z WARN catalog-db too many clients: 481 of 500 connection slots used, CPU at 96%\n#3254 2026-10-03T18:38:50Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 31\n#3281 2026-10-03T18:38:59Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 3"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 2196,
+          "before": 5,
+          "after": 3
+        },
+        "output": "#2191 2026-10-03T18:34:13Z INFO redis-cache stats: hits=9222 misses=609 evicted=0 connected_clients=59\n#2192 2026-10-03T18:34:13Z INFO search-api [t-3598] product p-2873 accepted, calling catalog-svc GET /products/batch\n#2193 2026-10-03T18:34:14Z INFO web-bff [t-3598] GET /search 200 139ms\n#2194 2026-10-03T18:34:14Z INFO index-worker processed batch of 115 messages from catalog.updates (lag 89ms)\n#2195 2026-10-03T18:34:14Z INFO accounts-db checkpoint complete: wrote 894 buffers (6.0%)\n#2196 2026-10-03T18:34:15Z WARN search-api [t-3600] CatalogClient.getBatch slow: 3019ms calling catalog-svc GET /products/batch (soft threshold 2000ms)\n#2197 2026-10-03T18:34:15Z INFO search-api [t-3603] product p-2874 accepted, calling catalog-svc GET /products/batch\n#2198 2026-10-03T18:34:15Z INFO catalog-svc [t-3603] GET /products/batch p-2874 ok 35ms\n#2199 2026-10-03T18:34:15Z INFO account-svc [t-3604] user u-2875 accepted, calling auth-svc POST /tokens"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.88,
+              "evidenceLines": [
+                3116,
+                3196,
+                3326,
+                3233,
+                3355,
+                3502,
+                3631,
+                3684,
+                3764
+              ],
+              "reasoning": "Until 18:38, redis-cache shows steady hit ratios of about 95% and catalog-db shows only routine checkpoint and vacuum lines. At 18:38:02 redis-cache restarted after a node replacement and found no RDB snapshot, so it came back with 0 keys (#3116); it logs nothing after that. Within 30s search-api reports a 98% cache miss ratio (baseline 6%) and sends every lookup to catalog-db (#3196, #3326). That is a cache stampede. catalog-db then climbs to 481 and later 498 of 500 connections with CPU at 96-100% (#3233, #3355), and simple point lookups on products take 4-8s (#3502, #3631). search-api product queries start timing out at 5000ms (#3684, #3764). web-bff 504s on /search start at 18:40:24 and match the alert. The cache restart alone was survivable; the damage came from every miss going to the database. Noise I ruled out: the status-poller timeouts against the deprecated legacy-inventory endpoint, metrics-agent exporter drops, the audit-consumer poison message from 18:40:33 (it starts after the onset and doesn't touch the search path), one 3s catalog-svc blip at 18:34, one slow audit_log seq scan, and a GC pause in index-worker."
+            },
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.07,
+              "evidenceLines": [
+                3233,
+                3355,
+                3554
+              ],
+              "reasoning": "catalog-db running out of connections and CPU could be read as resource exhaustion. But it only happens after the cache was wiped, so it is a symptom of the stampede."
+            },
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.03,
+              "evidenceLines": [
+                3515,
+                3555,
+                3621
+              ],
+              "reasoning": "audit-consumer keeps crashing on msg-853789. This starts after the search latency began and is on an unrelated path."
+            }
+          ],
+          "recommendedAction": "Reduce the load on catalog-db: rate-limit or shed search traffic, and add single-flight/request coalescing on cache misses in search-api so only one request per key reloads from the database. Warm redis-cache with hot product keys. Then enable RDB/AOF persistence or replica failover on redis-cache so a node replacement doesn't bring it back empty. Separately, fix audit-consumer: dead-letter msg-853789 and its recursion bug."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 1752,
+      "cacheReadTokens": 21225,
+      "cacheWriteTokens": 12055
+    },
+    "durationMs": 17480,
+    "stopReason": "tool_use"
+  }
+}

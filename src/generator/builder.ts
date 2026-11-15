@@ -52,6 +52,10 @@ export interface BuildInfo {
   families: Record<string, { n: number; variant: number }[]>;
   /** Generator v2: auxiliary services carrying a loud decoy (set by the generator after build). */
   decoyServices: string[];
+  /** Generator v2: the subset of `decoyServices` whose flood starts with the fault instead of before it. */
+  timedDecoyServices: string[];
+  /** Generator v2: the harmless on-path event planted before onset, if any (set by the generator after build). */
+  lookalike: { key: string; mimics: string; service: string; lines: number[] } | null;
   /** Window seconds when each fault began (set by the generator after build). */
   onsets: { primary: number; secondary?: number };
 }
@@ -146,6 +150,13 @@ export class IncidentBuilder {
     return Math.max(0, ...counts.values());
   }
 
+  /** Time (seconds) of the earliest line emitted so far that matches, or undefined if none does. */
+  earliest(match: (d: { role: Role; level: LogLevel; service: string }) => boolean): number | undefined {
+    let best: number | undefined;
+    for (const d of this.drafts) if (match(d) && (best === undefined || d.at < best)) best = d.at;
+    return best;
+  }
+
   /** Sort by time (stable by emission order), assign 1-indexed line numbers. */
   build(): { logs: LogLine[]; evidence: number[]; roles: Role[]; info: BuildInfo } {
     const sorted = [...this.drafts].sort((a, b) => {
@@ -186,7 +197,7 @@ export class IncidentBuilder {
     const evidence = sorted.filter((d) => d.role === "cause").map((d) => d.n);
     const families: BuildInfo["families"] = {};
     for (const d of sorted) if (d.family !== undefined) (families[d.family] ??= []).push({ n: d.n, variant: d.variant ?? 0 });
-    const info: BuildInfo = { origins: sorted.filter((d) => d.origin).map((d) => d.n), families, decoyServices: [], onsets: { primary: 0 } };
+    const info: BuildInfo = { origins: sorted.filter((d) => d.origin).map((d) => d.n), families, decoyServices: [], timedDecoyServices: [], lookalike: null, onsets: { primary: 0 } };
     return { logs, evidence, roles: sorted.map((d) => d.role), info };
   }
 

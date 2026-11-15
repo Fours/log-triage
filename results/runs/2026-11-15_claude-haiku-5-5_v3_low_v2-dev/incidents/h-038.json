@@ -1,0 +1,156 @@
+{
+  "score": {
+    "incidentId": "h-038",
+    "difficulty": "medium",
+    "scenario": "external_outage/cloud-object-storage",
+    "truth": "external_outage",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "external_outage",
+    "confidence": 0.75,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 6,
+      "correct": 4,
+      "precision": 0.6666666666666666,
+      "recall": 0.8,
+      "f1": 0.7272727272727272
+    },
+    "herringsCited": 0,
+    "costUsd": 0.00271354,
+    "durationMs": 11114,
+    "iterations": 4,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 10,
+      "output": 2564,
+      "cacheRead": 19354,
+      "cacheWrite": 9896
+    }
+  },
+  "result": {
+    "incidentId": "h-038",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.75,
+          "evidenceLines": [
+            1628,
+            1703,
+            1722,
+            1750,
+            1798,
+            1765
+          ],
+          "reasoning": "The first failure in the incident is enrichment-svc's S3 PutObject to us-east-1 returning HTTP 503 at 18:28:12 (#1628). From about 18:29 the S3 PutObject calls return 500 InternalError (#1703, #1798), and the aws-sdk retry quota is exhausted (89 failed attempts in 60s, #1722). enrichment-svc then returns 500 'storage write failed' to ingest-api (#1750), which returns 500 to ingest-gateway (#1765). Those gateway 500s are downstream symptoms. The S3 failures come from a third-party dependency reporting itself erroring (5xx) rather than hanging, which fits external_outage better than dependency_timeout. Ruled out: flag-sync's repeated ERRORs (#958, #1227, etc.) concern unknown flags in staging-2 and keep the cached value, so they are noise. The 429 throttling (#392) is a single client and unrelated. event-processor, events-db and geo-cache show no errors, and their metrics look healthy."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.15,
+          "evidenceLines": [
+            1628,
+            1703,
+            1722
+          ],
+          "reasoning": "Alternative reading: the S3 writes may be slow or hanging, given gateway latencies of 6-27s (for example #1674, #2319) and SDK retries piling up. The logs show 5xx responses rather than timeouts, so this is less likely."
+        }
+      ],
+      "recommendedAction": "Confirm the AWS S3 us-east-1 status for ingest-artifacts-prod and engage the AWS side. Meanwhile, cap enrichment-svc's S3 retries and add a circuit breaker or fallback (for example, buffer artifacts or skip the artifact write) so ingest-api stops returning 500 for events that could be accepted. Once S3 recovers, replay the failed artifact writes. Separately, treat the flag-sync staging-2 invalid-key errors as config-cleanup noise, not part of this incident."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "31 match(es):\n#392 2026-11-08T18:18:11Z WARN ingest-gateway rate limiter: client key k-4941 throttled (429), 172 req/s over quota\n#937 2026-11-08T18:22:32Z WARN event-processor msg-458988 from events.raw failed schema validation (missing field \"version\"), moved to events.raw.dlq\n#958 2026-11-08T18:22:42Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#1227 2026-11-08T18:24:53Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#1340 2026-11-08T18:25:45Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#1590 2026-11-08T18:27:45Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#1628 2026-11-08T18:28:12Z ERROR enrichment-svc [t-2835] aws-sdk PutObjectCommand failed for key e-9073.json: ServiceUnavailable (HTTP 503), requestId=18DE90C\n#1645 2026-11-08T18:28:24Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#1674 2026-11-08T18:28:47Z ERROR ingest-gateway [t-2863] POST /v1/events 500 27200ms: upstream ingest-api returned 500 Internal Server Error\n#1703 2026-11-08T18:29:15Z ERROR enrichment-svc [t-2870] PutObject s3://ingest-artifacts-prod/e-9094.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id 847D587)\n#1722 2026-11-08T18:29:28Z WARN enrichment-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (89 failed attempts in 60s)\n#1750 2026-11-08T18:29:52Z ERROR ingest-api [t-2890] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#1765 2026-11-08T18:30:04Z ERROR ingest-gateway [t-2898] POST /v1/events 500 9868ms: upstream ingest-api returned 500 Internal Server Error\n#1798 2026-11-08T18:30:27Z ERROR enrichment-svc [t-2913] S3 upload of e-9124.json returned 500 InternalError (us-east-1, A331BDE)\n#1823 2026-11-08T18:30:41Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#1833 2026-11-08T18:30:52Z ERROR enrichment-svc [t-2930] aws-sdk PutObjectCommand failed for key e-9141.json: InternalError (HTTP 500), requestId=25CFDD1\n#1892 2026-11-08T18:31:31Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#1946 2026-11-08T18:32:14Z ERROR ingest-gateway [t-2978] POST /v1/events 500 13507ms: upstream ingest-api returned 500 Internal Server Error\n#2061 2026-11-08T18:33:48Z ERROR ingest-api [t-3033] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#2067 2026-11-08T18:33:52Z ERROR ingest-gateway [t-3039] POST /v1/events 500 6158ms: upstream ingest-api returned 500 Internal Server Error\n#2094 2026-11-08T18:34:12Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#2204 2026-11-08T18:35:37Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#2304 2026-11-08T18:37:00Z ERROR ingest-api [t-3143] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#2319 2026-11-08T18:37:10Z ERROR ingest-gateway [t-3152] POST /v1/events 500 27893ms: upstream ingest-api returned 500 Internal Server Error\n#2323 2026-11-08T18:37:12Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2380 2026-11-08T18:37:55Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#2451 2026-11-08T18:38:56Z ERROR ingest-gateway [t-3204] POST /v1/events 500 26811ms: upstream ingest-api returned 500 Internal Server Error\n#2514 2026-11-08T18:39:49Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2557 2026-11-08T18:40:26Z ERROR ingest-api [t-3249] EnrichClient.enrich failed: enrichment-svc returned 500 (storage write failed)\n#2562 2026-11-08T18:40:28Z ERROR ingest-gateway [t-3251] POST /v1/events 500 16081ms: upstream ingest-api returned 500 Internal Server Error\n#2615 2026-11-08T18:41:06Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "flag-sync",
+          "level": "ERROR",
+          "limit": 20
+        },
+        "output": "13 match(es):\n#958 2026-11-08T18:22:42Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#1227 2026-11-08T18:24:53Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#1340 2026-11-08T18:25:45Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#1590 2026-11-08T18:27:45Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#1645 2026-11-08T18:28:24Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#1823 2026-11-08T18:30:41Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#1892 2026-11-08T18:31:31Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#2094 2026-11-08T18:34:12Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#2204 2026-11-08T18:35:37Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#2323 2026-11-08T18:37:12Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2380 2026-11-08T18:37:55Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#2514 2026-11-08T18:39:49Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2615 2026-11-08T18:41:06Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1628,
+          "before": 12,
+          "after": 5
+        },
+        "output": "#1616 2026-11-08T18:28:06Z INFO ingest-api [t-2829] event e-9068 accepted, calling enrichment-svc POST /enrich\n#1617 2026-11-08T18:28:06Z INFO ingest-gateway [t-2829] POST /v1/events 200 75ms\n#1618 2026-11-08T18:28:06Z INFO metrics-agent flushed 5471 series to remote-write in 78ms\n#1619 2026-11-08T18:28:08Z INFO ingest-api [t-2831] event e-9069 accepted, calling enrichment-svc POST /enrich\n#1620 2026-11-08T18:28:09Z INFO flag-sync synced 129 feature flags from flag service (etag 50ab35a)\n#1621 2026-11-08T18:28:09Z INFO ingest-gateway [t-2831] POST /v1/events 200 57ms\n#1622 2026-11-08T18:28:09Z DEBUG enrichment-svc GC pause 17ms (young), heap 31%\n#1623 2026-11-08T18:28:10Z INFO ingest-api [t-2833] event e-9071 accepted, calling enrichment-svc POST /enrich\n#1624 2026-11-08T18:28:10Z INFO event-processor processed batch of 23 messages from events.raw (lag 236ms)\n#1625 2026-11-08T18:28:10Z INFO geo-cache stats: hits=16411 misses=724 evicted=0 connected_clients=51\n#1626 2026-11-08T18:28:10Z INFO ingest-gateway [t-2833] POST /v1/events 200 68ms\n#1627 2026-11-08T18:28:11Z DEBUG ingest-api GC pause 18ms (young), heap 43%\n#1628 2026-11-08T18:28:12Z ERROR enrichment-svc [t-2835] aws-sdk PutObjectCommand failed for key e-9073.json: ServiceUnavailable (HTTP 503), requestId=18DE90C\n#1629 2026-11-08T18:28:12Z INFO events-db InnoDB: page cleaner flushed 550 pages, buffer pool hit rate 98.5%\n#1630 2026-11-08T18:28:13Z INFO event-processor processed batch of 44 messages from events.raw (lag 236ms)\n#1631 2026-11-08T18:28:13Z INFO metrics-agent flushed 6511 series to remote-write in 143ms\n#1632 2026-11-08T18:28:15Z INFO flag-sync synced 88 feature flags from flag service (etag a177f42)\n#1633 2026-11-08T18:28:15Z INFO ingest-api [t-2839] event e-9076 accepted, calling enrichment-svc POST /enrich"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "enrichment-svc",
+          "query": "s3",
+          "limit": 30
+        },
+        "output": "3 match(es):\n#1703 2026-11-08T18:29:15Z ERROR enrichment-svc [t-2870] PutObject s3://ingest-artifacts-prod/e-9094.json failed: 500 InternalError: We encountered an internal error. Please try again. (region us-east-1, request-id 847D587)\n#1722 2026-11-08T18:29:28Z WARN enrichment-svc aws-sdk: retry quota exhausted for s3.us-east-1.amazonaws.com (89 failed attempts in 60s)\n#1798 2026-11-08T18:30:27Z ERROR enrichment-svc [t-2913] S3 upload of e-9124.json returned 500 InternalError (us-east-1, A331BDE)"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"external_outage\",\"confidence\":0.75,\"evidenceLines\":[1628,1703,1722,1750,1798,1765],\"reasoning\":\"The first failure in the incident is enrichment-svc's S3 PutObject to us-east-1 returning HTTP 503 at 18:28:12 (#1628). From about 18:29 the S3 PutObject calls return 500 InternalError (#1703, #1798), and the aws-sdk retry quota is exhausted (89 failed attempts in 60s, #1722). enrichment-svc then returns 500 'storage write failed' to ingest-api (#1750), which returns 500 to ingest-gateway (#1765). Those 500s at the gateway are downstream symptoms, so they are not cited as the cause. The S3 failures come from a third-party dependency that is reporting itself erroring (5xx), not hanging, which fits external_outage better than dependency_timeout. Ruled out: flag-sync's repeated ERRORs (#958, #1227, etc.) concern unknown flags in staging-2 and keep the cached value, so they are noise. The 429 throttling (#392) is a single client and unrelated. event-processor, events-db and geo-cache show no errors, and the GC and pool metrics look healthy.\",\"}, {\"rootCause\":\"dependency_timeout\",\"confidence\":0.15,\"evidenceLines\":[1628,1703,1722],\"reasoning\":\"Alternative reading: the S3 writes are slow or hanging, given gateway latencies of 6–27s (for example #1674, #2319) and SDK retries piling up. If S3 is hanging rather than failing fast, this would be a dependency_timeout. The logs show 5xx responses rather than timeouts, so this is less likely.\"}]",
+          "recommendedAction": "Confirm the AWS S3 us-east-1 status for ingest-artifacts-prod and engage the AWS/vendor side. In the meantime, cap enrichment-svc's S3 retries and add a circuit breaker or fallback (for example, buffer artifacts or degrade enrichment that skips the artifact write) so ingest-api stops returning 500 for events that could be accepted. Once S3 recovers, replay the failed artifact writes. Separately, file the flag-sync staging-2 invalid-key noise as a config cleanup item, not part of this incident."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.75,
+              "evidenceLines": [
+                1628,
+                1703,
+                1722,
+                1750,
+                1798,
+                1765
+              ],
+              "reasoning": "The first failure in the incident is enrichment-svc's S3 PutObject to us-east-1 returning HTTP 503 at 18:28:12 (#1628). From about 18:29 the S3 PutObject calls return 500 InternalError (#1703, #1798), and the aws-sdk retry quota is exhausted (89 failed attempts in 60s, #1722). enrichment-svc then returns 500 'storage write failed' to ingest-api (#1750), which returns 500 to ingest-gateway (#1765). Those gateway 500s are downstream symptoms. The S3 failures come from a third-party dependency reporting itself erroring (5xx) rather than hanging, which fits external_outage better than dependency_timeout. Ruled out: flag-sync's repeated ERRORs (#958, #1227, etc.) concern unknown flags in staging-2 and keep the cached value, so they are noise. The 429 throttling (#392) is a single client and unrelated. event-processor, events-db and geo-cache show no errors, and their metrics look healthy."
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.15,
+              "evidenceLines": [
+                1628,
+                1703,
+                1722
+              ],
+              "reasoning": "Alternative reading: the S3 writes may be slow or hanging, given gateway latencies of 6-27s (for example #1674, #2319) and SDK retries piling up. The logs show 5xx responses rather than timeouts, so this is less likely."
+            }
+          ],
+          "recommendedAction": "Confirm the AWS S3 us-east-1 status for ingest-artifacts-prod and engage the AWS side. Meanwhile, cap enrichment-svc's S3 retries and add a circuit breaker or fallback (for example, buffer artifacts or skip the artifact write) so ingest-api stops returning 500 for events that could be accepted. Once S3 recovers, replay the failed artifact writes. Separately, treat the flag-sync staging-2 invalid-key errors as config-cleanup noise, not part of this incident."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 4,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 10,
+      "outputTokens": 2564,
+      "cacheReadTokens": 19354,
+      "cacheWriteTokens": 9896
+    },
+    "durationMs": 11114,
+    "stopReason": "tool_use"
+  }
+}

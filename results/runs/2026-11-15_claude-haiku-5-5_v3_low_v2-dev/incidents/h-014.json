@@ -1,0 +1,228 @@
+{
+  "score": {
+    "incidentId": "h-014",
+    "difficulty": "hard",
+    "scenario": "external_outage/provider-5xx",
+    "truth": "external_outage",
+    "acceptable": [
+      "dependency_timeout"
+    ],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.55,
+    "top1": false,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 2,
+    "evidence": {
+      "cited": 6,
+      "correct": 5,
+      "precision": 0.8333333333333334,
+      "recall": 0.7142857142857143,
+      "f1": 0.7692307692307692
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.0053208000000000005,
+    "durationMs": 19126,
+    "iterations": 8,
+    "toolCalls": 12,
+    "tokens": {
+      "input": 18,
+      "output": 3746,
+      "cacheRead": 96425,
+      "cacheWrite": 19854
+    }
+  },
+  "result": {
+    "incidentId": "h-014",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.55,
+          "evidenceLines": [
+            2775,
+            2846,
+            2874,
+            2983,
+            3032,
+            3174
+          ],
+          "reasoning": "Alert origin chain: template-svc's calls to the third-party email provider (api.mailer.example) start failing around 05:58:56 (#2775 upstream 503), then hang: #2846 'no response within 10s' at 05:59:21, #2983 'read timed out after 10000 ms', and #3032 circuit breaker OPEN at 06:00:31 with 95% failure rate. Template-svc is the failing hop; notification-svc then fails with 'template-svc returned 503 (circuit open)' (#3174), and gateway 503s on POST /v1/notify take 25-28s (#2824, #2934), matching the hung-call pattern. Template-svc shows no internal resource problem (GC pauses small, heap 30-45%). The gateway 503s are downstream symptoms. The mix of fast 503s and 10s timeouts points to the mailer provider hanging or degrading; the logs contain no internal cause on our side."
+        },
+        {
+          "rootCause": "external_outage",
+          "confidence": 0.35,
+          "evidenceLines": [
+            2874,
+            3249,
+            3828
+          ],
+          "reasoning": "The email provider returns explicit 503 Service Unavailable (#2874) and half-open probes keep failing with 503/502 (#3249, #3828), which reads as the third party being down rather than slow. The fix would then be failover or queueing notifications rather than tuning our timeouts."
+        }
+      ],
+      "recommendedAction": "Confirm api.mailer.example status with the provider and check for an incident. Mitigate by failing over to a secondary email provider or queueing notify requests while the mailer is degraded. Keep the template-svc circuit breaker, and lower the 10s read timeout so gateway requests stop hanging for 25s+. Separately, audit-consumer is stuck on poison message msg-567751 (NUL byte at byte 1991, audit.events partition 7 offset 718634, #2859, #3179, #3295). Quarantine that message and fix producer escaping so the partition 7 lag (5000+ messages) drains. This is not the cause of the notify 503s."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "72 match(es), showing first 60:\n#1296 2026-10-10T05:52:29Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#1319 2026-10-10T05:52:37Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 155 events (attempt 1/5, then dropped)\n#1520 2026-10-10T05:53:30Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 128 events (attempt 2/5, then dropped)\n#1558 2026-10-10T05:53:40Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#1596 2026-10-10T05:53:50Z WARN api-gateway TLS certificate for *.internal.example expires in 28 days\n#1920 2026-10-10T05:55:13Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#1922 2026-10-10T05:55:13Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 274 events (attempt 3/5, then dropped)\n#1995 2026-10-10T05:55:31Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#2016 2026-10-10T05:55:38Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 207 events (attempt 4/5, then dropped)\n#2235 2026-10-10T05:56:36Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#2397 2026-10-10T05:57:20Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 153 events (attempt 5/5, then dropped)\n#2548 2026-10-10T05:57:59Z WARN notif-db slow query 1531ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#2604 2026-10-10T05:58:13Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 296 events (attempt 1/5, then dropped)\n#2685 2026-10-10T05:58:32Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#2775 2026-10-10T05:58:56Z ERROR template-svc [t-5233] upstream answered 503, treating the call as failed (bcb18da)\n#2824 2026-10-10T05:59:14Z ERROR api-gateway [t-5259] POST /v1/notify 503 26694ms: upstream notification-svc returned 503 Service Unavailable\n#2828 2026-10-10T05:59:15Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#2846 2026-10-10T05:59:21Z ERROR template-svc [t-5278] call to the email provider aborted: no response within 10s\n#2859 2026-10-10T05:59:27Z ERROR audit-consumer handler error for msg-567751 at offset 718634: invalid JSON payload (byte 1991 is NUL)\n#2874 2026-10-10T05:59:34Z ERROR template-svc [t-5301] email provider returned 503 Service Unavailable POST https://api.mailer.example/v3/send (x-request-id a5b5b53)\n#2934 2026-10-10T05:59:55Z ERROR api-gateway [t-5339] POST /v1/notify 503 28595ms: upstream notification-svc returned 503 Service Unavailable\n#2951 2026-10-10T06:00:03Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 184 events (attempt 2/5, then dropped)\n#2983 2026-10-10T06:00:15Z ERROR template-svc [t-5372] HTTP client: read timed out after 10000 ms waiting for api.mailer.example\n#3023 2026-10-10T06:00:28Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 95 events (attempt 3/5, then dropped)\n#3032 2026-10-10T06:00:31Z WARN template-svc circuit breaker OPEN for api.mailer.example (failure rate 95% over 20 calls), failing fast for 30s\n#3072 2026-10-10T06:00:49Z ERROR api-gateway [t-5417] POST /v1/notify 503 25512ms: upstream notification-svc returned 503 Service Unavailable\n#3096 2026-10-10T06:00:57Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3174 2026-10-10T06:01:34Z ERROR notification-svc [t-5482] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#3179 2026-10-10T06:01:35Z ERROR audit-consumer failed to process msg-567751 (partition 7, offset 718634): JSON parse error: unexpected token '\\u0000' at position 1991\n#3181 2026-10-10T06:01:36Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"dark_mode_emails\" is unknown in environment staging-2, keeping cached value\n#3213 2026-10-10T06:01:50Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 350 events (attempt 4/5, then dropped)\n#3220 2026-10-10T06:01:53Z WARN audit-consumer consumer lag on audit.events partition 7: 913 messages behind (45s)\n#3249 2026-10-10T06:02:05Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 503, re-opening\n#3295 2026-10-10T06:02:20Z ERROR audit-consumer SyntaxError: Unexpected token \\u0000 in JSON at position 1991 (message msg-567751, audit.events[7]@718634)\n#3304 2026-10-10T06:02:25Z ERROR notification-svc [t-5561] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#3318 2026-10-10T06:02:29Z ERROR api-gateway [t-5574] POST /v1/notify 503 25003ms: upstream notification-svc returned 503 Service Unavailable\n#3373 2026-10-10T06:02:50Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#3420 2026-10-10T06:03:10Z ERROR audit-consumer handler error for msg-567751 at offset 718634: invalid JSON payload (byte 1991 is NUL)\n#3423 2026-10-10T06:03:11Z ERROR api-gateway [t-5637] POST /v1/notify 503 26286ms: upstream notification-svc returned 503 Service Unavailable\n#3434 2026-10-10T06:03:15Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 392 events (attempt 5/5, then dropped)\n#3485 2026-10-10T06:03:34Z WARN audit-consumer consumer lag on audit.events partition 7: 2638 messages behind (80s)\n#3536 2026-10-10T06:03:55Z ERROR api-gateway [t-5709] POST /v1/notify 503 8530ms: upstream notification-svc returned 503 Service Unavailable\n#3558 2026-10-10T06:04:06Z WARN audit-consumer consumer lag on audit.events partition 7: 3312 messages behind (195s)\n#3566 2026-10-10T06:04:10Z ERROR account-svc [t-5729] user u-3654 timed out waiting for downstream confirmation (120s), marked failed\n#3591 2026-10-10T06:04:19Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"new_pricing_banner\" is unknown in environment staging-2, keeping cached value\n#3634 2026-10-10T06:04:36Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 116 events (attempt 1/5, then dropped)\n#3674 2026-10-10T06:04:54Z ERROR api-gateway [t-5798] POST /v1/notify 503 4905ms: upstream notification-svc returned 503 Service Unavailable\n#3696 2026-10-10T06:05:01Z ERROR notification-svc [t-5806] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#3708 2026-10-10T06:05:05Z ERROR account-svc [t-5819] user u-3728 timed out waiting for downstream confirmation (120s), marked failed\n#3735 2026-10-10T06:05:16Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 361 events (attempt 2/5, then dropped)\n#3756 2026-10-10T06:05:23Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"search_rerank_beta\" is unknown in environment staging-2, keeping cached value\n#3776 2026-10-10T06:05:30Z ERROR api-gateway [t-5858] POST /v1/notify 503 6495ms: upstream notification-svc returned 503 Service Unavailable\n#3828 2026-10-10T06:05:50Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 502, re-opening\n#3858 2026-10-10T06:06:02Z WARN audit-consumer consumer lag on audit.events partition 7: 2928 messages behind (352s)\n#3949 2026-10-10T06:06:36Z WARN audit-consumer consumer lag on audit.events partition 7: 5070 messages behind (230s)\n#3954 2026-10-10T06:06:39Z ERROR notification-svc [t-5961] TemplateClient.render failed: template-svc returned 503 (circuit open)\n#3976 2026-10-10T06:06:49Z ERROR api-gateway [t-5981] POST /v1/notify 503 25896ms: upstream notification-svc returned 503 Service Unavailable\n#3981 2026-10-10T06:06:50Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 371 events (attempt 3/5, then dropped)\n#4012 2026-10-10T06:07:02Z ERROR flag-sync config reloaded from flag service with 1 invalid key: flag \"checkout_v3_ui\" is unknown in environment staging-2, keeping cached value\n#4024 2026-10-10T06:07:06Z ERROR account-svc [t-6013] user u-3882 timed out waiting for downstream confirmation (120s), marked failed"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "limit": 60
+        },
+        "output": "300 match(es), showing first 60:\n#4 2026-10-10T05:47:00Z INFO template-svc [t-3340] POST /render m-1775 ok 54ms\n#19 2026-10-10T05:47:05Z DEBUG template-svc GC pause 13ms (young), heap 31%\n#21 2026-10-10T05:47:05Z INFO template-svc [t-3351] POST /render m-1783 ok 36ms\n#30 2026-10-10T05:47:08Z INFO template-svc [t-3355] POST /render m-1789 ok 49ms\n#47 2026-10-10T05:47:12Z INFO template-svc [t-3371] POST /render m-1801 ok 73ms\n#54 2026-10-10T05:47:14Z INFO template-svc [t-3375] POST /render m-1804 ok 34ms\n#61 2026-10-10T05:47:15Z INFO template-svc [t-3380] POST /render m-1807 ok 33ms\n#65 2026-10-10T05:47:16Z INFO template-svc [t-3384] POST /render m-1810 ok 90ms\n#72 2026-10-10T05:47:17Z INFO template-svc [t-3390] POST /render m-1816 ok 89ms\n#78 2026-10-10T05:47:19Z INFO template-svc [t-3393] POST /render m-1821 ok 41ms\n#82 2026-10-10T05:47:20Z DEBUG template-svc GC pause 18ms (young), heap 33%\n#96 2026-10-10T05:47:23Z INFO template-svc [t-3401] POST /render m-1831 ok 32ms\n#102 2026-10-10T05:47:25Z INFO template-svc [t-3405] POST /render m-1832 ok 64ms\n#113 2026-10-10T05:47:28Z INFO template-svc [t-3419] POST /render m-1841 ok 38ms\n#138 2026-10-10T05:47:35Z DEBUG template-svc GC pause 22ms (young), heap 42%\n#150 2026-10-10T05:47:36Z INFO template-svc [t-3443] POST /render m-1860 ok 90ms\n#167 2026-10-10T05:47:41Z INFO template-svc [t-3454] POST /render m-1870 ok 60ms\n#208 2026-10-10T05:47:51Z INFO template-svc [t-3484] POST /render m-1894 ok 24ms\n#219 2026-10-10T05:47:54Z DEBUG template-svc GC pause 19ms (young), heap 38%\n#261 2026-10-10T05:48:05Z INFO template-svc [t-3518] POST /render m-1925 ok 81ms\n#296 2026-10-10T05:48:14Z INFO template-svc [t-3548] POST /render m-1945 ok 60ms\n#304 2026-10-10T05:48:17Z DEBUG template-svc GC pause 25ms (young), heap 36%\n#314 2026-10-10T05:48:19Z INFO template-svc [t-3556] POST /render m-1953 ok 78ms\n#332 2026-10-10T05:48:24Z INFO template-svc [t-3571] POST /render m-1962 ok 24ms\n#346 2026-10-10T05:48:28Z INFO template-svc [t-3584] POST /render m-1969 ok 53ms\n#355 2026-10-10T05:48:30Z INFO template-svc [t-3587] POST /render m-1973 ok 22ms\n#370 2026-10-10T05:48:34Z INFO template-svc [t-3601] POST /render m-1981 ok 51ms\n#386 2026-10-10T05:48:37Z INFO template-svc [t-3616] POST /render m-1992 ok 42ms\n#397 2026-10-10T05:48:40Z INFO template-svc [t-3625] POST /render m-1999 ok 47ms\n#401 2026-10-10T05:48:41Z DEBUG template-svc GC pause 10ms (young), heap 42%\n#408 2026-10-10T05:48:42Z INFO template-svc [t-3633] POST /render m-2004 ok 31ms\n#416 2026-10-10T05:48:44Z INFO template-svc [t-3641] POST /render m-2006 ok 64ms\n#438 2026-10-10T05:48:50Z INFO template-svc [t-3656] POST /render m-2016 ok 47ms\n#446 2026-10-10T05:48:51Z INFO template-svc [t-3659] POST /render m-2022 ok 59ms\n#465 2026-10-10T05:48:56Z INFO template-svc [t-3672] POST /render m-2031 ok 47ms\n#471 2026-10-10T05:48:59Z DEBUG template-svc GC pause 16ms (young), heap 44%\n#496 2026-10-10T05:49:04Z INFO template-svc [t-3694] POST /render m-2047 ok 85ms\n#513 2026-10-10T05:49:09Z INFO template-svc [t-3707] POST /render m-2056 ok 75ms\n#527 2026-10-10T05:49:14Z INFO template-svc [t-3720] POST /render m-2063 ok 43ms\n#536 2026-10-10T05:49:15Z DEBUG template-svc GC pause 25ms (young), heap 35%\n#544 2026-10-10T05:49:18Z INFO template-svc [t-3733] POST /render m-2072 ok 42ms\n#552 2026-10-10T05:49:19Z INFO template-svc [t-3735] POST /render m-2077 ok 75ms\n#566 2026-10-10T05:49:23Z INFO template-svc [t-3744] POST /render m-2084 ok 37ms\n#573 2026-10-10T05:49:25Z INFO template-svc [t-3750] POST /render m-2087 ok 50ms\n#585 2026-10-10T05:49:29Z INFO template-svc [t-3757] POST /render m-2094 ok 22ms\n#597 2026-10-10T05:49:32Z INFO template-svc [t-3771] POST /render m-2100 ok 48ms\n#602 2026-10-10T05:49:33Z DEBUG template-svc GC pause 23ms (young), heap 29%\n#608 2026-10-10T05:49:34Z INFO template-svc [t-3777] POST /render m-2105 ok 49ms\n#623 2026-10-10T05:49:38Z INFO template-svc [t-3792] POST /render m-2113 ok 27ms\n#632 2026-10-10T05:49:40Z INFO template-svc [t-3796] POST /render m-2118 ok 82ms\n#655 2026-10-10T05:49:46Z INFO template-svc [t-3809] POST /render m-2128 ok 75ms\n#677 2026-10-10T05:49:52Z INFO template-svc [t-3827] POST /render m-2140 ok 77ms\n#679 2026-10-10T05:49:53Z DEBUG template-svc GC pause 23ms (young), heap 33%\n#690 2026-10-10T05:49:57Z INFO template-svc [t-3832] POST /render m-2146 ok 88ms\n#702 2026-10-10T05:49:59Z INFO template-svc [t-3840] POST /render m-2154 ok 67ms\n#706 2026-10-10T05:50:00Z INFO template-svc [t-3842] POST /render m-2157 ok 59ms\n#716 2026-10-10T05:50:02Z INFO template-svc [t-3850] POST /render m-2161 ok 57ms\n#722 2026-10-10T05:50:04Z INFO template-svc [t-3856] POST /render m-2165 ok 52ms\n#739 2026-10-10T05:50:09Z DEBUG template-svc GC pause 22ms (young), heap 31%\n#781 2026-10-10T05:50:20Z INFO template-svc [t-3901] POST /render m-2194 ok 35ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "mailer",
+          "since": "05:50:00",
+          "until": "05:59:00",
+          "limit": 40
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "status-poller",
+          "limit": 40
+        },
+        "output": "90 match(es), showing first 40:\n#37 2026-10-10T05:47:09Z INFO status-poller poll cycle complete: 18 targets checked in 572ms\n#90 2026-10-10T05:47:23Z INFO status-poller poll cycle complete: 35 targets checked in 588ms\n#162 2026-10-10T05:47:40Z INFO status-poller poll cycle complete: 34 targets checked in 479ms\n#232 2026-10-10T05:47:57Z INFO status-poller poll cycle complete: 25 targets checked in 814ms\n#301 2026-10-10T05:48:16Z INFO status-poller poll cycle complete: 27 targets checked in 744ms\n#353 2026-10-10T05:48:30Z INFO status-poller poll cycle complete: 23 targets checked in 878ms\n#389 2026-10-10T05:48:39Z INFO status-poller poll cycle complete: 38 targets checked in 876ms\n#455 2026-10-10T05:48:53Z INFO status-poller poll cycle complete: 40 targets checked in 533ms\n#522 2026-10-10T05:49:12Z INFO status-poller poll cycle complete: 34 targets checked in 862ms\n#575 2026-10-10T05:49:25Z INFO status-poller poll cycle complete: 35 targets checked in 826ms\n#625 2026-10-10T05:49:39Z INFO status-poller poll cycle complete: 39 targets checked in 603ms\n#693 2026-10-10T05:49:57Z INFO status-poller poll cycle complete: 25 targets checked in 758ms\n#757 2026-10-10T05:50:15Z INFO status-poller poll cycle complete: 33 targets checked in 638ms\n#813 2026-10-10T05:50:28Z INFO status-poller poll cycle complete: 38 targets checked in 524ms\n#872 2026-10-10T05:50:42Z INFO status-poller poll cycle complete: 25 targets checked in 883ms\n#915 2026-10-10T05:50:52Z INFO status-poller poll cycle complete: 39 targets checked in 813ms\n#991 2026-10-10T05:51:11Z INFO status-poller poll cycle complete: 20 targets checked in 344ms\n#1056 2026-10-10T05:51:29Z INFO status-poller poll cycle complete: 31 targets checked in 702ms\n#1103 2026-10-10T05:51:41Z INFO status-poller poll cycle complete: 22 targets checked in 753ms\n#1154 2026-10-10T05:51:53Z INFO status-poller poll cycle complete: 32 targets checked in 872ms\n#1234 2026-10-10T05:52:14Z INFO status-poller poll cycle complete: 39 targets checked in 791ms\n#1268 2026-10-10T05:52:22Z INFO status-poller poll cycle complete: 21 targets checked in 830ms\n#1309 2026-10-10T05:52:33Z INFO status-poller poll cycle complete: 32 targets checked in 887ms\n#1369 2026-10-10T05:52:50Z INFO status-poller poll cycle complete: 27 targets checked in 717ms\n#1441 2026-10-10T05:53:08Z INFO status-poller poll cycle complete: 38 targets checked in 685ms\n#1486 2026-10-10T05:53:21Z INFO status-poller poll cycle complete: 34 targets checked in 684ms\n#1542 2026-10-10T05:53:35Z INFO status-poller poll cycle complete: 37 targets checked in 676ms\n#1613 2026-10-10T05:53:53Z INFO status-poller poll cycle complete: 24 targets checked in 695ms\n#1690 2026-10-10T05:54:14Z INFO status-poller poll cycle complete: 31 targets checked in 628ms\n#1753 2026-10-10T05:54:30Z INFO status-poller poll cycle complete: 29 targets checked in 738ms\n#1816 2026-10-10T05:54:47Z INFO status-poller poll cycle complete: 25 targets checked in 556ms\n#1888 2026-10-10T05:55:05Z INFO status-poller poll cycle complete: 19 targets checked in 395ms\n#1971 2026-10-10T05:55:24Z INFO status-poller poll cycle complete: 38 targets checked in 532ms\n#2027 2026-10-10T05:55:40Z INFO status-poller poll cycle complete: 22 targets checked in 825ms\n#2096 2026-10-10T05:56:00Z INFO status-poller poll cycle complete: 33 targets checked in 325ms\n#2172 2026-10-10T05:56:19Z INFO status-poller poll cycle complete: 19 targets checked in 333ms\n#2212 2026-10-10T05:56:30Z INFO status-poller poll cycle complete: 25 targets checked in 528ms\n#2263 2026-10-10T05:56:44Z INFO status-poller poll cycle complete: 21 targets checked in 623ms\n#2298 2026-10-10T05:56:53Z INFO status-poller poll cycle complete: 35 targets checked in 773ms\n#2376 2026-10-10T05:57:14Z INFO status-poller poll cycle complete: 25 targets checked in 795ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "level": "WARN",
+          "limit": 30
+        },
+        "output": "7 match(es):\n#2775 2026-10-10T05:58:56Z ERROR template-svc [t-5233] upstream answered 503, treating the call as failed (bcb18da)\n#2846 2026-10-10T05:59:21Z ERROR template-svc [t-5278] call to the email provider aborted: no response within 10s\n#2874 2026-10-10T05:59:34Z ERROR template-svc [t-5301] email provider returned 503 Service Unavailable POST https://api.mailer.example/v3/send (x-request-id a5b5b53)\n#2983 2026-10-10T06:00:15Z ERROR template-svc [t-5372] HTTP client: read timed out after 10000 ms waiting for api.mailer.example\n#3032 2026-10-10T06:00:31Z WARN template-svc circuit breaker OPEN for api.mailer.example (failure rate 95% over 20 calls), failing fast for 30s\n#3249 2026-10-10T06:02:05Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 503, re-opening\n#3828 2026-10-10T06:05:50Z WARN template-svc circuit breaker half-open probe to api.mailer.example failed: 502, re-opening"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 2846,
+          "before": 15,
+          "after": 5
+        },
+        "output": "#2831 2026-10-10T05:59:16Z INFO edge-proxy [t-5265] POST /login 200 124ms\n#2832 2026-10-10T05:59:16Z INFO notification-svc [t-5266] message m-3310 accepted, calling template-svc POST /render\n#2833 2026-10-10T05:59:16Z INFO api-gateway [t-5266] POST /v1/notify 200 86ms\n#2834 2026-10-10T05:59:17Z INFO account-svc [t-5269] user u-3312 accepted, calling auth-svc POST /tokens\n#2835 2026-10-10T05:59:17Z INFO auth-svc [t-5269] POST /tokens u-3312 ok 32ms\n#2836 2026-10-10T05:59:17Z INFO edge-proxy [t-5269] POST /login 200 117ms\n#2837 2026-10-10T05:59:20Z DEBUG template-svc GC pause 15ms (young), heap 45%\n#2838 2026-10-10T05:59:20Z INFO account-svc [t-5273] user u-3314 accepted, calling auth-svc POST /tokens\n#2839 2026-10-10T05:59:20Z INFO auth-svc [t-5273] POST /tokens u-3314 ok 25ms\n#2840 2026-10-10T05:59:20Z INFO edge-proxy [t-5273] POST /login 200 114ms\n#2841 2026-10-10T05:59:20Z DEBUG auth-svc GC pause 21ms (young), heap 45%\n#2842 2026-10-10T05:59:21Z INFO account-svc [t-5275] user u-3316 accepted, calling auth-svc POST /tokens\n#2843 2026-10-10T05:59:21Z INFO auth-svc [t-5275] POST /tokens u-3316 ok 68ms\n#2844 2026-10-10T05:59:21Z INFO notif-worker processed batch of 32 messages from notifications.outbound (lag 109ms)\n#2845 2026-10-10T05:59:21Z INFO edge-proxy [t-5275] POST /login 200 175ms\n#2846 2026-10-10T05:59:21Z ERROR template-svc [t-5278] call to the email provider aborted: no response within 10s\n#2847 2026-10-10T05:59:23Z INFO redis stats: hits=18048 misses=701 evicted=0 connected_clients=31\n#2848 2026-10-10T05:59:23Z INFO session-cache stats: hits=18896 misses=896 evicted=0 connected_clients=47\n#2849 2026-10-10T05:59:24Z INFO account-svc [t-5280] user u-3317 accepted, calling auth-svc POST /tokens\n#2850 2026-10-10T05:59:24Z INFO accounts-db checkpoint complete: wrote 1140 buffers (6.5%)\n#2851 2026-10-10T05:59:24Z INFO edge-proxy [t-5280] POST /login 200 150ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 30
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "template-svc",
+          "since": "05:55:00",
+          "until": "05:59:25",
+          "limit": 40
+        },
+        "output": "86 match(es), showing first 40:\n#1875 2026-10-10T05:55:02Z INFO template-svc [t-4628] POST /render m-2799 ok 82ms\n#1876 2026-10-10T05:55:02Z DEBUG template-svc GC pause 24ms (young), heap 35%\n#1882 2026-10-10T05:55:04Z INFO template-svc [t-4634] POST /render m-2801 ok 81ms\n#1904 2026-10-10T05:55:09Z INFO template-svc [t-4652] POST /render m-2814 ok 56ms\n#1914 2026-10-10T05:55:12Z INFO template-svc [t-4659] POST /render m-2820 ok 49ms\n#1924 2026-10-10T05:55:13Z INFO template-svc [t-4664] POST /render m-2825 ok 90ms\n#1937 2026-10-10T05:55:16Z INFO template-svc [t-4674] POST /render m-2833 ok 39ms\n#1945 2026-10-10T05:55:18Z INFO template-svc [t-4680] POST /render m-2835 ok 29ms\n#1953 2026-10-10T05:55:20Z INFO template-svc [t-4687] POST /render m-2840 ok 74ms\n#1961 2026-10-10T05:55:22Z INFO template-svc [t-4694] POST /render m-2842 ok 50ms\n#1973 2026-10-10T05:55:25Z INFO template-svc [t-4702] POST /render m-2846 ok 22ms\n#1975 2026-10-10T05:55:25Z DEBUG template-svc GC pause 6ms (young), heap 44%\n#1983 2026-10-10T05:55:27Z INFO template-svc [t-4705] POST /render m-2852 ok 89ms\n#1989 2026-10-10T05:55:30Z INFO template-svc [t-4710] POST /render m-2855 ok 90ms\n#2000 2026-10-10T05:55:32Z INFO template-svc [t-4715] POST /render m-2857 ok 33ms\n#2044 2026-10-10T05:55:44Z INFO template-svc [t-4743] POST /render m-2880 ok 54ms\n#2052 2026-10-10T05:55:47Z INFO template-svc [t-4750] POST /render m-2885 ok 41ms\n#2065 2026-10-10T05:55:51Z INFO template-svc [t-4760] POST /render m-2894 ok 82ms\n#2070 2026-10-10T05:55:53Z DEBUG template-svc GC pause 16ms (young), heap 44%\n#2081 2026-10-10T05:55:56Z INFO template-svc [t-4770] POST /render m-2901 ok 88ms\n#2091 2026-10-10T05:55:58Z INFO template-svc [t-4779] POST /render m-2906 ok 89ms\n#2113 2026-10-10T05:56:03Z INFO template-svc [t-4789] POST /render m-2918 ok 63ms\n#2127 2026-10-10T05:56:08Z DEBUG template-svc GC pause 22ms (young), heap 37%\n#2130 2026-10-10T05:56:08Z INFO template-svc [t-4796] POST /render m-2922 ok 28ms\n#2135 2026-10-10T05:56:09Z INFO template-svc [t-4801] POST /render m-2927 ok 56ms\n#2146 2026-10-10T05:56:12Z INFO template-svc [t-4808] POST /render m-2935 ok 46ms\n#2162 2026-10-10T05:56:17Z INFO template-svc [t-4817] POST /render m-2945 ok 73ms\n#2177 2026-10-10T05:56:21Z INFO template-svc [t-4829] POST /render m-2952 ok 90ms\n#2183 2026-10-10T05:56:22Z INFO template-svc [t-4836] POST /render m-2955 ok 82ms\n#2187 2026-10-10T05:56:23Z DEBUG template-svc GC pause 13ms (young), heap 38%\n#2206 2026-10-10T05:56:29Z INFO template-svc [t-4852] POST /render m-2968 ok 72ms\n#2224 2026-10-10T05:56:33Z INFO template-svc [t-4865] POST /render m-2978 ok 48ms\n#2232 2026-10-10T05:56:36Z INFO template-svc [t-4866] POST /render m-2979 ok 85ms\n#2239 2026-10-10T05:56:38Z INFO template-svc [t-4874] POST /render m-2983 ok 52ms\n#2253 2026-10-10T05:56:41Z INFO template-svc [t-4882] POST /render m-2991 ok 38ms\n#2268 2026-10-10T05:56:46Z INFO template-svc [t-4893] POST /render m-3000 ok 87ms\n#2280 2026-10-10T05:56:49Z DEBUG template-svc GC pause 20ms (young), heap 34%\n#2288 2026-10-10T05:56:51Z INFO template-svc [t-4904] POST /render m-3014 ok 87ms\n#2296 2026-10-10T05:56:52Z INFO template-svc [t-4911] POST /render m-3016 ok 32ms\n#2301 2026-10-10T05:56:53Z INFO template-svc [t-4912] POST /render m-3017 ok 21ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "bcb18da",
+          "limit": 30
+        },
+        "output": "1 match(es):\n#2775 2026-10-10T05:58:56Z ERROR template-svc [t-5233] upstream answered 503, treating the call as failed (bcb18da)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 2775,
+          "before": 6,
+          "after": 3
+        },
+        "output": "#2769 2026-10-10T05:58:55Z DEBUG template-svc GC pause 10ms (young), heap 38%\n#2770 2026-10-10T05:58:55Z INFO edge-proxy [t-5227] POST /login 200 144ms\n#2771 2026-10-10T05:58:55Z INFO redis stats: hits=9097 misses=823 evicted=0 connected_clients=41\n#2772 2026-10-10T05:58:56Z INFO account-svc [t-5229] user u-3282 accepted, calling auth-svc POST /tokens\n#2773 2026-10-10T05:58:56Z INFO audit-consumer processed batch of 48 messages from audit.events (lag 41ms)\n#2774 2026-10-10T05:58:56Z INFO edge-proxy [t-5229] POST /login 200 119ms\n#2775 2026-10-10T05:58:56Z ERROR template-svc [t-5233] upstream answered 503, treating the call as failed (bcb18da)\n#2776 2026-10-10T05:58:56Z INFO notif-db InnoDB: page cleaner flushed 216 pages, buffer pool hit rate 99%\n#2777 2026-10-10T05:58:57Z INFO accounts-db checkpoint complete: wrote 513 buffers (4.0%)\n#2778 2026-10-10T05:58:57Z INFO account-svc [t-5235] user u-3285 accepted, calling auth-svc POST /tokens"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "provider",
+          "limit": 40
+        },
+        "output": "2 match(es):\n#2846 2026-10-10T05:59:21Z ERROR template-svc [t-5278] call to the email provider aborted: no response within 10s\n#2874 2026-10-10T05:59:34Z ERROR template-svc [t-5301] email provider returned 503 Service Unavailable POST https://api.mailer.example/v3/send (x-request-id a5b5b53)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "status-poller",
+          "level": "WARN",
+          "limit": 20
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"dependency_timeout\",\"confidence\":0.55,\"evidenceLines\":[2775,2846,2874,2983,3032,3174],\"reasoning\":\"Alert origin chain: template-svc's calls to the third-party email provider (api.mailer.example) start failing around 05:58:56 (#2775 upstream 503), then hang: #2846 'no response within 10s' at 05:59:21, #2983 'read timed out after 10000 ms', and #3032 circuit breaker OPEN at 06:00:31 with 95% failure rate. Template-svc is the failing hop; notification-svc then fails with 'template-svc returned 503 (circuit open)' (#3174), and the gateway 503s on POST /v1/notify take 25-28s (#2824, #2934), matching the hung-call pattern. Template-svc itself shows no own resource problems (GC pauses are small, heap ~30-45%). The gateway 503s are downstream symptoms. The mix of fast 503s and 10s timeouts points to the mailer provider hanging/degrading; the logs contain no internal cause on our side. Note: the external_outage reading fits the explicit 503 responses equally well.\",\"},{\"rootCause\":\"external_outage\",\"confidence\":0.35,\"evidenceLines\":[2874,3249,3828],\"reasoning\":\"The email provider returns explicit 503 Service Unavailable (#2874) and half-open probes keep failing with 503/502 (#3249, #3828), which reads as the third party being down rather than slow. If the provider is down, the fix is failover or queueing notifications rather than tuning our timeouts.\",\"}]",
+          "recommendedAction": "Confirm the api.mailer.example status with the provider and check for a provider incident. Mitigate by failing over to a secondary email provider or queueing notify requests while the mailer is degraded. Keep the template-svc circuit breaker in place, and tune the 10s read timeout so gateway requests stop hanging for 25s+. Separately, the audit-consumer is stuck on a poison message msg-567751 (NUL byte at position 1991, audit.events partition 7 offset 718634, #2859, #3179, #3295). Skip or quarantine that message and fix the producer's escaping so partition 7 lag (5000+ messages) drains. That issue is not the cause of the notify 503s."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.55,
+              "evidenceLines": [
+                2775,
+                2846,
+                2874,
+                2983,
+                3032,
+                3174
+              ],
+              "reasoning": "Alert origin chain: template-svc's calls to the third-party email provider (api.mailer.example) start failing around 05:58:56 (#2775 upstream 503), then hang: #2846 'no response within 10s' at 05:59:21, #2983 'read timed out after 10000 ms', and #3032 circuit breaker OPEN at 06:00:31 with 95% failure rate. Template-svc is the failing hop; notification-svc then fails with 'template-svc returned 503 (circuit open)' (#3174), and gateway 503s on POST /v1/notify take 25-28s (#2824, #2934), matching the hung-call pattern. Template-svc shows no internal resource problem (GC pauses small, heap 30-45%). The gateway 503s are downstream symptoms. The mix of fast 503s and 10s timeouts points to the mailer provider hanging or degrading; the logs contain no internal cause on our side."
+            },
+            {
+              "rootCause": "external_outage",
+              "confidence": 0.35,
+              "evidenceLines": [
+                2874,
+                3249,
+                3828
+              ],
+              "reasoning": "The email provider returns explicit 503 Service Unavailable (#2874) and half-open probes keep failing with 503/502 (#3249, #3828), which reads as the third party being down rather than slow. The fix would then be failover or queueing notifications rather than tuning our timeouts."
+            }
+          ],
+          "recommendedAction": "Confirm api.mailer.example status with the provider and check for an incident. Mitigate by failing over to a secondary email provider or queueing notify requests while the mailer is degraded. Keep the template-svc circuit breaker, and lower the 10s read timeout so gateway requests stop hanging for 25s+. Separately, audit-consumer is stuck on poison message msg-567751 (NUL byte at byte 1991, audit.events partition 7 offset 718634, #2859, #3179, #3295). Quarantine that message and fix producer escaping so the partition 7 lag (5000+ messages) drains. This is not the cause of the notify 503s."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 8,
+    "toolCalls": 12,
+    "usage": {
+      "inputTokens": 18,
+      "outputTokens": 3746,
+      "cacheReadTokens": 96425,
+      "cacheWriteTokens": 19854
+    },
+    "durationMs": 19126,
+    "stopReason": "tool_use"
+  }
+}

@@ -1,0 +1,169 @@
+{
+  "score": {
+    "incidentId": "h-004",
+    "difficulty": "medium",
+    "scenario": "dependency_timeout/db-lock-wait",
+    "truth": "dependency_timeout",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 10,
+      "correct": 8,
+      "precision": 0.8,
+      "recall": 0.8888888888888888,
+      "f1": 0.8421052631578948
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.0038314700000000004,
+    "durationMs": 16236,
+    "iterations": 6,
+    "toolCalls": 6,
+    "tokens": {
+      "input": 14,
+      "output": 3635,
+      "cacheRead": 42132,
+      "cacheWrite": 12730
+    }
+  },
+  "result": {
+    "incidentId": "h-004",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.85,
+          "evidenceLines": [
+            1637,
+            1746,
+            1868,
+            1763,
+            1915,
+            1770,
+            1921,
+            2025,
+            2024,
+            2192
+          ],
+          "reasoning": "Origin: catalog-db transaction 97844 (catalog-svc-reconciler) went idle-in-transaction at 03:19:31 holding a RowExclusiveLock on products (#1637). From 03:20:22, UPDATEs on products block waiting for ShareLock on it (#1746, #1868), then hit statement_timeout in catalog-svc (#1763, #1915). search-api's GET /products/batch calls to catalog-svc time out (#1770, #1921, #2025), its catalog pool saturates (#2024), and checkout times out (#2192). This produces the web-bff 504s on /search (e.g. #1990, #2122, #2500), which are downstream symptoms. The ingest 500s (ingest-api v2.3.0 'locale' TypeError, #2041, #2089, #2212) are a separate fault on /v1/events, not the search cause."
+        }
+      ],
+      "recommendedAction": "1) Terminate the idle-in-transaction session holding transaction 97844 (catalog-svc-reconciler) on catalog-db to release the ShareLock. 2) Find why the reconciler leaves transactions open and set idle_in_transaction_session_timeout on catalog-db. 3) Bound search-api's catalog-svc pool and timeouts so a catalog-db stall fails fast. 4) Separately, roll back or hotfix ingest-api v2.3.0 (event-formatter 'locale' undefined) to stop /v1/events 500s."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "44 match(es):\n#512 2026-10-27T03:10:53Z WARN index-worker msg-980198 from catalog.updates failed schema validation (missing field \"version\"), moved to catalog.updates.dlq\n#1691 2026-10-27T03:19:54Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 381 samples\n#1746 2026-10-27T03:20:22Z WARN catalog-db process 32677 still waiting for ShareLock on transaction 97844 after 1000.000 ms (UPDATE products SET ...)\n#1763 2026-10-27T03:20:31Z ERROR catalog-svc [t-2269] canceling UPDATE on products for p-9539 due to statement_timeout\n#1770 2026-10-27T03:20:36Z ERROR search-api [t-2269] CatalogClient.getBatch timed out after 15000ms calling catalog-svc GET /products/batch (p-9539)\n#1811 2026-10-27T03:21:02Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 785 samples\n#1834 2026-10-27T03:21:16Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 889 samples\n#1868 2026-10-27T03:21:37Z WARN catalog-db process 14715 still waiting for ShareLock on transaction 97844 after 1000.000 ms (UPDATE products SET ...)\n#1915 2026-10-27T03:22:05Z ERROR catalog-svc [t-2348] db write products/p-9604 aborted: QueryCanceled after 10.0s\n#1921 2026-10-27T03:22:10Z ERROR search-api [t-2348] upstream request to catalog-svc failed: ReadTimeout (read timeout=15s) [p-9604]\n#1940 2026-10-27T03:22:20Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 960 samples\n#1980 2026-10-27T03:22:46Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 908 samples\n#1990 2026-10-27T03:22:53Z ERROR web-bff [t-2376] GET /search 504 11992ms: upstream search-api timed out\n#2022 2026-10-27T03:23:12Z ERROR catalog-svc [t-2390] query canceled: statement timeout 10000ms (UPDATE products WHERE id = p-9635)\n#2024 2026-10-27T03:23:15Z WARN search-api HTTP connection pool to catalog-svc at capacity (50/50 in use), 35 requests queued\n#2025 2026-10-27T03:23:17Z ERROR search-api [t-2390] GET /products/batch -> catalog-svc: context deadline exceeded after 15.0s (p-9635)\n#2032 2026-10-27T03:23:27Z ERROR ingest-gateway [t-2392] POST /v1/events 500 29883ms: upstream ingest-api returned 500 Internal Server Error\n#2041 2026-10-27T03:23:31Z ERROR ingest-api [t-2393] unhandled error in POST /v1/events (e-9638): TypeError: Cannot read properties of undefined (reading 'locale') at format (event-formatter.ts:45) [v2.3.0]\n#2055 2026-10-27T03:23:44Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 372 samples\n#2089 2026-10-27T03:24:12Z ERROR ingest-api [t-2416] [v2.3.0] POST /v1/events e-9653 -> 500: TypeError: undefined has no property 'locale'\n#2091 2026-10-27T03:24:17Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 276 samples\n#2099 2026-10-27T03:24:23Z WARN search-api HTTP connection pool to catalog-svc at capacity (50/50 in use), 61 requests queued\n#2121 2026-10-27T03:24:37Z ERROR ingest-gateway [t-2426] POST /v1/events 500 17188ms: upstream ingest-api returned 500 Internal Server Error\n#2122 2026-10-27T03:24:39Z ERROR web-bff [t-2428] GET /search 504 25201ms: upstream search-api timed out\n#2169 2026-10-27T03:25:06Z ERROR ingest-gateway [t-2449] POST /v1/events 500 21033ms: upstream ingest-api returned 500 Internal Server Error\n#2192 2026-10-27T03:25:24Z ERROR search-api pool checkout timeout: no connection to catalog-svc available after 5000ms\n#2195 2026-10-27T03:25:25Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2117 samples\n#2212 2026-10-27T03:25:37Z ERROR ingest-api [t-2469] request e-9694 failed in v2.3.0: cannot access 'locale' of undefined, stack: format @ event-formatter.ts:45\n#2216 2026-10-27T03:25:39Z ERROR web-bff [t-2470] GET /search 504 24626ms: upstream search-api timed out\n#2230 2026-10-27T03:25:53Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 621 samples\n#2237 2026-10-27T03:25:57Z ERROR web-bff [t-2479] GET /search 504 17676ms: upstream search-api timed out\n#2260 2026-10-27T03:26:21Z ERROR ingest-gateway [t-2487] POST /v1/events 500 12918ms: upstream ingest-api returned 500 Internal Server Error\n#2276 2026-10-27T03:26:34Z ERROR ingest-api [t-2492] unhandled error in POST /v1/events (e-9710): TypeError: Cannot read properties of undefined (reading 'locale') at format (event-formatter.ts:45) [v2.3.0]\n#2283 2026-10-27T03:26:37Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 359 samples\n#2320 2026-10-27T03:27:10Z ERROR ingest-gateway [t-2509] POST /v1/events 500 7043ms: upstream ingest-api returned 500 Internal Server Error\n#2325 2026-10-27T03:27:16Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1099 samples\n#2362 2026-10-27T03:27:44Z ERROR web-bff [t-2527] GET /search 504 15309ms: upstream search-api timed out\n#2385 2026-10-27T03:28:09Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2190 samples\n#2399 2026-10-27T03:28:18Z ERROR ingest-gateway [t-2544] POST /v1/events 500 9133ms: upstream ingest-api returned 500 Internal Server Error\n#2411 2026-10-27T03:28:29Z ERROR web-bff [t-2549] GET /search 504 19640ms: upstream search-api timed out\n#2460 2026-10-27T03:29:00Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1264 samples\n#2484 2026-10-27T03:29:17Z ERROR ingest-gateway [t-2580] POST /v1/events 500 13815ms: upstream ingest-api returned 500 Internal Server Error\n#2500 2026-10-27T03:29:38Z ERROR web-bff [t-2582] GET /search 504 27478ms: upstream search-api timed out\n#2513 2026-10-27T03:29:45Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2192 samples"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "search-api",
+          "level": "ERROR"
+        },
+        "output": "4 match(es):\n#1770 2026-10-27T03:20:36Z ERROR search-api [t-2269] CatalogClient.getBatch timed out after 15000ms calling catalog-svc GET /products/batch (p-9539)\n#1921 2026-10-27T03:22:10Z ERROR search-api [t-2348] upstream request to catalog-svc failed: ReadTimeout (read timeout=15s) [p-9604]\n#2025 2026-10-27T03:23:17Z ERROR search-api [t-2390] GET /products/batch -> catalog-svc: context deadline exceeded after 15.0s (p-9635)\n#2192 2026-10-27T03:25:24Z ERROR search-api pool checkout timeout: no connection to catalog-svc available after 5000ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "97844"
+        },
+        "output": "3 match(es):\n#1637 2026-10-27T03:19:31Z INFO catalog-db transaction 97844 (application_name=catalog-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"products\"\n#1746 2026-10-27T03:20:22Z WARN catalog-db process 32677 still waiting for ShareLock on transaction 97844 after 1000.000 ms (UPDATE products SET ...)\n#1868 2026-10-27T03:21:37Z WARN catalog-db process 14715 still waiting for ShareLock on transaction 97844 after 1000.000 ms (UPDATE products SET ...)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-db",
+          "until": "2026-10-27T03:21:00Z"
+        },
+        "output": "39 match(es), showing first 25:\n#2 2026-10-27T03:07:01Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 40\n#67 2026-10-27T03:07:29Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 5\n#112 2026-10-27T03:07:50Z INFO catalog-db checkpoint complete: wrote 723 buffers (6.6%)\n#169 2026-10-27T03:08:15Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 12\n#229 2026-10-27T03:08:44Z INFO catalog-db checkpoint complete: wrote 1025 buffers (1.7%)\n#279 2026-10-27T03:09:04Z INFO catalog-db checkpoint complete: wrote 804 buffers (2.7%)\n#314 2026-10-27T03:09:24Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 14\n#374 2026-10-27T03:09:50Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 22\n#416 2026-10-27T03:10:07Z INFO catalog-db checkpoint complete: wrote 1264 buffers (4.9%)\n#475 2026-10-27T03:10:34Z INFO catalog-db checkpoint complete: wrote 236 buffers (7.0%)\n#530 2026-10-27T03:10:59Z INFO catalog-db checkpoint complete: wrote 1212 buffers (6.6%)\n#588 2026-10-27T03:11:23Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 10\n#634 2026-10-27T03:11:45Z INFO catalog-db checkpoint complete: wrote 683 buffers (7.0%)\n#689 2026-10-27T03:12:12Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 35\n#748 2026-10-27T03:12:41Z INFO catalog-db checkpoint complete: wrote 858 buffers (4.5%)\n#788 2026-10-27T03:13:00Z INFO catalog-db checkpoint complete: wrote 1009 buffers (4.7%)\n#834 2026-10-27T03:13:21Z INFO catalog-db checkpoint complete: wrote 769 buffers (2.6%)\n#874 2026-10-27T03:13:40Z INFO catalog-db checkpoint complete: wrote 486 buffers (6.9%)\n#923 2026-10-27T03:14:00Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 16\n#959 2026-10-27T03:14:19Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 36\n#998 2026-10-27T03:14:36Z INFO catalog-db checkpoint complete: wrote 975 buffers (4.9%)\n#1039 2026-10-27T03:14:53Z INFO catalog-db checkpoint complete: wrote 631 buffers (5.8%)\n#1098 2026-10-27T03:15:21Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 5\n#1155 2026-10-27T03:15:45Z INFO catalog-db checkpoint complete: wrote 929 buffers (6.2%)\n#1215 2026-10-27T03:16:13Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 39"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1637,
+          "before": 12,
+          "after": 6
+        },
+        "output": "#1625 2026-10-27T03:19:25Z INFO billing-reconciler reconciled 1111 current-period invoices, 0 discrepancies\n#1626 2026-10-27T03:19:25Z INFO event-processor processed batch of 88 messages from events.raw (lag 232ms)\n#1627 2026-10-27T03:19:26Z DEBUG catalog-svc GC pause 17ms (young), heap 33%\n#1628 2026-10-27T03:19:27Z INFO ingest-api [t-2189] event e-9471 accepted, calling enrichment-svc POST /enrich\n#1629 2026-10-27T03:19:27Z INFO ingest-gateway [t-2189] POST /v1/events 200 55ms\n#1630 2026-10-27T03:19:29Z INFO search-api [t-2191] product p-9474 accepted, calling catalog-svc GET /products/batch\n#1631 2026-10-27T03:19:29Z INFO catalog-svc [t-2191] GET /products/batch p-9474 ok 40ms\n#1632 2026-10-27T03:19:30Z DEBUG enrichment-svc GC pause 12ms (young), heap 39%\n#1633 2026-10-27T03:19:30Z INFO web-bff [t-2191] GET /search 200 71ms\n#1634 2026-10-27T03:19:30Z INFO geo-cache stats: hits=16693 misses=324 evicted=0 connected_clients=37\n#1635 2026-10-27T03:19:31Z INFO ingest-api [t-2194] event e-9476 accepted, calling enrichment-svc POST /enrich\n#1636 2026-10-27T03:19:31Z INFO ingest-gateway [t-2194] POST /v1/events 200 89ms\n#1637 2026-10-27T03:19:31Z INFO catalog-db transaction 97844 (application_name=catalog-svc-reconciler) idle in transaction, holding RowExclusiveLock on \"products\"\n#1638 2026-10-27T03:19:31Z INFO index-worker processed batch of 101 messages from catalog.updates (lag 307ms)\n#1639 2026-10-27T03:19:32Z DEBUG search-api GC pause 5ms (young), heap 44%\n#1640 2026-10-27T03:19:32Z INFO search-api [t-2195] product p-9479 accepted, calling catalog-svc GET /products/batch\n#1641 2026-10-27T03:19:32Z INFO catalog-svc [t-2195] GET /products/batch p-9479 ok 63ms\n#1642 2026-10-27T03:19:32Z INFO web-bff [t-2195] GET /search 200 78ms\n#1643 2026-10-27T03:19:33Z INFO ingest-api [t-2199] event e-9481 accepted, calling enrichment-svc POST /enrich"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "reconciler",
+          "since": "03:18:00Z",
+          "until": "03:21:00Z"
+        },
+        "output": "tool error: can't read time \"03:18:00Z\": use an ISO timestamp like 2026-10-27T03:07:00Z or HH:MM:SS",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"dependency_timeout\",\"confidence\":0.85,\"evidenceLines\":[1637,1746,1868,1763,1915,1770,1921,2025,2024,2192],\"reasoning\":\"Origin: catalog-db transaction 97844 (application_name=catalog-svc-reconciler) went idle-in-transaction at 03:19:31 while holding a RowExclusiveLock on products (#1637). From 03:20:22 UPDATE statements on products block waiting for ShareLock on that transaction (#1746, #1868). Those UPDATEs hit statement_timeout in catalog-svc (#1763, #1915, #2022). search-api's calls to catalog-svc GET /products/batch then time out at 15s (#1770, #1921, #2025), its connection pool to catalog-svc saturates at 50/50 (#2024, #2099), and checkout times out (#2192). This propagates to web-bff 504s on GET /search (e.g. #1990, #2122, #2500). The 504s and pool saturation are downstream symptoms and are not cited as the cause. Ruled out: the ingest 500s are a separate fault (ingest-api v2.3.0 TypeError 'locale' at event-formatter.ts:45, #2041, #2089, #2212), which affects /v1/events rather than /search. metrics-agent drops and the index-worker DLQ message (#512) are unrelated noise. Confidence is not higher because the lock-holder's idle-in-transaction cause (reconciler not committing) is not directly shown in the logs.\",\"}, {\"rootCause\":\"bad_deploy\",\"confidence\":0.1,\"evidenceLines\":[2041,2089,2212],\"reasoning\":\"Separate issue: ingest-api v2.3.0 throws TypeError reading 'locale' in event-formatter, causing POST /v1/events 500s that cascade to ingest-gateway. It does not explain the GET /search latency, so it is a likely second incident or contributing noise, not the root cause of the search 504s.\",\"}]",
+          "recommendedAction": "1) Immediately terminate the idle-in-transaction session holding transaction 97844 (catalog-svc-reconciler) on catalog-db (pg_terminate_backend / pg_stat_activity), which releases the ShareLock and lets the blocked UPDATEs drain. 2) Investigate why catalog-svc-reconciler leaves transactions open, and add idle_in_transaction_session_timeout on catalog-db. 3) Once search latency recovers, consider raising or bounding search-api's catalog-svc pool and timeouts so a catalog-db stall fails fast. 4) Separately, roll back or hotfix ingest-api v2.3.0 (event-formatter 'locale' undefined) to stop the /v1/events 500s, and reprocess the index-worker DLQ message msg-980198 (missing 'version' field)."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"dependency_timeout\",\"confidence\":0.85,\"evidenceLines\":[1637,1746,1868,1763,1915,1770,1921,2025,2024,2192],\"reasoning\":\"Origin: catalog-db transaction 97844 (application_name=catalog-svc-reconciler) went idle-in-transaction at 03:19:31 while holding a RowExclusiveLock on products (#1637). From 03:20:22, UPDATE statements on products block waiting for ShareLock on that transaction (#1746, #1868). Those UPDATEs hit statement_timeout in catalog-svc (#1763, #1915, #2022). search-api's calls to catalog-svc GET /products/batch then time out at 15s (#1770, #1921, #2025), its connection pool to catalog-svc saturates at 50/50 (#2024, #2099), and checkout times out (#2192). This propagates to web-bff 504s on GET /search (e.g. #1990, #2122, #2500). The 504s and pool saturation are downstream symptoms and are not cited as the cause. The ingest 500s are a separate fault (ingest-api v2.3.0 TypeError reading 'locale' at event-formatter.ts:45, #2041, #2089, #2212), which affects /v1/events rather than /search. metrics-agent drops and the index-worker DLQ message (#512) are unrelated. Confidence is not higher because the reason the reconciler leaves its transaction open is not shown in the logs.\",\"}, {\"rootCause\":\"bad_deploy\",\"confidence\":0.1,\"evidenceLines\":[2041,2089,2212],\"reasoning\":\"Separate issue: ingest-api v2.3.0 throws TypeError reading 'locale' in event-formatter, causing POST /v1/events 500s that cascade to ingest-gateway. It does not explain the GET /search latency, so it is a likely second problem rather than the root cause of the search 504s.\"}]",
+          "recommendedAction": "1) Terminate the idle-in-transaction session holding transaction 97844 (catalog-svc-reconciler) on catalog-db (pg_terminate_backend via pg_stat_activity). This releases the ShareLock and lets blocked UPDATEs drain. 2) Find out why catalog-svc-reconciler leaves transactions open, and set idle_in_transaction_session_timeout on catalog-db. 3) Bound search-api's catalog-svc pool and timeouts so a catalog-db stall fails fast. 4) Separately, roll back or hotfix ingest-api v2.3.0 (event-formatter 'locale' undefined) to stop the /v1/events 500s, and reprocess DLQ message msg-980198 (missing 'version' field)."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.85,
+              "evidenceLines": [
+                1637,
+                1746,
+                1868,
+                1763,
+                1915,
+                1770,
+                1921,
+                2025,
+                2024,
+                2192
+              ],
+              "reasoning": "Origin: catalog-db transaction 97844 (catalog-svc-reconciler) went idle-in-transaction at 03:19:31 holding a RowExclusiveLock on products (#1637). From 03:20:22, UPDATEs on products block waiting for ShareLock on it (#1746, #1868), then hit statement_timeout in catalog-svc (#1763, #1915). search-api's GET /products/batch calls to catalog-svc time out (#1770, #1921, #2025), its catalog pool saturates (#2024), and checkout times out (#2192). This produces the web-bff 504s on /search (e.g. #1990, #2122, #2500), which are downstream symptoms. The ingest 500s (ingest-api v2.3.0 'locale' TypeError, #2041, #2089, #2212) are a separate fault on /v1/events, not the search cause."
+            }
+          ],
+          "recommendedAction": "1) Terminate the idle-in-transaction session holding transaction 97844 (catalog-svc-reconciler) on catalog-db to release the ShareLock. 2) Find why the reconciler leaves transactions open and set idle_in_transaction_session_timeout on catalog-db. 3) Bound search-api's catalog-svc pool and timeouts so a catalog-db stall fails fast. 4) Separately, roll back or hotfix ingest-api v2.3.0 (event-formatter 'locale' undefined) to stop /v1/events 500s."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 6,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 3635,
+      "cacheReadTokens": 42132,
+      "cacheWriteTokens": 12730
+    },
+    "durationMs": 16236,
+    "stopReason": "tool_use"
+  }
+}

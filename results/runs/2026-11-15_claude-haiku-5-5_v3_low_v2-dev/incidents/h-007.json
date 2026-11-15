@@ -1,0 +1,280 @@
+{
+  "score": {
+    "incidentId": "h-007",
+    "difficulty": "medium",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 5,
+      "correct": 5,
+      "precision": 1,
+      "recall": 0.7142857142857143,
+      "f1": 0.8333333333333333
+    },
+    "herringsCited": 3,
+    "costUsd": 0.005939695,
+    "durationMs": 21617,
+    "iterations": 11,
+    "toolCalls": 11,
+    "tokens": {
+      "input": 24,
+      "output": 4641,
+      "cacheRead": 120667,
+      "cacheWrite": 19281
+    }
+  },
+  "result": {
+    "incidentId": "h-007",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.85,
+          "evidenceLines": [
+            801,
+            1109,
+            1338,
+            1572,
+            1573
+          ],
+          "reasoning": "The 502s on POST /checkout are a downstream effect of order-service repeatedly running out of Java heap. The origin is visible at #801: heap reached 78% after a full GC with the old generation not reclaimed and GC overhead at 20%, while young-gen GC pauses were normal earlier. That is a retained-object growth pattern, consistent with orderCache growing without bounded eviction. Heap then crashed with OutOfMemoryError at orderCache.put (#1109), a worker OOM (#1338), and a heap-exhausted fatal while growing orderCache to 1536MB (#1572). Pods were OOMKilled and restarted (#1111, #1340, #1573). Each restart drops in-flight connections, so the gateway returns 502 'upstream order-service connection reset (no healthy upstream)' in bursts. The gateway 502 lines are symptoms and are not cited. The report-cron pandas failure (#595 and repeats) is a separate, unrelated bad deploy with no impact on checkout. The payment-svc config reload (#241) changed no keys and is not related."
+        },
+        {
+          "rootCause": "bad_deploy",
+          "confidence": 0.15,
+          "evidenceLines": [
+            595,
+            763,
+            1130
+          ],
+          "reasoning": "The report-cron image report-cron:2026.10.2 is missing the pandas module and the nightly revenue job fails on every run. This is a real bad deploy, but it is isolated to report-cron and does not touch the checkout path, so it does not explain the 502s and is ranked low as a red herring."
+        }
+      ],
+      "recommendedAction": "Mitigate now by rolling back or restarting order-service and raising its memory limit. Then bound and add TTL eviction to orderCache, and alert on heap usage before the OOM threshold. Separately, rebuild report-cron with pandas or roll back its image."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "25 match(es):\n#595 2026-10-05T02:21:51Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#763 2026-10-05T02:23:15Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#973 2026-10-05T02:24:55Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1001 2026-10-05T02:25:08Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1109 2026-10-05T02:25:55Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#1111 2026-10-05T02:25:56Z ERROR order-service pod order-service-0 exceeded its 2Gi memory limit and was killed (restart #1)\n#1120 2026-10-05T02:26:07Z ERROR api-gateway [t-6989] POST /checkout 502 9088ms: upstream order-service connection reset (no healthy upstream)\n#1130 2026-10-05T02:26:16Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1238 2026-10-05T02:27:28Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1288 2026-10-05T02:28:03Z ERROR api-gateway [t-7061] POST /checkout 502 28169ms: upstream order-service connection reset (no healthy upstream)\n#1327 2026-10-05T02:28:30Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1338 2026-10-05T02:28:40Z FATAL order-service Exception in thread \"worker-3\" java.lang.OutOfMemoryError: Java heap space\n#1340 2026-10-05T02:28:41Z ERROR order-service container order-service-2 killed: OOMKilled (memory limit 2Gi), restart count 2\n#1383 2026-10-05T02:29:16Z ERROR api-gateway [t-7100] POST /checkout 502 19324ms: upstream order-service connection reset (no healthy upstream)\n#1431 2026-10-05T02:29:59Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1448 2026-10-05T02:30:13Z ERROR api-gateway [t-7120] POST /checkout 502 9877ms: upstream order-service connection reset (no healthy upstream)\n#1518 2026-10-05T02:31:05Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1539 2026-10-05T02:31:21Z ERROR api-gateway [t-7162] POST /checkout 502 24982ms: upstream order-service connection reset (no healthy upstream)\n#1572 2026-10-05T02:31:48Z FATAL order-service fatal: heap exhausted while growing orderCache (requested 64MB, max 1536MB)\n#1573 2026-10-05T02:31:49Z ERROR order-service kubelet: order-service-1 terminated (reason OOMKilled, exit code 137), restarts=3\n#1639 2026-10-05T02:32:33Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1696 2026-10-05T02:33:18Z ERROR api-gateway [t-7221] POST /checkout 502 25761ms: upstream order-service connection reset (no healthy upstream)\n#1722 2026-10-05T02:33:41Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1745 2026-10-05T02:33:58Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#1747 2026-10-05T02:33:59Z ERROR api-gateway [t-7240] POST /checkout 502 19426ms: upstream order-service connection reset (no healthy upstream)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "report-cron",
+          "limit": 30
+        },
+        "output": "113 match(es), showing first 30:\n#5 2026-10-05T02:17:03Z INFO report-cron scheduler heartbeat: 11 jobs registered, next run in 208s\n#22 2026-10-05T02:17:11Z INFO report-cron scheduler heartbeat: 6 jobs registered, next run in 153s\n#38 2026-10-05T02:17:18Z INFO report-cron scheduler heartbeat: 7 jobs registered, next run in 241s\n#64 2026-10-05T02:17:32Z INFO report-cron scheduler heartbeat: 7 jobs registered, next run in 61s\n#88 2026-10-05T02:17:41Z INFO report-cron scheduler heartbeat: 6 jobs registered, next run in 67s\n#116 2026-10-05T02:17:56Z INFO report-cron scheduler heartbeat: 7 jobs registered, next run in 287s\n#141 2026-10-05T02:18:09Z INFO report-cron scheduler heartbeat: 12 jobs registered, next run in 185s\n#171 2026-10-05T02:18:23Z INFO report-cron scheduler heartbeat: 6 jobs registered, next run in 142s\n#200 2026-10-05T02:18:36Z INFO report-cron scheduler heartbeat: 9 jobs registered, next run in 267s\n#216 2026-10-05T02:18:44Z INFO report-cron scheduler heartbeat: 9 jobs registered, next run in 106s\n#240 2026-10-05T02:18:57Z INFO report-cron scheduler heartbeat: 8 jobs registered, next run in 177s\n#265 2026-10-05T02:19:10Z INFO report-cron scheduler heartbeat: 13 jobs registered, next run in 77s\n#283 2026-10-05T02:19:18Z INFO report-cron scheduler heartbeat: 12 jobs registered, next run in 21s\n#308 2026-10-05T02:19:30Z INFO report-cron scheduler heartbeat: 12 jobs registered, next run in 264s\n#330 2026-10-05T02:19:41Z INFO report-cron scheduler heartbeat: 10 jobs registered, next run in 36s\n#351 2026-10-05T02:19:52Z INFO report-cron scheduler heartbeat: 6 jobs registered, next run in 85s\n#365 2026-10-05T02:19:59Z INFO report-cron scheduler heartbeat: 11 jobs registered, next run in 82s\n#399 2026-10-05T02:20:14Z INFO report-cron scheduler heartbeat: 9 jobs registered, next run in 140s\n#423 2026-10-05T02:20:25Z INFO report-cron scheduler heartbeat: 6 jobs registered, next run in 130s\n#449 2026-10-05T02:20:38Z INFO report-cron scheduler heartbeat: 14 jobs registered, next run in 257s\n#464 2026-10-05T02:20:44Z INFO report-cron scheduler heartbeat: 7 jobs registered, next run in 266s\n#491 2026-10-05T02:20:59Z INFO report-cron scheduler heartbeat: 6 jobs registered, next run in 166s\n#503 2026-10-05T02:21:05Z INFO report-cron scheduler heartbeat: 8 jobs registered, next run in 199s\n#526 2026-10-05T02:21:17Z INFO report-cron scheduler heartbeat: 13 jobs registered, next run in 97s\n#551 2026-10-05T02:21:31Z INFO report-cron scheduler heartbeat: 14 jobs registered, next run in 187s\n#573 2026-10-05T02:21:41Z INFO report-cron scheduler heartbeat: 12 jobs registered, next run in 253s\n#589 2026-10-05T02:21:49Z INFO report-cron scheduler heartbeat: 7 jobs registered, next run in 22s\n#595 2026-10-05T02:21:51Z ERROR report-cron job nightly-revenue-report exited with code 1 since the deploy of image report-cron:2026.10.2: ModuleNotFoundError: No module named 'pandas'\n#619 2026-10-05T02:22:03Z INFO report-cron scheduler heartbeat: 11 jobs registered, next run in 103s\n#644 2026-10-05T02:22:15Z INFO report-cron scheduler heartbeat: 6 jobs registered, next run in 38s"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "orderCache",
+          "limit": 40
+        },
+        "output": "2 match(es):\n#1109 2026-10-05T02:25:55Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#1572 2026-10-05T02:31:48Z FATAL order-service fatal: heap exhausted while growing orderCache (requested 64MB, max 1536MB)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "order-service",
+          "level": "WARN",
+          "limit": 30
+        },
+        "output": "6 match(es):\n#1109 2026-10-05T02:25:55Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#1111 2026-10-05T02:25:56Z ERROR order-service pod order-service-0 exceeded its 2Gi memory limit and was killed (restart #1)\n#1338 2026-10-05T02:28:40Z FATAL order-service Exception in thread \"worker-3\" java.lang.OutOfMemoryError: Java heap space\n#1340 2026-10-05T02:28:41Z ERROR order-service container order-service-2 killed: OOMKilled (memory limit 2Gi), restart count 2\n#1572 2026-10-05T02:31:48Z FATAL order-service fatal: heap exhausted while growing orderCache (requested 64MB, max 1536MB)\n#1573 2026-10-05T02:31:49Z ERROR order-service kubelet: order-service-1 terminated (reason OOMKilled, exit code 137), restarts=3"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "cache",
+          "limit": 40
+        },
+        "output": "5 match(es):\n#1109 2026-10-05T02:25:55Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#1139 2026-10-05T02:26:21Z INFO order-service started order-service v1.30.6, pid 1, warming order cache\n#1371 2026-10-05T02:29:04Z INFO order-service started order-service v1.30.6, pid 1, warming order cache\n#1572 2026-10-05T02:31:48Z FATAL order-service fatal: heap exhausted while growing orderCache (requested 64MB, max 1536MB)\n#1609 2026-10-05T02:32:17Z INFO order-service started order-service v1.30.6, pid 1, warming order cache"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "order-service",
+          "since": "02:17:00",
+          "until": "02:25:00",
+          "limit": 40
+        },
+        "output": "tool error: since (02:17:00) is after until (02:25:00)",
+        "isError": true
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "order-service",
+          "since": "2026-10-05T02:17:00Z",
+          "until": "2026-10-05T02:25:50Z",
+          "limit": 60
+        },
+        "output": "298 match(es), showing first 60:\n#2 2026-10-05T02:17:01Z INFO order-service [t-6326] order o-6750 accepted, calling payment-svc POST /charge\n#6 2026-10-05T02:17:04Z INFO order-service [t-6327] order o-6753 accepted, calling payment-svc POST /charge\n#8 2026-10-05T02:17:05Z INFO order-service [t-6328] order o-6756 accepted, calling payment-svc POST /charge\n#12 2026-10-05T02:17:07Z INFO order-service [t-6329] order o-6758 accepted, calling payment-svc POST /charge\n#18 2026-10-05T02:17:09Z INFO order-service [t-6330] order o-6760 accepted, calling payment-svc POST /charge\n#23 2026-10-05T02:17:12Z INFO order-service [t-6334] order o-6763 accepted, calling payment-svc POST /charge\n#26 2026-10-05T02:17:13Z DEBUG order-service GC pause 15ms (young), heap 33%\n#27 2026-10-05T02:17:14Z INFO order-service [t-6336] order o-6764 accepted, calling payment-svc POST /charge\n#30 2026-10-05T02:17:16Z INFO order-service [t-6338] order o-6767 accepted, calling payment-svc POST /charge\n#35 2026-10-05T02:17:17Z INFO order-service [t-6340] order o-6769 accepted, calling payment-svc POST /charge\n#40 2026-10-05T02:17:20Z INFO order-service [t-6343] order o-6772 accepted, calling payment-svc POST /charge\n#46 2026-10-05T02:17:22Z INFO order-service [t-6347] order o-6774 accepted, calling payment-svc POST /charge\n#50 2026-10-05T02:17:24Z INFO order-service [t-6350] order o-6776 accepted, calling payment-svc POST /charge\n#55 2026-10-05T02:17:27Z INFO order-service [t-6351] order o-6777 accepted, calling payment-svc POST /charge\n#58 2026-10-05T02:17:28Z DEBUG order-service GC pause 19ms (young), heap 37%\n#59 2026-10-05T02:17:29Z INFO order-service [t-6355] order o-6779 accepted, calling payment-svc POST /charge\n#65 2026-10-05T02:17:32Z INFO order-service [t-6356] order o-6781 accepted, calling payment-svc POST /charge\n#69 2026-10-05T02:17:34Z INFO order-service [t-6357] order o-6782 accepted, calling payment-svc POST /charge\n#73 2026-10-05T02:17:36Z INFO order-service [t-6358] order o-6784 accepted, calling payment-svc POST /charge\n#76 2026-10-05T02:17:38Z INFO order-service [t-6361] order o-6785 accepted, calling payment-svc POST /charge\n#79 2026-10-05T02:17:39Z DEBUG order-service GC pause 24ms (young), heap 42%\n#80 2026-10-05T02:17:39Z INFO order-service [t-6363] order o-6786 accepted, calling payment-svc POST /charge\n#83 2026-10-05T02:17:41Z INFO order-service [t-6367] order o-6787 accepted, calling payment-svc POST /charge\n#89 2026-10-05T02:17:42Z INFO order-service [t-6370] order o-6789 accepted, calling payment-svc POST /charge\n#93 2026-10-05T02:17:43Z INFO order-service [t-6373] order o-6792 accepted, calling payment-svc POST /charge\n#98 2026-10-05T02:17:46Z INFO order-service [t-6374] order o-6794 accepted, calling payment-svc POST /charge\n#100 2026-10-05T02:17:48Z INFO order-service [t-6378] order o-6797 accepted, calling payment-svc POST /charge\n#105 2026-10-05T02:17:50Z INFO order-service [t-6381] order o-6799 accepted, calling payment-svc POST /charge\n#108 2026-10-05T02:17:52Z INFO order-service [t-6383] order o-6800 accepted, calling payment-svc POST /charge\n#113 2026-10-05T02:17:55Z DEBUG order-service GC pause 12ms (young), heap 30%\n#114 2026-10-05T02:17:55Z INFO order-service [t-6384] order o-6802 accepted, calling payment-svc POST /charge\n#119 2026-10-05T02:17:58Z INFO order-service [t-6388] order o-6805 accepted, calling payment-svc POST /charge\n#122 2026-10-05T02:17:59Z INFO order-service [t-6391] order o-6808 accepted, calling payment-svc POST /charge\n#128 2026-10-05T02:18:02Z INFO order-service [t-6392] order o-6809 accepted, calling payment-svc POST /charge\n#133 2026-10-05T02:18:05Z INFO order-service [t-6395] order o-6810 accepted, calling payment-svc POST /charge\n#137 2026-10-05T02:18:06Z INFO order-service [t-6398] order o-6811 accepted, calling payment-svc POST /charge\n#142 2026-10-05T02:18:09Z INFO order-service [t-6401] order o-6814 accepted, calling payment-svc POST /charge\n#146 2026-10-05T02:18:11Z DEBUG order-service GC pause 19ms (young), heap 40%\n#147 2026-10-05T02:18:12Z INFO order-service [t-6402] order o-6817 accepted, calling payment-svc POST /charge\n#151 2026-10-05T02:18:14Z INFO order-service [t-6403] order o-6820 accepted, calling payment-svc POST /charge\n#156 2026-10-05T02:18:15Z INFO order-service [t-6406] order o-6821 accepted, calling payment-svc POST /charge\n#158 2026-10-05T02:18:17Z INFO order-service [t-6407] order o-6822 accepted, calling payment-svc POST /charge\n#162 2026-10-05T02:18:18Z INFO order-service [t-6408] order o-6825 accepted, calling payment-svc POST /charge\n#165 2026-10-05T02:18:20Z INFO order-service [t-6410] order o-6826 accepted, calling payment-svc POST /charge\n#167 2026-10-05T02:18:21Z DEBUG order-service GC pause 11ms (young), heap 39%\n#168 2026-10-05T02:18:23Z INFO order-service [t-6412] order o-6827 accepted, calling payment-svc POST /charge\n#174 2026-10-05T02:18:25Z INFO order-service [t-6415] order o-6829 accepted, calling payment-svc POST /charge\n#180 2026-10-05T02:18:28Z INFO order-service [t-6416] order o-6830 accepted, calling payment-svc POST /charge\n#183 2026-10-05T02:18:30Z INFO order-service [t-6417] order o-6833 accepted, calling payment-svc POST /charge\n#186 2026-10-05T02:18:32Z INFO order-service [t-6421] order o-6834 accepted, calling payment-svc POST /charge\n#190 2026-10-05T02:18:34Z INFO order-service [t-6424] order o-6835 accepted, calling payment-svc POST /charge\n#194 2026-10-05T02:18:35Z DEBUG order-service GC pause 16ms (young), heap 41%\n#195 2026-10-05T02:18:35Z INFO order-service [t-6427] order o-6836 accepted, calling payment-svc POST /charge\n#201 2026-10-05T02:18:37Z INFO order-service [t-6428] order o-6837 accepted, calling payment-svc POST /charge\n#206 2026-10-05T02:18:40Z INFO order-service [t-6431] order o-6838 accepted, calling payment-svc POST /charge\n#209 2026-10-05T02:18:42Z INFO order-service [t-6433] order o-6839 accepted, calling payment-svc POST /charge\n#213 2026-10-05T02:18:43Z INFO order-service [t-6437] order o-6840 accepted, calling payment-svc POST /charge\n#220 2026-10-05T02:18:46Z INFO order-service [t-6438] order o-6843 accepted, calling payment-svc POST /charge\n#224 2026-10-05T02:18:48Z INFO order-service [t-6442] order o-6846 accepted, calling payment-svc POST /charge\n#227 2026-10-05T02:18:48Z DEBUG order-service GC pause 17ms (young), heap 48%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "heap",
+          "service": "order-service",
+          "limit": 60
+        },
+        "output": "74 match(es), showing first 60:\n#26 2026-10-05T02:17:13Z DEBUG order-service GC pause 15ms (young), heap 33%\n#58 2026-10-05T02:17:28Z DEBUG order-service GC pause 19ms (young), heap 37%\n#79 2026-10-05T02:17:39Z DEBUG order-service GC pause 24ms (young), heap 42%\n#113 2026-10-05T02:17:55Z DEBUG order-service GC pause 12ms (young), heap 30%\n#146 2026-10-05T02:18:11Z DEBUG order-service GC pause 19ms (young), heap 40%\n#167 2026-10-05T02:18:21Z DEBUG order-service GC pause 11ms (young), heap 39%\n#194 2026-10-05T02:18:35Z DEBUG order-service GC pause 16ms (young), heap 41%\n#227 2026-10-05T02:18:48Z DEBUG order-service GC pause 17ms (young), heap 48%\n#252 2026-10-05T02:19:03Z DEBUG order-service GC pause 11ms (young), heap 38%\n#288 2026-10-05T02:19:21Z DEBUG order-service GC pause 9ms (young), heap 47%\n#324 2026-10-05T02:19:38Z DEBUG order-service GC pause 7ms (young), heap 37%\n#347 2026-10-05T02:19:49Z DEBUG order-service GC pause 21ms (young), heap 38%\n#380 2026-10-05T02:20:06Z DEBUG order-service GC pause 7ms (young), heap 37%\n#412 2026-10-05T02:20:20Z DEBUG order-service GC pause 25ms (young), heap 42%\n#453 2026-10-05T02:20:39Z DEBUG order-service GC pause 15ms (young), heap 39%\n#484 2026-10-05T02:20:56Z DEBUG order-service GC pause 25ms (young), heap 38%\n#505 2026-10-05T02:21:06Z DEBUG order-service GC pause 20ms (young), heap 30%\n#525 2026-10-05T02:21:16Z DEBUG order-service GC pause 9ms (young), heap 42%\n#557 2026-10-05T02:21:34Z DEBUG order-service GC pause 12ms (young), heap 45%\n#583 2026-10-05T02:21:46Z DEBUG order-service GC pause 4ms (young), heap 34%\n#613 2026-10-05T02:22:01Z DEBUG order-service GC pause 25ms (young), heap 40%\n#652 2026-10-05T02:22:20Z DEBUG order-service GC pause 25ms (young), heap 33%\n#680 2026-10-05T02:22:37Z DEBUG order-service GC pause 18ms (young), heap 32%\n#713 2026-10-05T02:22:53Z DEBUG order-service GC pause 23ms (young), heap 34%\n#755 2026-10-05T02:23:11Z DEBUG order-service GC pause 10ms (young), heap 32%\n#792 2026-10-05T02:23:29Z DEBUG order-service GC pause 24ms (young), heap 42%\n#801 2026-10-05T02:23:34Z INFO order-service heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#821 2026-10-05T02:23:43Z DEBUG order-service GC pause 4ms (young), heap 38%\n#854 2026-10-05T02:23:59Z DEBUG order-service GC pause 7ms (young), heap 38%\n#886 2026-10-05T02:24:12Z DEBUG order-service GC pause 18ms (young), heap 38%\n#908 2026-10-05T02:24:24Z DEBUG order-service GC pause 15ms (young), heap 43%\n#943 2026-10-05T02:24:41Z DEBUG order-service GC pause 4ms (young), heap 39%\n#983 2026-10-05T02:24:58Z DEBUG order-service GC pause 22ms (young), heap 43%\n#1017 2026-10-05T02:25:14Z DEBUG order-service GC pause 9ms (young), heap 34%\n#1058 2026-10-05T02:25:33Z DEBUG order-service GC pause 14ms (young), heap 31%\n#1083 2026-10-05T02:25:44Z DEBUG order-service GC pause 6ms (young), heap 37%\n#1109 2026-10-05T02:25:55Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#1118 2026-10-05T02:26:04Z DEBUG order-service GC pause 4ms (young), heap 45%\n#1136 2026-10-05T02:26:18Z DEBUG order-service GC pause 21ms (young), heap 48%\n#1158 2026-10-05T02:26:32Z DEBUG order-service GC pause 22ms (young), heap 31%\n#1179 2026-10-05T02:26:48Z DEBUG order-service GC pause 20ms (young), heap 31%\n#1200 2026-10-05T02:27:03Z DEBUG order-service GC pause 23ms (young), heap 30%\n#1221 2026-10-05T02:27:18Z DEBUG order-service GC pause 13ms (young), heap 45%\n#1249 2026-10-05T02:27:36Z DEBUG order-service GC pause 6ms (young), heap 40%\n#1277 2026-10-05T02:27:55Z DEBUG order-service GC pause 8ms (young), heap 39%\n#1301 2026-10-05T02:28:12Z DEBUG order-service GC pause 15ms (young), heap 37%\n#1329 2026-10-05T02:28:32Z DEBUG order-service GC pause 23ms (young), heap 31%\n#1338 2026-10-05T02:28:40Z FATAL order-service Exception in thread \"worker-3\" java.lang.OutOfMemoryError: Java heap space\n#1349 2026-10-05T02:28:49Z DEBUG order-service GC pause 18ms (young), heap 43%\n#1373 2026-10-05T02:29:04Z DEBUG order-service GC pause 6ms (young), heap 40%\n#1390 2026-10-05T02:29:20Z DEBUG order-service GC pause 15ms (young), heap 43%\n#1402 2026-10-05T02:29:34Z DEBUG order-service GC pause 18ms (young), heap 34%\n#1420 2026-10-05T02:29:50Z DEBUG order-service GC pause 15ms (young), heap 46%\n#1443 2026-10-05T02:30:07Z DEBUG order-service GC pause 23ms (young), heap 35%\n#1463 2026-10-05T02:30:24Z DEBUG order-service GC pause 20ms (young), heap 41%\n#1478 2026-10-05T02:30:35Z DEBUG order-service GC pause 4ms (young), heap 32%\n#1491 2026-10-05T02:30:46Z DEBUG order-service GC pause 24ms (young), heap 36%\n#1510 2026-10-05T02:31:01Z DEBUG order-service GC pause 14ms (young), heap 47%\n#1535 2026-10-05T02:31:20Z DEBUG order-service GC pause 12ms (young), heap 41%\n#1552 2026-10-05T02:31:32Z DEBUG order-service GC pause 24ms (young), heap 38%"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 801,
+          "before": 6,
+          "after": 6
+        },
+        "output": "#795 2026-10-05T02:23:32Z INFO order-consumer processed batch of 81 messages from orders.events (lag 98ms)\n#796 2026-10-05T02:23:32Z INFO postgres checkpoint complete: wrote 1167 buffers (1.0%)\n#797 2026-10-05T02:23:32Z INFO order-service [t-6790] order o-7111 accepted, calling payment-svc POST /charge\n#798 2026-10-05T02:23:32Z INFO api-gateway [t-6790] POST /checkout 200 205ms\n#799 2026-10-05T02:23:33Z INFO analytics-forwarder forwarded 2590 events to analytics-ingest\n#800 2026-10-05T02:23:34Z INFO report-cron scheduler heartbeat: 14 jobs registered, next run in 299s\n#801 2026-10-05T02:23:34Z INFO order-service heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#802 2026-10-05T02:23:35Z INFO redis stats: hits=17962 misses=615 evicted=0 connected_clients=36\n#803 2026-10-05T02:23:35Z INFO order-service [t-6792] order o-7112 accepted, calling payment-svc POST /charge\n#804 2026-10-05T02:23:35Z INFO payment-svc [t-6792] POST /charge o-7112 ok 35ms\n#805 2026-10-05T02:23:35Z INFO api-gateway [t-6792] POST /checkout 200 106ms\n#806 2026-10-05T02:23:35Z DEBUG api-gateway upstream health: order-service ok, payment-svc ok\n#807 2026-10-05T02:23:36Z INFO order-consumer processed batch of 61 messages from orders.events (lag 208ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "evict",
+          "limit": 20
+        },
+        "output": "134 match(es), showing first 20:\n#1 2026-10-05T02:17:01Z INFO redis stats: hits=19103 misses=578 evicted=0 connected_clients=46\n#16 2026-10-05T02:17:08Z INFO redis stats: hits=18052 misses=460 evicted=0 connected_clients=47\n#33 2026-10-05T02:17:16Z INFO redis stats: hits=17834 misses=803 evicted=0 connected_clients=41\n#49 2026-10-05T02:17:24Z INFO redis stats: hits=13269 misses=428 evicted=0 connected_clients=54\n#67 2026-10-05T02:17:33Z INFO redis stats: hits=9603 misses=317 evicted=0 connected_clients=51\n#86 2026-10-05T02:17:41Z INFO redis stats: hits=16060 misses=460 evicted=0 connected_clients=55\n#102 2026-10-05T02:17:48Z INFO redis stats: hits=9992 misses=372 evicted=0 connected_clients=52\n#118 2026-10-05T02:17:57Z INFO redis stats: hits=9440 misses=688 evicted=0 connected_clients=51\n#132 2026-10-05T02:18:03Z INFO redis stats: hits=17139 misses=896 evicted=0 connected_clients=49\n#145 2026-10-05T02:18:10Z INFO redis stats: hits=13892 misses=284 evicted=0 connected_clients=34\n#164 2026-10-05T02:18:20Z INFO redis stats: hits=18938 misses=520 evicted=0 connected_clients=41\n#177 2026-10-05T02:18:26Z INFO redis stats: hits=8943 misses=875 evicted=0 connected_clients=41\n#189 2026-10-05T02:18:32Z INFO redis stats: hits=19184 misses=530 evicted=0 connected_clients=58\n#208 2026-10-05T02:18:41Z INFO redis stats: hits=8217 misses=493 evicted=0 connected_clients=52\n#225 2026-10-05T02:18:48Z INFO redis stats: hits=17096 misses=227 evicted=0 connected_clients=58\n#236 2026-10-05T02:18:57Z INFO redis stats: hits=11480 misses=370 evicted=0 connected_clients=60\n#253 2026-10-05T02:19:04Z INFO redis stats: hits=15575 misses=361 evicted=0 connected_clients=54\n#267 2026-10-05T02:19:11Z INFO redis stats: hits=17391 misses=431 evicted=0 connected_clients=56\n#280 2026-10-05T02:19:17Z INFO redis stats: hits=14896 misses=777 evicted=0 connected_clients=44\n#296 2026-10-05T02:19:24Z INFO redis stats: hits=14178 misses=757 evicted=0 connected_clients=54"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "config",
+          "limit": 20
+        },
+        "output": "1 match(es):\n#241 2026-10-05T02:18:59Z INFO payment-svc config reloaded from config-service (revision 312): 0 keys changed"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.85,
+              "evidenceLines": [
+                801,
+                1109,
+                1338,
+                1572,
+                1573
+              ],
+              "reasoning": "The 502s on POST /checkout are a downstream effect of order-service repeatedly running out of Java heap. The origin is visible at #801: heap reached 78% after a full GC with the old generation not reclaimed and GC overhead at 20%, while young-gen GC pauses were normal earlier. That is a retained-object growth pattern, consistent with orderCache growing without bounded eviction. Heap then crashed with OutOfMemoryError at orderCache.put (#1109), a worker OOM (#1338), and a heap-exhausted fatal while growing orderCache to 1536MB (#1572). Pods were OOMKilled and restarted (#1111, #1340, #1573). Each restart drops in-flight connections, so the gateway returns 502 'upstream order-service connection reset (no healthy upstream)' in bursts, with long latencies while the pod is down and warming its cache. The gateway 502 lines are symptoms and are not cited. The report-cron pandas failure (#595 and repeats) is a separate, unrelated bad deploy of report-cron:2026.10.2 with no impact on checkout. payment-svc config reload (#241) changed no keys and is not related.",
+              "recommendedAction": "Immediately mitigate by rolling back or scaling order-service memory and restarting pods as needed. Then fix the orderCache: add a size bound and TTL/eviction, and confirm the cache is not retaining entries indefinitely. Add heap alerting before the OOM threshold. Separately fix report-cron by rebuilding the image with pandas, or roll back report-cron to the previous image."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.15,
+              "evidenceLines": [
+                595,
+                763,
+                1130
+              ],
+              "reasoning": "The report-cron image report-cron:2026.10.2 is missing the pandas module and the nightly revenue job fails on every run. This is a real bad deploy, but it is isolated to report-cron and does not touch the checkout path. It does not explain the 502s on order-service and is ranked low as a red herring.",
+              "recommendedAction": "Roll back or rebuild report-cron with pandas installed. Track it as a separate ticket from the checkout incident."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.85,
+              "evidenceLines": [
+                801,
+                1109,
+                1338,
+                1572,
+                1573
+              ],
+              "reasoning": "The 502s on POST /checkout are a downstream effect of order-service repeatedly running out of Java heap. The origin is visible at #801: heap reached 78% after a full GC with the old generation not reclaimed and GC overhead at 20%, while young-gen GC pauses were normal earlier. That is a retained-object growth pattern, consistent with orderCache growing without bounded eviction. Heap then crashed with OutOfMemoryError at orderCache.put (#1109), a worker OOM (#1338), and a heap-exhausted fatal while growing orderCache to 1536MB (#1572). Pods were OOMKilled and restarted (#1111, #1340, #1573). Each restart drops in-flight connections, so the gateway returns 502 'upstream order-service connection reset (no healthy upstream)' in bursts, with long latencies while the pod is down and warming its cache. The gateway 502 lines are symptoms and are not cited. The report-cron pandas failure (#595 and repeats) is a separate, unrelated bad deploy of report-cron:2026.10.2 with no impact on checkout. payment-svc config reload (#241) changed no keys and is not related.",
+              "recommendedAction": "Immediately mitigate by rolling back or scaling order-service memory and restarting pods as needed. Then fix the orderCache: add a size bound and TTL/eviction, and confirm the cache is not retaining entries indefinitely. Add heap alerting before the OOM threshold. Separately fix report-cron by rebuilding the image with pandas, or roll back report-cron to the previous image."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.15,
+              "evidenceLines": [
+                595,
+                763,
+                1130
+              ],
+              "reasoning": "The report-cron image report-cron:2026.10.2 is missing the pandas module and the nightly revenue job fails on every run. This is a real bad deploy, but it is isolated to report-cron and does not touch the checkout path. It does not explain the 502s on order-service and is ranked low as a red herring.",
+              "recommendedAction": "Roll back or rebuild report-cron with pandas installed. Track it as a separate ticket from the checkout incident."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\": \"resource_exhaustion\", \"confidence\": 0.85, \"evidenceLines\": [801, 1109, 1338, 1572, 1573], \"reasoning\": \"The 502s on POST /checkout are a downstream effect of order-service repeatedly running out of Java heap. The origin is visible at #801: heap reached 78% after a full GC with the old generation not reclaimed and GC overhead at 20%, while young-gen GC pauses were normal earlier. That is a retained-object growth pattern, consistent with orderCache growing without bounded eviction. Heap then crashed with OutOfMemoryError at orderCache.put (#1109), a worker OOM (#1338), and a heap-exhausted fatal while growing orderCache to 1536MB (#1572). Pods were OOMKilled and restarted (#1111, #1340, #1573). Each restart drops in-flight connections, so the gateway returns 502 'upstream order-service connection reset (no healthy upstream)' in bursts. The gateway 502 lines are symptoms and are not cited. The report-cron pandas failure (#595 and repeats) is a separate, unrelated bad deploy with no impact on checkout. The payment-svc config reload (#241) changed no keys and is not related.}, {\"rootCause\": \"bad_deploy\", \"confidence\": 0.15, \"evidenceLines\": [595, 763, 1130], \"reasoning\": \"The report-cron image report-cron:2026.10.2 is missing the pandas module and the nightly revenue job fails on every run. This is a real bad deploy, but it is isolated to report-cron and does not touch the checkout path, so it does not explain the 502s and is ranked low as a red herring.\"}], \"recommendedAction\": \"Mitigate now by rolling back or restarting order-service and raising its memory limit. Then bound and add TTL eviction to orderCache, and alert on heap usage before the OOM threshold. Separately, rebuild report-cron with pandas or roll back its image.\"}"
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string; recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.85,
+              "evidenceLines": [
+                801,
+                1109,
+                1338,
+                1572,
+                1573
+              ],
+              "reasoning": "The 502s on POST /checkout are a downstream effect of order-service repeatedly running out of Java heap. The origin is visible at #801: heap reached 78% after a full GC with the old generation not reclaimed and GC overhead at 20%, while young-gen GC pauses were normal earlier. That is a retained-object growth pattern, consistent with orderCache growing without bounded eviction. Heap then crashed with OutOfMemoryError at orderCache.put (#1109), a worker OOM (#1338), and a heap-exhausted fatal while growing orderCache to 1536MB (#1572). Pods were OOMKilled and restarted (#1111, #1340, #1573). Each restart drops in-flight connections, so the gateway returns 502 'upstream order-service connection reset (no healthy upstream)' in bursts. The gateway 502 lines are symptoms and are not cited. The report-cron pandas failure (#595 and repeats) is a separate, unrelated bad deploy with no impact on checkout. The payment-svc config reload (#241) changed no keys and is not related."
+            },
+            {
+              "rootCause": "bad_deploy",
+              "confidence": 0.15,
+              "evidenceLines": [
+                595,
+                763,
+                1130
+              ],
+              "reasoning": "The report-cron image report-cron:2026.10.2 is missing the pandas module and the nightly revenue job fails on every run. This is a real bad deploy, but it is isolated to report-cron and does not touch the checkout path, so it does not explain the 502s and is ranked low as a red herring."
+            }
+          ],
+          "recommendedAction": "Mitigate now by rolling back or restarting order-service and raising its memory limit. Then bound and add TTL eviction to orderCache, and alert on heap usage before the OOM threshold. Separately, rebuild report-cron with pandas or roll back its image."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 11,
+    "toolCalls": 11,
+    "usage": {
+      "inputTokens": 24,
+      "outputTokens": 4641,
+      "cacheReadTokens": 120667,
+      "cacheWriteTokens": 19281
+    },
+    "durationMs": 21617,
+    "stopReason": "tool_use"
+  }
+}

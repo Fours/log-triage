@@ -1,0 +1,147 @@
+{
+  "score": {
+    "incidentId": "h-035",
+    "difficulty": "medium",
+    "scenario": "poison_message/redelivery-loop",
+    "truth": "poison_message",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "poison_message",
+    "confidence": 0.9,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 6,
+      "precision": 0.8571428571428571,
+      "recall": 1,
+      "f1": 0.923076923076923
+    },
+    "herringsCited": 0,
+    "secondaryCited": 0,
+    "costUsd": 0.002161495,
+    "durationMs": 6161,
+    "iterations": 3,
+    "toolCalls": 4,
+    "tokens": {
+      "input": 8,
+      "output": 1202,
+      "cacheRead": 14007,
+      "cacheWrite": 11357
+    }
+  },
+  "result": {
+    "incidentId": "h-035",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "poison_message",
+          "confidence": 0.9,
+          "evidenceLines": [
+            1941,
+            1942,
+            2097,
+            2099,
+            2269,
+            2372,
+            3020
+          ],
+          "reasoning": "audit.events partition 2 consumer is stuck on msg-440333 (offset 836959). Its payload contains a NUL byte at position 1323, so JSON parsing fails on every attempt. The consumer nacks and redelivers with no max-retry limit (attempt 4 at 07:54:01, attempt 13 by 07:55:25), so the partition head never advances. Lag then grows steadily from 858 messages at 07:57 to about 6400 by 08:06 (lines 2258, 2336, 2474, 2678, 3109, 3286). CPU is normal because the consumer is blocked on retries, not computing. The notification-svc v1.9.0 TypeError, the api-gateway 500s, the account-svc timeouts and the legacy-inventory healthcheck timeouts are separate, unrelated symptoms and do not explain the audit lag."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.3,
+          "evidenceLines": [
+            1941,
+            2269
+          ],
+          "reasoning": "The alternative reading is that the NUL byte is corrupt data written upstream into the audit record, which would make it a data_integrity problem at the producer. The logs do not show the producer, so the origin of the corruption is unconfirmed. The fix (skip or dead-letter the message) is the same either way."
+        }
+      ],
+      "recommendedAction": "Dead-letter or skip msg-440333 (audit.events partition 2, offset 836959) so the consumer can advance, then drain the roughly 6400-message backlog. Add a max-retry limit with a dead-letter queue to audit-consumer so one bad payload cannot block a partition again. Trace where the NUL byte was written upstream and add input validation at the producer. Separately, the notification-svc v1.9.0 'currency' TypeError (lines 2077, 2188) and the legacy-inventory healthcheck timeouts (2005) need their own follow-up, though they do not drive this alert."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "43 match(es):\n#479 2026-11-10T07:42:47Z WARN edge-proxy [t-5587] POST /login 400 8ms: request validation failed: field \"email\" is not a valid address\n#1428 2026-11-10T07:50:05Z WARN account-svc [t-6201] AuthClient.issueToken slow: 2240ms calling auth-svc POST /tokens (soft threshold 2000ms)\n#1941 2026-11-10T07:54:01Z ERROR audit-consumer handler error for msg-440333 at offset 836959: invalid JSON payload (byte 1323 is NUL)\n#2005 2026-11-10T07:54:33Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2077 2026-11-10T07:55:10Z ERROR notification-svc [t-6630] request m-8357 failed in v1.9.0: cannot access 'currency' of undefined, stack: format @ message-formatter.ts:139\n#2084 2026-11-10T07:55:16Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2097 2026-11-10T07:55:24Z ERROR audit-consumer failed to process msg-440333 (partition 2, offset 836959): JSON parse error: unexpected token '\\u0000' at position 1323\n#2125 2026-11-10T07:55:39Z ERROR api-gateway [t-6667] POST /v1/notify 500 29075ms: upstream notification-svc returned 500 Internal Server Error\n#2188 2026-11-10T07:56:17Z ERROR notification-svc [t-6708] unhandled error in POST /v1/notify (m-8411): TypeError: Cannot read properties of undefined (reading 'currency') at format (message-formatter.ts:139) [v1.9.0]\n#2189 2026-11-10T07:56:19Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2258 2026-11-10T07:57:02Z WARN audit-consumer consumer lag on audit.events partition 2: 858 messages behind (56s)\n#2269 2026-11-10T07:57:10Z ERROR audit-consumer SyntaxError: Unexpected token \\u0000 in JSON at position 1323 (message msg-440333, audit.events[2]@836959)\n#2281 2026-11-10T07:57:18Z ERROR notification-svc [t-6771] [v1.9.0] POST /v1/notify m-8459 -> 500: TypeError: undefined has no property 'currency'\n#2304 2026-11-10T07:57:29Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2336 2026-11-10T07:57:49Z WARN audit-consumer consumer lag on audit.events partition 2: 1538 messages behind (144s)\n#2367 2026-11-10T07:58:07Z ERROR api-gateway [t-6819] POST /v1/notify 500 6543ms: upstream notification-svc returned 500 Internal Server Error\n#2372 2026-11-10T07:58:11Z ERROR audit-consumer handler error for msg-440333 at offset 836959: invalid JSON payload (byte 1323 is NUL)\n#2373 2026-11-10T07:58:13Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2400 2026-11-10T07:58:27Z ERROR notification-svc [t-6838] request m-8519 failed in v1.9.0: cannot access 'currency' of undefined, stack: format @ message-formatter.ts:139\n#2407 2026-11-10T07:58:33Z ERROR account-svc [t-6846] user u-8525 timed out waiting for downstream confirmation (120s), marked failed\n#2444 2026-11-10T07:58:55Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2474 2026-11-10T07:59:13Z WARN audit-consumer consumer lag on audit.events partition 2: 2622 messages behind (150s)\n#2562 2026-11-10T08:00:07Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2593 2026-11-10T08:00:22Z ERROR api-gateway [t-6968] POST /v1/notify 500 29696ms: upstream notification-svc returned 500 Internal Server Error\n#2654 2026-11-10T08:00:59Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2678 2026-11-10T08:01:09Z WARN audit-consumer consumer lag on audit.events partition 2: 4168 messages behind (260s)\n#2717 2026-11-10T08:01:30Z ERROR account-svc [t-7062] user u-8695 timed out waiting for downstream confirmation (120s), marked failed\n#2724 2026-11-10T08:01:33Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2793 2026-11-10T08:02:10Z ERROR api-gateway [t-7116] POST /v1/notify 500 27346ms: upstream notification-svc returned 500 Internal Server Error\n#2853 2026-11-10T08:02:43Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2890 2026-11-10T08:03:01Z ERROR api-gateway [t-7175] POST /v1/notify 500 10549ms: upstream notification-svc returned 500 Internal Server Error\n#2895 2026-11-10T08:03:06Z ERROR account-svc [t-7178] user u-8789 timed out waiting for downstream confirmation (120s), marked failed\n#2946 2026-11-10T08:03:34Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3020 2026-11-10T08:04:16Z WARN audit-consumer consumer lag on audit.events partition 2: 4390 messages behind (410s)\n#3030 2026-11-10T08:04:24Z ERROR api-gateway [t-7262] POST /v1/notify 500 16462ms: upstream notification-svc returned 500 Internal Server Error\n#3083 2026-11-10T08:04:56Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3109 2026-11-10T08:05:09Z WARN audit-consumer consumer lag on audit.events partition 2: 5154 messages behind (264s)\n#3130 2026-11-10T08:05:21Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3180 2026-11-10T08:05:50Z ERROR account-svc [t-7347] user u-8929 timed out waiting for downstream confirmation (120s), marked failed\n#3280 2026-11-10T08:06:45Z ERROR api-gateway [t-7421] POST /v1/notify 500 6580ms: upstream notification-svc returned 500 Internal Server Error\n#3286 2026-11-10T08:06:48Z WARN audit-consumer consumer lag on audit.events partition 2: 6412 messages behind (301s)\n#3288 2026-11-10T08:06:50Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#3335 2026-11-10T08:07:19Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "audit-consumer",
+          "limit": 60
+        },
+        "output": "130 match(es), showing first 60:\n#1 2026-11-10T07:39:00Z INFO audit-consumer processed batch of 72 messages from audit.events (lag 400ms)\n#9 2026-11-10T07:39:05Z INFO audit-consumer processed batch of 105 messages from audit.events (lag 101ms)\n#26 2026-11-10T07:39:14Z INFO audit-consumer processed batch of 85 messages from audit.events (lag 149ms)\n#43 2026-11-10T07:39:21Z INFO audit-consumer processed batch of 21 messages from audit.events (lag 197ms)\n#52 2026-11-10T07:39:28Z INFO audit-consumer processed batch of 25 messages from audit.events (lag 371ms)\n#66 2026-11-10T07:39:34Z INFO audit-consumer processed batch of 120 messages from audit.events (lag 263ms)\n#88 2026-11-10T07:39:43Z INFO audit-consumer processed batch of 20 messages from audit.events (lag 376ms)\n#99 2026-11-10T07:39:49Z INFO audit-consumer processed batch of 30 messages from audit.events (lag 106ms)\n#116 2026-11-10T07:39:59Z INFO audit-consumer processed batch of 111 messages from audit.events (lag 250ms)\n#139 2026-11-10T07:40:06Z INFO audit-consumer processed batch of 114 messages from audit.events (lag 75ms)\n#150 2026-11-10T07:40:13Z INFO audit-consumer processed batch of 75 messages from audit.events (lag 123ms)\n#164 2026-11-10T07:40:20Z INFO audit-consumer processed batch of 24 messages from audit.events (lag 118ms)\n#182 2026-11-10T07:40:27Z INFO audit-consumer processed batch of 65 messages from audit.events (lag 293ms)\n#200 2026-11-10T07:40:36Z INFO audit-consumer processed batch of 35 messages from audit.events (lag 322ms)\n#220 2026-11-10T07:40:46Z INFO audit-consumer processed batch of 99 messages from audit.events (lag 271ms)\n#238 2026-11-10T07:40:53Z INFO audit-consumer processed batch of 117 messages from audit.events (lag 90ms)\n#251 2026-11-10T07:41:00Z INFO audit-consumer processed batch of 20 messages from audit.events (lag 132ms)\n#272 2026-11-10T07:41:09Z INFO audit-consumer processed batch of 119 messages from audit.events (lag 87ms)\n#291 2026-11-10T07:41:19Z INFO audit-consumer processed batch of 45 messages from audit.events (lag 339ms)\n#302 2026-11-10T07:41:24Z INFO audit-consumer processed batch of 23 messages from audit.events (lag 86ms)\n#316 2026-11-10T07:41:32Z INFO audit-consumer processed batch of 116 messages from audit.events (lag 349ms)\n#328 2026-11-10T07:41:38Z INFO audit-consumer processed batch of 101 messages from audit.events (lag 162ms)\n#350 2026-11-10T07:41:47Z INFO audit-consumer processed batch of 21 messages from audit.events (lag 276ms)\n#361 2026-11-10T07:41:53Z INFO audit-consumer processed batch of 48 messages from audit.events (lag 129ms)\n#387 2026-11-10T07:42:02Z INFO audit-consumer processed batch of 103 messages from audit.events (lag 346ms)\n#397 2026-11-10T07:42:08Z INFO audit-consumer processed batch of 46 messages from audit.events (lag 73ms)\n#412 2026-11-10T07:42:15Z INFO audit-consumer processed batch of 42 messages from audit.events (lag 293ms)\n#425 2026-11-10T07:42:21Z INFO audit-consumer processed batch of 28 messages from audit.events (lag 125ms)\n#439 2026-11-10T07:42:27Z INFO audit-consumer processed batch of 51 messages from audit.events (lag 62ms)\n#451 2026-11-10T07:42:36Z INFO audit-consumer processed batch of 67 messages from audit.events (lag 137ms)\n#471 2026-11-10T07:42:44Z INFO audit-consumer processed batch of 58 messages from audit.events (lag 97ms)\n#488 2026-11-10T07:42:51Z INFO audit-consumer processed batch of 89 messages from audit.events (lag 275ms)\n#505 2026-11-10T07:43:00Z INFO audit-consumer processed batch of 21 messages from audit.events (lag 312ms)\n#523 2026-11-10T07:43:09Z INFO audit-consumer processed batch of 120 messages from audit.events (lag 365ms)\n#538 2026-11-10T07:43:18Z INFO audit-consumer processed batch of 34 messages from audit.events (lag 131ms)\n#555 2026-11-10T07:43:25Z INFO audit-consumer processed batch of 66 messages from audit.events (lag 104ms)\n#577 2026-11-10T07:43:34Z INFO audit-consumer processed batch of 74 messages from audit.events (lag 157ms)\n#588 2026-11-10T07:43:41Z INFO audit-consumer processed batch of 61 messages from audit.events (lag 289ms)\n#607 2026-11-10T07:43:50Z INFO audit-consumer processed batch of 51 messages from audit.events (lag 327ms)\n#629 2026-11-10T07:43:58Z INFO audit-consumer processed batch of 100 messages from audit.events (lag 74ms)\n#647 2026-11-10T07:44:06Z INFO audit-consumer processed batch of 81 messages from audit.events (lag 315ms)\n#659 2026-11-10T07:44:11Z INFO audit-consumer processed batch of 92 messages from audit.events (lag 252ms)\n#680 2026-11-10T07:44:20Z INFO audit-consumer processed batch of 76 messages from audit.events (lag 314ms)\n#696 2026-11-10T07:44:30Z INFO audit-consumer processed batch of 104 messages from audit.events (lag 169ms)\n#712 2026-11-10T07:44:38Z INFO audit-consumer processed batch of 93 messages from audit.events (lag 103ms)\n#730 2026-11-10T07:44:44Z INFO audit-consumer processed batch of 120 messages from audit.events (lag 248ms)\n#749 2026-11-10T07:44:54Z INFO audit-consumer processed batch of 114 messages from audit.events (lag 169ms)\n#769 2026-11-10T07:45:02Z INFO audit-consumer processed batch of 119 messages from audit.events (lag 147ms)\n#787 2026-11-10T07:45:11Z INFO audit-consumer processed batch of 81 messages from audit.events (lag 221ms)\n#812 2026-11-10T07:45:21Z INFO audit-consumer processed batch of 88 messages from audit.events (lag 144ms)\n#826 2026-11-10T07:45:28Z INFO audit-consumer processed batch of 107 messages from audit.events (lag 392ms)\n#837 2026-11-10T07:45:35Z INFO audit-consumer processed batch of 80 messages from audit.events (lag 92ms)\n#846 2026-11-10T07:45:40Z INFO audit-consumer processed batch of 21 messages from audit.events (lag 225ms)\n#868 2026-11-10T07:45:49Z INFO audit-consumer processed batch of 52 messages from audit.events (lag 359ms)\n#884 2026-11-10T07:45:56Z INFO audit-consumer processed batch of 89 messages from audit.events (lag 236ms)\n#898 2026-11-10T07:46:04Z INFO audit-consumer processed batch of 49 messages from audit.events (lag 239ms)\n#914 2026-11-10T07:46:09Z INFO audit-consumer processed batch of 82 messages from audit.events (lag 308ms)\n#929 2026-11-10T07:46:19Z INFO audit-consumer processed batch of 108 messages from audit.events (lag 330ms)\n#947 2026-11-10T07:46:26Z INFO audit-consumer processed batch of 49 messages from audit.events (lag 226ms)\n#963 2026-11-10T07:46:34Z INFO audit-consumer processed batch of 101 messages from audit.events (lag 198ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "msg-440333"
+        },
+        "output": "6 match(es):\n#1941 2026-11-10T07:54:01Z ERROR audit-consumer handler error for msg-440333 at offset 836959: invalid JSON payload (byte 1323 is NUL)\n#1942 2026-11-10T07:54:01Z INFO audit-consumer nack msg-440333, redelivering (attempt 4, no max-retries configured)\n#2097 2026-11-10T07:55:24Z ERROR audit-consumer failed to process msg-440333 (partition 2, offset 836959): JSON parse error: unexpected token '\\u0000' at position 1323\n#2099 2026-11-10T07:55:25Z INFO audit-consumer nack msg-440333, redelivering (attempt 13, no max-retries configured)\n#2269 2026-11-10T07:57:10Z ERROR audit-consumer SyntaxError: Unexpected token \\u0000 in JSON at position 1323 (message msg-440333, audit.events[2]@836959)\n#2372 2026-11-10T07:58:11Z ERROR audit-consumer handler error for msg-440333 at offset 836959: invalid JSON payload (byte 1323 is NUL)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1941,
+          "before": 6,
+          "after": 3
+        },
+        "output": "#1935 2026-11-10T07:54:00Z INFO account-svc [t-6532] user u-8277 accepted, calling auth-svc POST /tokens\n#1936 2026-11-10T07:54:00Z INFO auth-svc [t-6532] POST /tokens u-8277 ok 90ms\n#1937 2026-11-10T07:54:00Z INFO edge-proxy [t-6532] POST /login 200 131ms\n#1938 2026-11-10T07:54:00Z INFO notification-svc [t-6535] message m-8279 accepted, calling template-svc POST /render\n#1939 2026-11-10T07:54:00Z INFO template-svc [t-6535] POST /render m-8279 ok 75ms\n#1940 2026-11-10T07:54:00Z INFO api-gateway [t-6535] POST /v1/notify 200 106ms\n#1941 2026-11-10T07:54:01Z ERROR audit-consumer handler error for msg-440333 at offset 836959: invalid JSON payload (byte 1323 is NUL)\n#1942 2026-11-10T07:54:01Z INFO audit-consumer nack msg-440333, redelivering (attempt 4, no max-retries configured)\n#1943 2026-11-10T07:54:02Z INFO account-svc [t-6536] user u-8282 accepted, calling auth-svc POST /tokens\n#1944 2026-11-10T07:54:02Z INFO edge-proxy [t-6536] POST /login 200 78ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "poison_message",
+              "confidence": 0.9,
+              "evidenceLines": [
+                1941,
+                1942,
+                2097,
+                2099,
+                2269,
+                2372,
+                3020
+              ],
+              "reasoning": "audit.events partition 2 consumer is stuck on msg-440333 (offset 836959). Its payload contains a NUL byte at position 1323, so JSON parsing fails on every attempt. The consumer nacks and redelivers with no max-retry limit (attempt 4 at 07:54:01, attempt 13 by 07:55:25), so the partition head never advances. Lag then grows steadily from 858 messages at 07:57 to about 6400 by 08:06 (lines 2258, 2336, 2474, 2678, 3109, 3286). CPU is normal because the consumer is blocked on retries, not computing. The notification-svc v1.9.0 TypeError, the api-gateway 500s, the account-svc timeouts and the legacy-inventory healthcheck timeouts are separate, unrelated symptoms and do not explain the audit lag.",
+              "reasoning_note": "See hypothesis reasoning."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.3,
+              "evidenceLines": [
+                1941,
+                2269
+              ],
+              "reasoning": "The alternative reading is that the NUL byte is corrupt data written upstream into the audit record, which would make it a data_integrity problem at the producer. The logs do not show the producer, so the origin of the corruption is unconfirmed. The fix (skip or dead-letter the message) is the same either way.",
+              "reasoning_note": "Alternative."
+            }
+          ],
+          "recommendedAction": "Dead-letter or skip msg-440333 (audit.events partition 2, offset 836959) so the consumer can advance, then drain the roughly 6400-message backlog. Add a max-retry limit with a dead-letter queue to audit-consumer so one bad payload cannot block a partition again. Trace where the NUL byte was written upstream and add input validation at the producer. Separately, the notification-svc v1.9.0 'currency' TypeError (lines 2077, 2188) and the legacy-inventory healthcheck timeouts (2005) need their own follow-up, though they do not drive this alert."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 3,
+    "toolCalls": 4,
+    "usage": {
+      "inputTokens": 8,
+      "outputTokens": 1202,
+      "cacheReadTokens": 14007,
+      "cacheWriteTokens": 11357
+    },
+    "durationMs": 6161,
+    "stopReason": "tool_use"
+  }
+}

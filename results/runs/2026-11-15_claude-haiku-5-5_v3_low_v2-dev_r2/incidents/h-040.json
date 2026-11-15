@@ -1,0 +1,231 @@
+{
+  "score": {
+    "incidentId": "h-040",
+    "difficulty": "medium",
+    "scenario": "cascading_failure/retry-storm",
+    "truth": "cascading_failure",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "cascading_failure",
+    "confidence": 0.72,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 6,
+      "precision": 0.8571428571428571,
+      "recall": 0.6666666666666666,
+      "f1": 0.75
+    },
+    "herringsCited": 0,
+    "secondaryCited": 6,
+    "costUsd": 0.005221505,
+    "durationMs": 17916,
+    "iterations": 8,
+    "toolCalls": 12,
+    "tokens": {
+      "input": 18,
+      "output": 3417,
+      "cacheRead": 74608,
+      "cacheWrite": 22121
+    }
+  },
+  "result": {
+    "incidentId": "h-040",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.72,
+          "evidenceLines": [
+            1552,
+            1600,
+            1594,
+            1665,
+            1683,
+            1672,
+            1645
+          ],
+          "reasoning": "GET /search 503s originate in catalog-svc, not search-api (search-api logs 0 errors; it only logs WARN retries). At 09:34:34 catalog-svc-3 failed its liveness probe and restarted (#1552), dropping capacity to 3/4 until it was ready again at 09:35:09 (#1600). Shortly after, catalog-svc reported overload: inflight rose to 853 with request rate 3.2x baseline (#1672), and it began load-shedding GET /products/batch with 503 (#1645). search-api then retried 503s immediately with backoff disabled (#1594 attempt 2/4, #1665 retry 3/4 delay 0ms, #1683 attempt 4 of 4), multiplying load on the already-saturated catalog-svc. Retries exhausted, so web-bff returned 503 on /search (#1595 and later). The pattern of load staying high after the restart matches the 'not recovering' alert, which is consistent with the retry amplification sustaining the overload. The initial trigger is small (one instance restart) and the damage comes from the retry storm. The notification-path problems (notif-db lock wait timeouts #1331/#1471, template-svc statement timeouts #1355/#1534, legacy-inventory healthcheck timeouts from status-poller) are real but affect /v1/notify and status polling, not the /search path, so they are likely a separate, concurrent issue and not the root cause of the search 503s."
+        },
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.15,
+          "evidenceLines": [
+            1331,
+            1355,
+            1368,
+            1534,
+            1545,
+            1629
+          ],
+          "reasoning": "Lock waits on notif-db UPDATE notifications caused template-svc statement timeouts and notification-svc read timeouts, leading to api-gateway 504s on /v1/notify. This is a real fault but appears to be off the /search path; search-api and catalog-svc show no dependency on notification services, so it is an unlikely root cause of the search 503s."
+        }
+      ],
+      "recommendedAction": "1) Immediately stop the search-api retry storm: enable exponential backoff with jitter and cap retries (currently immediate retries, 4 attempts) for CatalogClient.getBatch. 2) Restore catalog-svc capacity: confirm all 4 instances are healthy and ready, and investigate why catalog-svc-3 failed its liveness probe at 09:34:34. Consider scaling catalog-svc or temporarily raising admission limits. 3) Consider a short-term search degradation path (serve cached results from redis-cache) while catalog recovers. 4) Separately, investigate the notif-db lock contention on UPDATE notifications and the template-svc statement timeouts, which are impacting /v1/notify, and the legacy-inventory healthcheck timeouts from status-poller (deprecated endpoint still polled).\"}]"
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "since": "09:22:00",
+          "until": "09:24:00",
+          "limit": 60
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 60
+        },
+        "output": "41 match(es):\n#1331 2026-11-28T09:32:26Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1355 2026-11-28T09:32:43Z ERROR template-svc [t-2494] canceling UPDATE on notifications for m-3919 due to statement_timeout\n#1368 2026-11-28T09:32:48Z ERROR notification-svc [t-2494] upstream request to template-svc failed: ReadTimeout (read timeout=15s) [m-3919]\n#1471 2026-11-28T09:33:46Z ERROR notif-db Lock wait timeout exceeded; try restarting transaction (UPDATE notifications SET ...)\n#1534 2026-11-28T09:34:23Z ERROR template-svc [t-2586] db write notifications/m-3984 aborted: QueryCanceled after 10.0s\n#1545 2026-11-28T09:34:28Z ERROR notification-svc [t-2586] POST /render -> template-svc: context deadline exceeded after 15.0s (m-3984)\n#1591 2026-11-28T09:35:03Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1595 2026-11-28T09:35:05Z ERROR web-bff [t-2619] GET /search 503 23375ms: upstream search-api returned 503 (retries exhausted)\n#1624 2026-11-28T09:35:29Z ERROR template-svc [t-2627] query canceled: statement timeout 10000ms (UPDATE notifications WHERE id = m-4011)\n#1629 2026-11-28T09:35:34Z ERROR notification-svc [t-2627] TemplateClient.render timed out after 15000ms calling template-svc POST /render (m-4011)\n#1635 2026-11-28T09:35:40Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1645 2026-11-28T09:35:49Z ERROR catalog-svc [t-2635] load shed: rejected GET /products/batch with 503 (queue full)\n#1677 2026-11-28T09:36:12Z ERROR api-gateway [t-2652] POST /v1/notify 504 6467ms: upstream notification-svc timed out\n#1709 2026-11-28T09:36:39Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1748 2026-11-28T09:37:19Z ERROR api-gateway [t-2675] POST /v1/notify 504 17448ms: upstream notification-svc timed out\n#1777 2026-11-28T09:37:41Z ERROR web-bff [t-2688] GET /search 503 29670ms: upstream search-api returned 503 (retries exhausted)\n#1786 2026-11-28T09:37:50Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1811 2026-11-28T09:38:09Z ERROR notification-svc pool checkout timeout: no connection to template-svc available after 5000ms\n#1818 2026-11-28T09:38:13Z ERROR api-gateway [t-2703] POST /v1/notify 504 6691ms: upstream notification-svc timed out\n#1820 2026-11-28T09:38:14Z ERROR web-bff [t-2706] GET /search 503 19287ms: upstream search-api returned 503 (retries exhausted)\n#1832 2026-11-28T09:38:21Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1840 2026-11-28T09:38:25Z ERROR catalog-svc [t-2716] load shed: rejected GET /products/batch with 503 (queue full)\n#1872 2026-11-28T09:38:54Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1933 2026-11-28T09:39:50Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1952 2026-11-28T09:40:12Z ERROR web-bff [t-2745] GET /search 503 14154ms: upstream search-api returned 503 (retries exhausted)\n#1964 2026-11-28T09:40:25Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#1972 2026-11-28T09:40:30Z ERROR api-gateway [t-2751] POST /v1/notify 504 19962ms: upstream notification-svc timed out\n#1982 2026-11-28T09:40:46Z ERROR catalog-svc [t-2755] load shed: rejected GET /products/batch with 503 (queue full)\n#2031 2026-11-28T09:41:30Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2033 2026-11-28T09:41:34Z ERROR api-gateway [t-2775] POST /v1/notify 504 7825ms: upstream notification-svc timed out\n#2050 2026-11-28T09:41:51Z ERROR web-bff [t-2781] GET /search 503 21411ms: upstream search-api returned 503 (retries exhausted)\n#2084 2026-11-28T09:42:18Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2119 2026-11-28T09:42:47Z ERROR catalog-svc [t-2805] load shed: rejected GET /products/batch with 503 (queue full)\n#2121 2026-11-28T09:42:50Z ERROR web-bff [t-2809] GET /search 503 8768ms: upstream search-api returned 503 (retries exhausted)\n#2125 2026-11-28T09:42:57Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2148 2026-11-28T09:43:14Z ERROR api-gateway [t-2814] POST /v1/notify 504 21665ms: upstream notification-svc timed out\n#2177 2026-11-28T09:43:45Z ERROR catalog-svc [t-2825] load shed: rejected GET /products/batch with 503 (queue full)\n#2183 2026-11-28T09:43:46Z ERROR api-gateway [t-2828] POST /v1/notify 504 20002ms: upstream notification-svc timed out\n#2208 2026-11-28T09:44:08Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2223 2026-11-28T09:44:18Z ERROR status-poller healthcheck GET http://legacy-inventory:8080/v1/status timed out after 2000ms (endpoint deprecated since 2025-06)\n#2241 2026-11-28T09:44:35Z ERROR web-bff [t-2847] GET /search 503 29232ms: upstream search-api returned 503 (retries exhausted)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "search-api",
+          "limit": 40
+        },
+        "output": "294 match(es), showing first 40:\n#7 2026-11-28T09:22:02Z INFO search-api [t-1685] product p-3234 accepted, calling catalog-svc GET /products/batch\n#17 2026-11-28T09:22:06Z INFO search-api [t-1687] product p-3239 accepted, calling catalog-svc GET /products/batch\n#22 2026-11-28T09:22:10Z INFO search-api [t-1692] product p-3244 accepted, calling catalog-svc GET /products/batch\n#30 2026-11-28T09:22:15Z INFO search-api [t-1695] product p-3249 accepted, calling catalog-svc GET /products/batch\n#35 2026-11-28T09:22:17Z DEBUG search-api GC pause 24ms (young), heap 34%\n#40 2026-11-28T09:22:19Z INFO search-api [t-1698] product p-3255 accepted, calling catalog-svc GET /products/batch\n#46 2026-11-28T09:22:23Z INFO search-api [t-1703] product p-3261 accepted, calling catalog-svc GET /products/batch\n#52 2026-11-28T09:22:25Z INFO search-api [t-1708] product p-3266 accepted, calling catalog-svc GET /products/batch\n#60 2026-11-28T09:22:30Z INFO search-api [t-1716] product p-3270 accepted, calling catalog-svc GET /products/batch\n#74 2026-11-28T09:22:34Z INFO search-api [t-1720] product p-3276 accepted, calling catalog-svc GET /products/batch\n#78 2026-11-28T09:22:36Z INFO search-api [t-1721] product p-3278 accepted, calling catalog-svc GET /products/batch\n#85 2026-11-28T09:22:38Z INFO search-api [t-1725] product p-3281 accepted, calling catalog-svc GET /products/batch\n#91 2026-11-28T09:22:42Z DEBUG search-api GC pause 18ms (young), heap 41%\n#93 2026-11-28T09:22:44Z INFO search-api [t-1728] product p-3285 accepted, calling catalog-svc GET /products/batch\n#105 2026-11-28T09:22:48Z INFO search-api [t-1737] product p-3289 accepted, calling catalog-svc GET /products/batch\n#110 2026-11-28T09:22:50Z INFO search-api [t-1739] product p-3292 accepted, calling catalog-svc GET /products/batch\n#115 2026-11-28T09:22:54Z INFO search-api [t-1742] product p-3294 accepted, calling catalog-svc GET /products/batch\n#128 2026-11-28T09:22:59Z INFO search-api [t-1752] product p-3302 accepted, calling catalog-svc GET /products/batch\n#132 2026-11-28T09:23:03Z INFO search-api [t-1754] product p-3305 accepted, calling catalog-svc GET /products/batch\n#140 2026-11-28T09:23:05Z INFO search-api [t-1757] product p-3308 accepted, calling catalog-svc GET /products/batch\n#153 2026-11-28T09:23:11Z INFO search-api [t-1768] product p-3315 accepted, calling catalog-svc GET /products/batch\n#156 2026-11-28T09:23:13Z DEBUG search-api GC pause 9ms (young), heap 40%\n#161 2026-11-28T09:23:15Z INFO search-api [t-1773] product p-3319 accepted, calling catalog-svc GET /products/batch\n#169 2026-11-28T09:23:19Z INFO search-api [t-1781] product p-3322 accepted, calling catalog-svc GET /products/batch\n#174 2026-11-28T09:23:22Z INFO search-api [t-1783] product p-3324 accepted, calling catalog-svc GET /products/batch\n#186 2026-11-28T09:23:26Z INFO search-api [t-1789] product p-3331 accepted, calling catalog-svc GET /products/batch\n#193 2026-11-28T09:23:31Z INFO search-api [t-1791] product p-3336 accepted, calling catalog-svc GET /products/batch\n#197 2026-11-28T09:23:32Z DEBUG search-api GC pause 5ms (young), heap 46%\n#204 2026-11-28T09:23:36Z INFO search-api [t-1796] product p-3340 accepted, calling catalog-svc GET /products/batch\n#211 2026-11-28T09:23:40Z INFO search-api [t-1799] product p-3344 accepted, calling catalog-svc GET /products/batch\n#216 2026-11-28T09:23:44Z INFO search-api [t-1804] product p-3348 accepted, calling catalog-svc GET /products/batch\n#224 2026-11-28T09:23:49Z INFO search-api [t-1809] product p-3352 accepted, calling catalog-svc GET /products/batch\n#227 2026-11-28T09:23:50Z DEBUG search-api GC pause 24ms (young), heap 47%\n#235 2026-11-28T09:23:54Z INFO search-api [t-1814] product p-3355 accepted, calling catalog-svc GET /products/batch\n#242 2026-11-28T09:23:57Z INFO search-api [t-1821] product p-3358 accepted, calling catalog-svc GET /products/batch\n#249 2026-11-28T09:23:59Z INFO search-api [t-1823] product p-3363 accepted, calling catalog-svc GET /products/batch\n#255 2026-11-28T09:24:02Z INFO search-api [t-1827] product p-3365 accepted, calling catalog-svc GET /products/batch\n#264 2026-11-28T09:24:06Z INFO search-api [t-1832] product p-3367 accepted, calling catalog-svc GET /products/batch\n#278 2026-11-28T09:24:11Z INFO search-api [t-1840] product p-3372 accepted, calling catalog-svc GET /products/batch\n#281 2026-11-28T09:24:14Z DEBUG search-api GC pause 17ms (young), heap 34%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "index-worker",
+          "limit": 30
+        },
+        "output": "178 match(es), showing first 30:\n#11 2026-11-28T09:22:03Z INFO index-worker processed batch of 20 messages from catalog.updates (lag 174ms)\n#24 2026-11-28T09:22:11Z INFO index-worker processed batch of 86 messages from catalog.updates (lag 297ms)\n#38 2026-11-28T09:22:18Z INFO index-worker processed batch of 34 messages from catalog.updates (lag 290ms)\n#54 2026-11-28T09:22:26Z INFO index-worker processed batch of 35 messages from catalog.updates (lag 47ms)\n#69 2026-11-28T09:22:33Z INFO index-worker processed batch of 89 messages from catalog.updates (lag 158ms)\n#92 2026-11-28T09:22:43Z INFO index-worker processed batch of 21 messages from catalog.updates (lag 247ms)\n#113 2026-11-28T09:22:51Z INFO index-worker processed batch of 31 messages from catalog.updates (lag 116ms)\n#122 2026-11-28T09:22:57Z INFO index-worker processed batch of 106 messages from catalog.updates (lag 50ms)\n#143 2026-11-28T09:23:06Z INFO index-worker processed batch of 64 messages from catalog.updates (lag 114ms)\n#165 2026-11-28T09:23:16Z INFO index-worker processed batch of 43 messages from catalog.updates (lag 400ms)\n#177 2026-11-28T09:23:23Z INFO index-worker processed batch of 75 messages from catalog.updates (lag 241ms)\n#195 2026-11-28T09:23:32Z INFO index-worker processed batch of 119 messages from catalog.updates (lag 143ms)\n#209 2026-11-28T09:23:39Z INFO index-worker processed batch of 26 messages from catalog.updates (lag 379ms)\n#223 2026-11-28T09:23:48Z INFO index-worker processed batch of 55 messages from catalog.updates (lag 169ms)\n#241 2026-11-28T09:23:56Z INFO index-worker processed batch of 110 messages from catalog.updates (lag 326ms)\n#263 2026-11-28T09:24:06Z INFO index-worker processed batch of 75 messages from catalog.updates (lag 240ms)\n#282 2026-11-28T09:24:14Z INFO index-worker processed batch of 53 messages from catalog.updates (lag 69ms)\n#294 2026-11-28T09:24:20Z INFO index-worker processed batch of 29 messages from catalog.updates (lag 288ms)\n#309 2026-11-28T09:24:27Z INFO index-worker processed batch of 79 messages from catalog.updates (lag 88ms)\n#332 2026-11-28T09:24:37Z INFO index-worker processed batch of 95 messages from catalog.updates (lag 120ms)\n#347 2026-11-28T09:24:47Z INFO index-worker processed batch of 48 messages from catalog.updates (lag 155ms)\n#364 2026-11-28T09:24:54Z INFO index-worker processed batch of 75 messages from catalog.updates (lag 40ms)\n#380 2026-11-28T09:25:04Z INFO index-worker processed batch of 89 messages from catalog.updates (lag 306ms)\n#395 2026-11-28T09:25:11Z INFO index-worker processed batch of 54 messages from catalog.updates (lag 264ms)\n#410 2026-11-28T09:25:18Z INFO index-worker processed batch of 103 messages from catalog.updates (lag 58ms)\n#427 2026-11-28T09:25:25Z INFO index-worker processed batch of 87 messages from catalog.updates (lag 365ms)\n#441 2026-11-28T09:25:31Z INFO index-worker processed batch of 83 messages from catalog.updates (lag 321ms)\n#461 2026-11-28T09:25:39Z INFO index-worker processed batch of 53 messages from catalog.updates (lag 123ms)\n#477 2026-11-28T09:25:46Z INFO index-worker processed batch of 75 messages from catalog.updates (lag 77ms)\n#495 2026-11-28T09:25:55Z INFO index-worker processed batch of 84 messages from catalog.updates (lag 324ms)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-svc",
+          "level": "WARN",
+          "limit": 40
+        },
+        "output": "9 match(es):\n#1552 2026-11-28T09:34:34Z WARN catalog-svc instance catalog-svc-3 restarting (liveness probe failed), capacity 3/4\n#1645 2026-11-28T09:35:49Z ERROR catalog-svc [t-2635] load shed: rejected GET /products/batch with 503 (queue full)\n#1672 2026-11-28T09:36:07Z WARN catalog-svc overloaded: request rate at 3.2 times baseline, 853 inflight, returning 503 to callers\n#1767 2026-11-28T09:37:34Z WARN catalog-svc inbound request rate 4.1x baseline (inflight 432), shedding load with 503\n#1840 2026-11-28T09:38:25Z ERROR catalog-svc [t-2716] load shed: rejected GET /products/batch with 503 (queue full)\n#1855 2026-11-28T09:38:35Z WARN catalog-svc admission control: 587 requests in flight (5.0x normal), rejecting new work\n#1982 2026-11-28T09:40:46Z ERROR catalog-svc [t-2755] load shed: rejected GET /products/batch with 503 (queue full)\n#2119 2026-11-28T09:42:47Z ERROR catalog-svc [t-2805] load shed: rejected GET /products/batch with 503 (queue full)\n#2177 2026-11-28T09:43:45Z ERROR catalog-svc [t-2825] load shed: rejected GET /products/batch with 503 (queue full)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "search-api",
+          "level": "WARN",
+          "limit": 40
+        },
+        "output": "5 match(es):\n#1162 2026-11-28T09:31:07Z WARN search-api [t-2385] CatalogClient.getBatch slow: 2231ms calling catalog-svc GET /products/batch (soft threshold 2000ms)\n#1594 2026-11-28T09:35:05Z WARN search-api [t-2615] CatalogClient.getBatch got 503, retrying immediately (attempt 2/4, backoff disabled)\n#1665 2026-11-28T09:36:03Z WARN search-api [t-2644] retry 3/4 for GET /products/batch after 503 from catalog-svc (delay 0ms)\n#1683 2026-11-28T09:36:15Z WARN search-api [t-2656] catalog-svc unavailable (503), re-sending at once: attempt 4 of 4, no backoff policy\n#1776 2026-11-28T09:37:39Z WARN search-api [t-2685] CatalogClient.getBatch got 503, retrying immediately (attempt 2/4, backoff disabled)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-svc",
+          "since": "09:28:00",
+          "until": "09:35:00",
+          "limit": 60
+        },
+        "output": "83 match(es), showing first 60:\n#757 2026-11-28T09:28:00Z INFO catalog-svc [t-2142] GET /products/batch p-3618 ok 29ms\n#779 2026-11-28T09:28:11Z INFO catalog-svc [t-2155] GET /products/batch p-3626 ok 25ms\n#789 2026-11-28T09:28:16Z INFO catalog-svc [t-2163] GET /products/batch p-3630 ok 52ms\n#793 2026-11-28T09:28:17Z DEBUG catalog-svc GC pause 10ms (young), heap 31%\n#797 2026-11-28T09:28:19Z INFO catalog-svc [t-2168] GET /products/batch p-3634 ok 30ms\n#812 2026-11-28T09:28:26Z INFO catalog-svc [t-2180] GET /products/batch p-3643 ok 75ms\n#819 2026-11-28T09:28:28Z INFO catalog-svc [t-2185] GET /products/batch p-3647 ok 76ms\n#830 2026-11-28T09:28:33Z INFO catalog-svc [t-2192] GET /products/batch p-3653 ok 75ms\n#843 2026-11-28T09:28:38Z DEBUG catalog-svc GC pause 19ms (young), heap 30%\n#855 2026-11-28T09:28:45Z INFO catalog-svc [t-2208] GET /products/batch p-3668 ok 69ms\n#867 2026-11-28T09:28:51Z INFO catalog-svc [t-2215] GET /products/batch p-3673 ok 52ms\n#887 2026-11-28T09:29:00Z DEBUG catalog-svc GC pause 17ms (young), heap 40%\n#890 2026-11-28T09:29:00Z INFO catalog-svc [t-2221] GET /products/batch p-3680 ok 57ms\n#921 2026-11-28T09:29:17Z INFO catalog-svc [t-2238] GET /products/batch p-3698 ok 59ms\n#929 2026-11-28T09:29:20Z INFO catalog-svc [t-2242] GET /products/batch p-3699 ok 65ms\n#932 2026-11-28T09:29:21Z DEBUG catalog-svc GC pause 5ms (young), heap 31%\n#943 2026-11-28T09:29:25Z INFO catalog-svc [t-2254] GET /products/batch p-3707 ok 40ms\n#951 2026-11-28T09:29:30Z INFO catalog-svc [t-2262] GET /products/batch p-3710 ok 60ms\n#957 2026-11-28T09:29:34Z INFO catalog-svc [t-2265] GET /products/batch p-3713 ok 41ms\n#967 2026-11-28T09:29:38Z INFO catalog-svc [t-2270] GET /products/batch p-3717 ok 48ms\n#977 2026-11-28T09:29:43Z INFO catalog-svc [t-2276] GET /products/batch p-3721 ok 79ms\n#982 2026-11-28T09:29:45Z DEBUG catalog-svc GC pause 20ms (young), heap 35%\n#997 2026-11-28T09:29:51Z INFO catalog-svc [t-2288] GET /products/batch p-3731 ok 90ms\n#1005 2026-11-28T09:29:53Z INFO catalog-svc [t-2294] GET /products/batch p-3736 ok 54ms\n#1032 2026-11-28T09:30:06Z INFO catalog-svc [t-2307] GET /products/batch p-3747 ok 42ms\n#1048 2026-11-28T09:30:15Z INFO catalog-svc [t-2315] GET /products/batch p-3756 ok 74ms\n#1054 2026-11-28T09:30:17Z DEBUG catalog-svc GC pause 5ms (young), heap 41%\n#1058 2026-11-28T09:30:18Z INFO catalog-svc [t-2325] GET /products/batch p-3765 ok 89ms\n#1072 2026-11-28T09:30:24Z INFO catalog-svc [t-2332] GET /products/batch p-3771 ok 55ms\n#1105 2026-11-28T09:30:42Z INFO catalog-svc [t-2355] GET /products/batch p-3792 ok 25ms\n#1118 2026-11-28T09:30:48Z DEBUG catalog-svc GC pause 5ms (young), heap 35%\n#1122 2026-11-28T09:30:49Z INFO catalog-svc [t-2360] GET /products/batch p-3798 ok 50ms\n#1128 2026-11-28T09:30:51Z INFO catalog-svc [t-2366] GET /products/batch p-3800 ok 37ms\n#1144 2026-11-28T09:30:58Z INFO catalog-svc [t-2375] GET /products/batch p-3808 ok 77ms\n#1159 2026-11-28T09:31:06Z INFO catalog-svc [t-2381] GET /products/batch p-3815 ok 27ms\n#1172 2026-11-28T09:31:12Z INFO catalog-svc [t-2392] GET /products/batch p-3823 ok 28ms\n#1181 2026-11-28T09:31:14Z DEBUG catalog-svc GC pause 12ms (young), heap 34%\n#1201 2026-11-28T09:31:26Z INFO catalog-svc [t-2412] GET /products/batch p-3841 ok 24ms\n#1215 2026-11-28T09:31:35Z INFO catalog-svc [t-2422] GET /products/batch p-3849 ok 80ms\n#1224 2026-11-28T09:31:39Z INFO catalog-svc [t-2426] GET /products/batch p-3855 ok 24ms\n#1233 2026-11-28T09:31:43Z INFO catalog-svc [t-2429] GET /products/batch p-3859 ok 29ms\n#1243 2026-11-28T09:31:46Z INFO catalog-svc [t-2431] GET /products/batch p-3864 ok 88ms\n#1251 2026-11-28T09:31:49Z DEBUG catalog-svc GC pause 14ms (young), heap 43%\n#1253 2026-11-28T09:31:49Z INFO catalog-svc [t-2436] GET /products/batch p-3866 ok 68ms\n#1260 2026-11-28T09:31:53Z INFO catalog-svc [t-2442] GET /products/batch p-3871 ok 72ms\n#1267 2026-11-28T09:31:56Z INFO catalog-svc [t-2449] GET /products/batch p-3877 ok 47ms\n#1274 2026-11-28T09:32:00Z INFO catalog-svc [t-2455] GET /products/batch p-3881 ok 40ms\n#1284 2026-11-28T09:32:06Z INFO catalog-svc [t-2461] GET /products/batch p-3885 ok 62ms\n#1290 2026-11-28T09:32:09Z INFO catalog-svc [t-2463] GET /products/batch p-3888 ok 70ms\n#1299 2026-11-28T09:32:12Z INFO catalog-svc [t-2466] GET /products/batch p-3893 ok 64ms\n#1309 2026-11-28T09:32:17Z DEBUG catalog-svc GC pause 21ms (young), heap 31%\n#1314 2026-11-28T09:32:19Z INFO catalog-svc [t-2472] GET /products/batch p-3896 ok 31ms\n#1325 2026-11-28T09:32:23Z INFO catalog-svc [t-2476] GET /products/batch p-3902 ok 54ms\n#1337 2026-11-28T09:32:31Z INFO catalog-svc [t-2483] GET /products/batch p-3907 ok 54ms\n#1344 2026-11-28T09:32:37Z DEBUG catalog-svc GC pause 6ms (young), heap 39%\n#1362 2026-11-28T09:32:46Z INFO catalog-svc [t-2496] GET /products/batch p-3920 ok 71ms\n#1374 2026-11-28T09:32:51Z INFO catalog-svc [t-2502] GET /products/batch p-3923 ok 77ms\n#1377 2026-11-28T09:32:53Z INFO catalog-svc [t-2505] GET /products/batch p-3925 ok 72ms\n#1387 2026-11-28T09:32:59Z INFO catalog-svc [t-2509] GET /products/batch p-3927 ok 41ms\n#1390 2026-11-28T09:33:00Z DEBUG catalog-svc GC pause 13ms (young), heap 34%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-db",
+          "limit": 30
+        },
+        "output": "62 match(es), showing first 30:\n#9 2026-11-28T09:22:03Z INFO catalog-db checkpoint complete: wrote 685 buffers (3.8%)\n#45 2026-11-28T09:22:21Z INFO catalog-db checkpoint complete: wrote 1171 buffers (2.0%)\n#107 2026-11-28T09:22:50Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 5\n#149 2026-11-28T09:23:08Z INFO catalog-db checkpoint complete: wrote 1146 buffers (7.9%)\n#181 2026-11-28T09:23:25Z INFO catalog-db checkpoint complete: wrote 420 buffers (4.9%)\n#228 2026-11-28T09:23:51Z INFO catalog-db checkpoint complete: wrote 218 buffers (3.9%)\n#267 2026-11-28T09:24:07Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 27\n#307 2026-11-28T09:24:26Z INFO catalog-db checkpoint complete: wrote 1163 buffers (1.1%)\n#361 2026-11-28T09:24:52Z INFO catalog-db checkpoint complete: wrote 624 buffers (7.3%)\n#401 2026-11-28T09:25:14Z INFO catalog-db checkpoint complete: wrote 709 buffers (6.0%)\n#460 2026-11-28T09:25:39Z INFO catalog-db checkpoint complete: wrote 972 buffers (1.6%)\n#517 2026-11-28T09:26:06Z INFO catalog-db checkpoint complete: wrote 760 buffers (4.7%)\n#564 2026-11-28T09:26:27Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 9\n#631 2026-11-28T09:26:55Z INFO catalog-db checkpoint complete: wrote 1223 buffers (6.2%)\n#666 2026-11-28T09:27:12Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 34\n#719 2026-11-28T09:27:41Z INFO catalog-db checkpoint complete: wrote 1347 buffers (2.3%)\n#776 2026-11-28T09:28:10Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 27\n#825 2026-11-28T09:28:31Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 1\n#876 2026-11-28T09:28:55Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 39\n#925 2026-11-28T09:29:19Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 10\n#933 2026-11-28T09:29:21Z WARN catalog-db slow query 1358ms: SELECT * FROM audit_log WHERE created_at > $1 ORDER BY id (seq scan)\n#989 2026-11-28T09:29:47Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 30\n#1029 2026-11-28T09:30:05Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 2\n#1071 2026-11-28T09:30:24Z INFO catalog-db checkpoint complete: wrote 313 buffers (6.7%)\n#1109 2026-11-28T09:30:43Z INFO catalog-db checkpoint complete: wrote 464 buffers (3.1%)\n#1170 2026-11-28T09:31:11Z INFO catalog-db checkpoint complete: wrote 693 buffers (6.1%)\n#1205 2026-11-28T09:31:29Z INFO catalog-db checkpoint complete: wrote 207 buffers (2.4%)\n#1269 2026-11-28T09:31:58Z INFO catalog-db checkpoint complete: wrote 1161 buffers (5.6%)\n#1320 2026-11-28T09:32:22Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 26\n#1364 2026-11-28T09:32:46Z INFO catalog-db checkpoint complete: wrote 303 buffers (5.5%)"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1552,
+          "before": 15,
+          "after": 10
+        },
+        "output": "#1537 2026-11-28T09:34:24Z INFO redis-cache stats: hits=13805 misses=262 evicted=0 connected_clients=59\n#1538 2026-11-28T09:34:25Z INFO search-api [t-2590] product p-3985 accepted, calling catalog-svc GET /products/batch\n#1539 2026-11-28T09:34:25Z INFO web-bff [t-2590] GET /search 200 126ms\n#1540 2026-11-28T09:34:27Z INFO notif-worker processed batch of 98 messages from notifications.outbound (lag 90ms)\n#1541 2026-11-28T09:34:27Z INFO search-api [t-2593] product p-3988 accepted, calling catalog-svc GET /products/batch\n#1542 2026-11-28T09:34:27Z INFO catalog-svc [t-2593] GET /products/batch p-3988 ok 36ms\n#1543 2026-11-28T09:34:27Z INFO web-bff [t-2593] GET /search 200 138ms\n#1544 2026-11-28T09:34:28Z INFO redis stats: hits=13007 misses=760 evicted=0 connected_clients=33\n#1545 2026-11-28T09:34:28Z ERROR notification-svc [t-2586] POST /render -> template-svc: context deadline exceeded after 15.0s (m-3984)\n#1546 2026-11-28T09:34:28Z INFO notif-db InnoDB: page cleaner flushed 216 pages, buffer pool hit rate 99.6%\n#1547 2026-11-28T09:34:30Z INFO search-api [t-2597] product p-3990 accepted, calling catalog-svc GET /products/batch\n#1548 2026-11-28T09:34:30Z INFO web-bff [t-2597] GET /search 200 105ms\n#1549 2026-11-28T09:34:31Z INFO index-worker processed batch of 92 messages from catalog.updates (lag 321ms)\n#1550 2026-11-28T09:34:33Z INFO status-poller poll cycle complete: 30 targets checked in 868ms\n#1551 2026-11-28T09:34:33Z DEBUG search-api GC pause 4ms (young), heap 44%\n#1552 2026-11-28T09:34:34Z WARN catalog-svc instance catalog-svc-3 restarting (liveness probe failed), capacity 3/4\n#1553 2026-11-28T09:34:35Z INFO metrics-agent flushed 7663 series to remote-write in 150ms\n#1554 2026-11-28T09:34:35Z INFO notif-worker processed batch of 85 messages from notifications.outbound (lag 188ms)\n#1555 2026-11-28T09:34:37Z INFO search-api [t-2598] product p-3993 accepted, calling catalog-svc GET /products/batch\n#1556 2026-11-28T09:34:37Z INFO catalog-svc [t-2598] GET /products/batch p-3993 ok 34ms\n#1557 2026-11-28T09:34:37Z INFO web-bff [t-2598] GET /search 200 116ms\n#1558 2026-11-28T09:34:38Z INFO index-worker processed batch of 99 messages from catalog.updates (lag 231ms)\n#1559 2026-11-28T09:34:39Z DEBUG notification-svc GC pause 19ms (young), heap 44%\n#1560 2026-11-28T09:34:40Z INFO redis stats: hits=19854 misses=206 evicted=0 connected_clients=33\n#1561 2026-11-28T09:34:40Z INFO catalog-db checkpoint complete: wrote 543 buffers (1.0%)\n#1562 2026-11-28T09:34:41Z INFO redis-cache stats: hits=16163 misses=458 evicted=0 connected_clients=34"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "catalog-svc",
+          "since": "09:33:00",
+          "until": "09:36:30",
+          "level": "INFO",
+          "limit": 40
+        },
+        "output": "24 match(es):\n#1393 2026-11-28T09:33:02Z INFO catalog-svc [t-2510] GET /products/batch p-3928 ok 36ms\n#1397 2026-11-28T09:33:04Z INFO catalog-svc [t-2514] GET /products/batch p-3931 ok 90ms\n#1404 2026-11-28T09:33:09Z INFO catalog-svc [t-2517] GET /products/batch p-3932 ok 37ms\n#1419 2026-11-28T09:33:16Z INFO catalog-svc [t-2528] GET /products/batch p-3941 ok 54ms\n#1449 2026-11-28T09:33:35Z INFO catalog-svc [t-2542] GET /products/batch p-3951 ok 49ms\n#1453 2026-11-28T09:33:37Z INFO catalog-svc [t-2544] GET /products/batch p-3952 ok 62ms\n#1456 2026-11-28T09:33:39Z INFO catalog-svc [t-2545] GET /products/batch p-3954 ok 46ms\n#1463 2026-11-28T09:33:42Z INFO catalog-svc [t-2548] GET /products/batch p-3957 ok 37ms\n#1469 2026-11-28T09:33:46Z INFO catalog-svc [t-2550] GET /products/batch p-3959 ok 85ms\n#1482 2026-11-28T09:33:52Z INFO catalog-svc [t-2556] GET /products/batch p-3964 ok 34ms\n#1493 2026-11-28T09:33:59Z INFO catalog-svc [t-2561] GET /products/batch p-3967 ok 71ms\n#1497 2026-11-28T09:34:01Z INFO catalog-svc [t-2565] GET /products/batch p-3969 ok 30ms\n#1509 2026-11-28T09:34:12Z INFO catalog-svc [t-2570] GET /products/batch p-3972 ok 87ms\n#1519 2026-11-28T09:34:16Z INFO catalog-svc [t-2576] GET /products/batch p-3976 ok 22ms\n#1529 2026-11-28T09:34:21Z INFO catalog-svc [t-2581] GET /products/batch p-3981 ok 77ms\n#1542 2026-11-28T09:34:27Z INFO catalog-svc [t-2593] GET /products/batch p-3988 ok 36ms\n#1552 2026-11-28T09:34:34Z WARN catalog-svc instance catalog-svc-3 restarting (liveness probe failed), capacity 3/4\n#1556 2026-11-28T09:34:37Z INFO catalog-svc [t-2598] GET /products/batch p-3993 ok 34ms\n#1584 2026-11-28T09:34:59Z INFO catalog-svc [t-2609] GET /products/batch p-3998 ok 73ms\n#1600 2026-11-28T09:35:09Z INFO catalog-svc instance catalog-svc-3 ready, capacity 4/4\n#1614 2026-11-28T09:35:24Z INFO catalog-svc [t-2625] GET /products/batch p-4009 ok 23ms\n#1645 2026-11-28T09:35:49Z ERROR catalog-svc [t-2635] load shed: rejected GET /products/batch with 503 (queue full)\n#1667 2026-11-28T09:36:03Z INFO catalog-svc [t-2647] GET /products/batch p-4021 ok 56ms\n#1672 2026-11-28T09:36:07Z WARN catalog-svc overloaded: request rate at 3.2 times baseline, 853 inflight, returning 503 to callers"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "search-api",
+          "since": "09:34:30",
+          "until": "09:36:20",
+          "limit": 50
+        },
+        "output": "16 match(es):\n#1547 2026-11-28T09:34:30Z INFO search-api [t-2597] product p-3990 accepted, calling catalog-svc GET /products/batch\n#1551 2026-11-28T09:34:33Z DEBUG search-api GC pause 4ms (young), heap 44%\n#1555 2026-11-28T09:34:37Z INFO search-api [t-2598] product p-3993 accepted, calling catalog-svc GET /products/batch\n#1573 2026-11-28T09:34:53Z DEBUG search-api GC pause 10ms (young), heap 46%\n#1579 2026-11-28T09:34:57Z INFO search-api [t-2606] product p-3997 accepted, calling catalog-svc GET /products/batch\n#1583 2026-11-28T09:34:59Z INFO search-api [t-2609] product p-3998 accepted, calling catalog-svc GET /products/batch\n#1594 2026-11-28T09:35:05Z WARN search-api [t-2615] CatalogClient.getBatch got 503, retrying immediately (attempt 2/4, backoff disabled)\n#1613 2026-11-28T09:35:23Z INFO search-api [t-2625] product p-4009 accepted, calling catalog-svc GET /products/batch\n#1623 2026-11-28T09:35:28Z DEBUG search-api GC pause 12ms (young), heap 48%\n#1631 2026-11-28T09:35:35Z INFO search-api [t-2628] product p-4012 accepted, calling catalog-svc GET /products/batch\n#1654 2026-11-28T09:35:59Z INFO search-api [t-2636] product p-4014 accepted, calling catalog-svc GET /products/batch\n#1662 2026-11-28T09:36:01Z DEBUG search-api GC pause 14ms (young), heap 31%\n#1665 2026-11-28T09:36:03Z WARN search-api [t-2644] retry 3/4 for GET /products/batch after 503 from catalog-svc (delay 0ms)\n#1666 2026-11-28T09:36:03Z INFO search-api [t-2647] product p-4021 accepted, calling catalog-svc GET /products/batch\n#1683 2026-11-28T09:36:15Z WARN search-api [t-2656] catalog-svc unavailable (503), re-sending at once: attempt 4 of 4, no backoff policy\n#1685 2026-11-28T09:36:15Z INFO search-api [t-2659] product p-4024 accepted, calling catalog-svc GET /products/batch"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1672,
+          "before": 8,
+          "after": 4
+        },
+        "output": "#1664 2026-11-28T09:36:03Z INFO api-gateway [t-2640] POST /v1/notify 200 163ms\n#1665 2026-11-28T09:36:03Z WARN search-api [t-2644] retry 3/4 for GET /products/batch after 503 from catalog-svc (delay 0ms)\n#1666 2026-11-28T09:36:03Z INFO search-api [t-2647] product p-4021 accepted, calling catalog-svc GET /products/batch\n#1667 2026-11-28T09:36:03Z INFO catalog-svc [t-2647] GET /products/batch p-4021 ok 56ms\n#1668 2026-11-28T09:36:03Z INFO web-bff [t-2647] GET /search 200 74ms\n#1669 2026-11-28T09:36:04Z INFO catalog-db automatic vacuum of table \"products\": index scans: 1, pages removed 5\n#1670 2026-11-28T09:36:04Z DEBUG catalog-svc GC pause 7ms (young), heap 32%\n#1671 2026-11-28T09:36:06Z INFO notif-worker processed batch of 38 messages from notifications.outbound (lag 353ms)\n#1672 2026-11-28T09:36:07Z WARN catalog-svc overloaded: request rate at 3.2 times baseline, 853 inflight, returning 503 to callers\n#1673 2026-11-28T09:36:07Z INFO index-worker processed batch of 96 messages from catalog.updates (lag 294ms)\n#1674 2026-11-28T09:36:09Z INFO notification-svc [t-2651] message m-4022 accepted, calling template-svc POST /render\n#1675 2026-11-28T09:36:09Z INFO template-svc [t-2651] POST /render m-4022 ok 23ms\n#1676 2026-11-28T09:36:10Z INFO api-gateway [t-2651] POST /v1/notify 200 137ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.72,
+              "evidenceLines": [
+                1552,
+                1600,
+                1594,
+                1665,
+                1683,
+                1672,
+                1645
+              ],
+              "reasoning": "GET /search 503s originate in catalog-svc, not search-api (search-api logs 0 errors; it only logs WARN retries). At 09:34:34 catalog-svc-3 failed its liveness probe and restarted (#1552), dropping capacity to 3/4 until it was ready again at 09:35:09 (#1600). Shortly after, catalog-svc reported overload: inflight rose to 853 with request rate 3.2x baseline (#1672), and it began load-shedding GET /products/batch with 503 (#1645). search-api then retried 503s immediately with backoff disabled (#1594 attempt 2/4, #1665 retry 3/4 delay 0ms, #1683 attempt 4 of 4), multiplying load on the already-saturated catalog-svc. Retries exhausted, so web-bff returned 503 on /search (#1595 and later). The pattern of load staying high after the restart matches the 'not recovering' alert, which is consistent with the retry amplification sustaining the overload. The initial trigger is small (one instance restart) and the damage comes from the retry storm. The notification-path problems (notif-db lock wait timeouts #1331/#1471, template-svc statement timeouts #1355/#1534, legacy-inventory healthcheck timeouts from status-poller) are real but affect /v1/notify and status polling, not the /search path, so they are likely a separate, concurrent issue and not the root cause of the search 503s.",
+              "reasoning_note": "alt: dependency_timeout (notif-db lock contention and template-svc statement timeouts), which fits the notify-path errors but does not sit on the /search path"
+            },
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.15,
+              "evidenceLines": [
+                1331,
+                1355,
+                1368,
+                1534,
+                1545,
+                1629
+              ],
+              "reasoning": "Lock waits on notif-db UPDATE notifications caused template-svc statement timeouts and notification-svc read timeouts, leading to api-gateway 504s on /v1/notify. This is a real fault but appears to be off the /search path; search-api and catalog-svc show no dependency on notification services, so it is an unlikely root cause of the search 503s."
+            }
+          ],
+          "recommendedAction": "1) Immediately stop the search-api retry storm: enable exponential backoff with jitter and cap retries (currently immediate retries, 4 attempts) for CatalogClient.getBatch. 2) Restore catalog-svc capacity: confirm all 4 instances are healthy and ready, and investigate why catalog-svc-3 failed its liveness probe at 09:34:34. Consider scaling catalog-svc or temporarily raising admission limits. 3) Consider a short-term search degradation path (serve cached results from redis-cache) while catalog recovers. 4) Separately, investigate the notif-db lock contention on UPDATE notifications and the template-svc statement timeouts, which are impacting /v1/notify, and the legacy-inventory healthcheck timeouts from status-poller (deprecated endpoint still polled).\"}]"
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 8,
+    "toolCalls": 12,
+    "usage": {
+      "inputTokens": 18,
+      "outputTokens": 3417,
+      "cacheReadTokens": 74608,
+      "cacheWriteTokens": 22121
+    },
+    "durationMs": 17916,
+    "stopReason": "tool_use"
+  }
+}

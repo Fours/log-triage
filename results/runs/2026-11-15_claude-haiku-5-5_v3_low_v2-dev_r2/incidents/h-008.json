@@ -1,0 +1,238 @@
+{
+  "score": {
+    "incidentId": "h-008",
+    "difficulty": "hard",
+    "scenario": "dependency_timeout/external-hang",
+    "truth": "dependency_timeout",
+    "acceptable": [
+      "external_outage"
+    ],
+    "outcome": "submitted",
+    "predicted": "dependency_timeout",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 7,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1
+    },
+    "herringsCited": 0,
+    "secondaryCited": 4,
+    "costUsd": 0.003305175,
+    "durationMs": 14560,
+    "iterations": 6,
+    "toolCalls": 5,
+    "tokens": {
+      "input": 14,
+      "output": 3103,
+      "cacheRead": 39790,
+      "cacheWrite": 10835
+    }
+  },
+  "result": {
+    "incidentId": "h-008",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "dependency_timeout",
+          "confidence": 0.85,
+          "evidenceLines": [
+            2524,
+            2672,
+            2675,
+            2902,
+            2903,
+            3052,
+            3053
+          ],
+          "reasoning": "GET /search failures originate in catalog-svc's call to the external translation API (api.translate.example). Latency first degraded to a slow call at 02:54:30 (#2524, 4.8s vs 2s soft threshold), then calls began hanging to the 30s timeout (#2672, #2902, #3052). Those hangs propagate to search-api, which gets ReadTimeout/context deadline on catalog-svc (#2675, #2903, #3053), pool checkout timeouts (#3405), and finally web-bff returns 503 on /search (#2998, #3055, #3408). The translation hang is the origin; the search-api pool and web-bff 503s are downstream amplification. The postgres status_v2 failures (#2904, #2979, #3012) come from a half-applied order-service migration 0097 (#2841) and affect /checkout, not /search, so they are a separate incident."
+        },
+        {
+          "rootCause": "data_integrity",
+          "confidence": 0.15,
+          "evidenceLines": [
+            2798,
+            2807,
+            2841,
+            2904,
+            2979
+          ],
+          "reasoning": "The half-applied migration 0097 (non-transactional rename, step 2 lock timeout) breaks orders queries and causes checkout 500s. It is real and urgent, but it does not touch the GET /search path, which fails through catalog-svc and the translation timeout. Listed only as a secondary, separate issue."
+        }
+      ],
+      "recommendedAction": "Mitigate the translation dependency: add shorter timeouts, a circuit breaker, or a fallback in catalog-svc for the translation API, and check the provider's status; consider bypassing translation for search. Separately, roll back or complete order-service migration 0097 (orders.status_v2 was renamed to status_v2_old and step 2 failed, leaving the schema broken) to fix the checkout 500s."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "since": "02:44:00",
+          "until": "02:46:00",
+          "limit": 60
+        },
+        "output": "no matching log lines"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "ERROR",
+          "limit": 60
+        },
+        "output": "67 match(es), showing first 60:\n#1054 2026-11-08T02:48:21Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1418 samples\n#1287 2026-11-08T02:49:21Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1669 samples\n#1420 2026-11-08T02:49:53Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 252 samples\n#1654 2026-11-08T02:50:50Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1428 samples\n#1983 2026-11-08T02:52:14Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 371 samples\n#2226 2026-11-08T02:53:13Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1910 samples\n#2489 2026-11-08T02:54:15Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 618 samples\n#2541 2026-11-08T02:54:38Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 67 events (attempt 1/5, then dropped)\n#2559 2026-11-08T02:54:45Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1751 samples\n#2604 2026-11-08T02:55:03Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 95 events (attempt 2/5, then dropped)\n#2672 2026-11-08T02:55:29Z ERROR catalog-svc [t-7795] translation API call FAILED: upstream timeout after 30000ms POST https://api.translate.example/v2/translate\n#2675 2026-11-08T02:55:29Z ERROR search-api [t-7795] upstream request to catalog-svc failed: ReadTimeout (read timeout=30s) [p-8418]\n#2683 2026-11-08T02:55:33Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 392 samples\n#2713 2026-11-08T02:55:45Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 94 events (attempt 3/5, then dropped)\n#2766 2026-11-08T02:56:05Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 225 events (attempt 4/5, then dropped)\n#2825 2026-11-08T02:56:25Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 2258 samples\n#2845 2026-11-08T02:56:33Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 285 events (attempt 5/5, then dropped)\n#2879 2026-11-08T02:56:52Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 93 events (attempt 1/5, then dropped)\n#2898 2026-11-08T02:57:05Z ERROR api-gateway [t-7893] POST /checkout 500 17942ms: upstream order-service returned 500 Internal Server Error\n#2902 2026-11-08T02:57:07Z ERROR catalog-svc [t-7896] call to the translation API aborted: no response within 30s\n#2903 2026-11-08T02:57:07Z ERROR search-api [t-7896] GET /products/batch -> catalog-svc: context deadline exceeded after 30.0s (p-8506)\n#2904 2026-11-08T02:57:08Z ERROR postgres statement failed: undefined_column, no attribute status_v2 on orders\n#2928 2026-11-08T02:57:16Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 384 events (attempt 2/5, then dropped)\n#2954 2026-11-08T02:57:31Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1113 samples\n#2963 2026-11-08T02:57:33Z ERROR api-gateway [t-7923] POST /checkout 500 17237ms: upstream order-service returned 500 Internal Server Error\n#2979 2026-11-08T02:57:42Z ERROR order-service [t-7933] query on orders failed for o-8538: column \"status_v2\" does not exist\n#2994 2026-11-08T02:57:50Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 159 events (attempt 3/5, then dropped)\n#2998 2026-11-08T02:57:51Z ERROR web-bff [t-7940] GET /search 503 10686ms: upstream search-api returned 503 Service Unavailable\n#3007 2026-11-08T02:57:58Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 67 events (attempt 4/5, then dropped)\n#3012 2026-11-08T02:57:59Z ERROR postgres column \"status_v2\" of relation \"orders\" does not exist at character 44\n#3052 2026-11-08T02:58:18Z ERROR catalog-svc [t-7951] HTTP client: read timed out after 30000 ms waiting for api.translate.example\n#3053 2026-11-08T02:58:18Z ERROR search-api [t-7951] gave up waiting on catalog-svc for p-8560: no response in 30000 ms\n#3055 2026-11-08T02:58:19Z ERROR web-bff [t-7953] GET /search 503 20762ms: upstream search-api returned 503 Service Unavailable\n#3074 2026-11-08T02:58:27Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 1484 samples\n#3080 2026-11-08T02:58:33Z ERROR web-bff [t-7961] GET /search 503 17535ms: upstream search-api returned 503 Service Unavailable\n#3082 2026-11-08T02:58:33Z ERROR api-gateway [t-7965] POST /checkout 500 7977ms: upstream order-service returned 500 Internal Server Error\n#3090 2026-11-08T02:58:37Z ERROR order-service [t-7967] query on orders failed for o-8564: column \"status_v2\" does not exist\n#3093 2026-11-08T02:58:39Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 240 events (attempt 5/5, then dropped)\n#3114 2026-11-08T02:58:51Z ERROR web-bff [t-7977] GET /search 503 9366ms: upstream search-api returned 503 Service Unavailable\n#3115 2026-11-08T02:58:52Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 305 events (attempt 1/5, then dropped)\n#3144 2026-11-08T02:59:04Z ERROR postgres ERROR:  column orders.status_v2 does not exist (SQLSTATE 42703)\n#3151 2026-11-08T02:59:08Z ERROR api-gateway [t-7992] POST /checkout 500 16945ms: upstream order-service returned 500 Internal Server Error\n#3169 2026-11-08T02:59:18Z ERROR web-bff [t-8001] GET /search 503 21209ms: upstream search-api returned 503 Service Unavailable\n#3189 2026-11-08T02:59:26Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 78 events (attempt 2/5, then dropped)\n#3196 2026-11-08T02:59:30Z ERROR order-service [t-8007] query on orders failed for o-8587: column \"status_v2\" does not exist\n#3207 2026-11-08T02:59:36Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 437 samples\n#3215 2026-11-08T02:59:40Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 129 events (attempt 3/5, then dropped)\n#3237 2026-11-08T02:59:49Z ERROR web-bff [t-8029] GET /search 503 24012ms: upstream search-api returned 503 Service Unavailable\n#3270 2026-11-08T03:00:05Z ERROR api-gateway [t-8043] POST /checkout 500 20214ms: upstream order-service returned 500 Internal Server Error\n#3273 2026-11-08T03:00:06Z ERROR web-bff [t-8045] GET /search 503 25877ms: upstream search-api returned 503 Service Unavailable\n#3283 2026-11-08T03:00:11Z ERROR postgres statement failed: undefined_column, no attribute status_v2 on orders\n#3291 2026-11-08T03:00:14Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 121 events (attempt 4/5, then dropped)\n#3315 2026-11-08T03:00:27Z ERROR web-bff [t-8060] GET /search 503 6265ms: upstream search-api returned 503 Service Unavailable\n#3331 2026-11-08T03:00:31Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 187 events (attempt 5/5, then dropped)\n#3344 2026-11-08T03:00:42Z ERROR web-bff [t-8069] GET /search 503 26915ms: upstream search-api returned 503 Service Unavailable\n#3351 2026-11-08T03:00:45Z ERROR api-gateway [t-8077] POST /checkout 500 29342ms: upstream order-service returned 500 Internal Server Error\n#3355 2026-11-08T03:00:47Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 63 events (attempt 1/5, then dropped)\n#3365 2026-11-08T03:00:51Z ERROR metrics-agent remote-write exporter at capacity (queue 10000/10000), dropped 810 samples\n#3405 2026-11-08T03:01:10Z ERROR search-api pool checkout timeout: no connection to catalog-svc available after 5000ms\n#3408 2026-11-08T03:01:11Z ERROR web-bff [t-8105] GET /search 503 6032ms: upstream search-api returned 503 Service Unavailable"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "translat",
+          "since": "02:44:00",
+          "until": "02:56:00",
+          "limit": 40
+        },
+        "output": "2 match(es):\n#2524 2026-11-08T02:54:30Z INFO catalog-svc [t-7724] translation API call slow: 4806ms (soft threshold 2000ms) POST https://api.translate.example/v2/translate\n#2672 2026-11-08T02:55:29Z ERROR catalog-svc [t-7795] translation API call FAILED: upstream timeout after 30000ms POST https://api.translate.example/v2/translate"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "status_v2",
+          "limit": 5
+        },
+        "output": "11 match(es), showing first 5:\n#2798 2026-11-08T02:56:15Z INFO order-service migrate: applying 0097_add_status_v2 (3 steps) to postgres\n#2807 2026-11-08T02:56:17Z INFO order-service migrate: 0097_add_status_v2 step 1/3 ok: renamed column orders.status_v2 -> status_v2_old\n#2841 2026-11-08T02:56:31Z INFO order-service migrate: 0097_add_status_v2 step 2/3 failed: lock timeout on orders; step 1 already committed (non-transactional DDL), not rolled back\n#2904 2026-11-08T02:57:08Z ERROR postgres statement failed: undefined_column, no attribute status_v2 on orders\n#2979 2026-11-08T02:57:42Z ERROR order-service [t-7933] query on orders failed for o-8538: column \"status_v2\" does not exist"
+      },
+      {
+        "tool": "correlate_trace",
+        "input": {
+          "traceId": "t-7795"
+        },
+        "output": "2 line(s) for t-7795:\n#2672 2026-11-08T02:55:29Z ERROR catalog-svc [t-7795] translation API call FAILED: upstream timeout after 30000ms POST https://api.translate.example/v2/translate\n#2675 2026-11-08T02:55:29Z ERROR search-api [t-7795] upstream request to catalog-svc failed: ReadTimeout (read timeout=30s) [p-8418]"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.85,
+              "evidenceLines": [
+                2524,
+                2672,
+                2675,
+                2902,
+                2903,
+                3052,
+                3053
+              ],
+              "reasoning": "GET /search failures originate in catalog-svc's call to the external translation API (api.translate.example). Latency first degraded to a slow call at 02:54:30 (#2524, 4.8s vs 2s soft threshold), then calls began hanging to the 30s timeout (#2672, #2902, #3052). Those hangs propagate to search-api, which gets ReadTimeout/context deadline on catalog-svc (#2675, #2903, #3053), pool checkout timeouts (#3405), and finally web-bff returns 503 on /search (#2998, #3055, #3408). The translation hang is the origin; the search-api pool and web-bff 503s are downstream amplification. Note: the postgres status_v2 failures (#2904, #2979, #3012) come from a half-applied order-service migration 0097 (#2841) and affect /checkout, not /search, so they are a separate incident that should not be conflated with this alert.",
+              "recommendedAction": "Mitigate the translation dependency: add/shorten timeouts and a circuit breaker or fallback in catalog-svc for the translation API, and check the provider's status; consider bypassing translation for search. Separately, roll back or complete order-service migration 0097 (column orders.status_v2 was renamed to status_v2_old and step 2 failed, leaving schema broken) to fix checkout 500s."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.15,
+              "evidenceLines": [
+                2798,
+                2807,
+                2841,
+                2904,
+                2979
+              ],
+              "reasoning": "The half-applied migration 0097 (non-transactional rename, step 2 lock timeout) breaks orders queries and checkout 500s. It is real and urgent, but it does not touch the GET /search path, which fails through catalog-svc and the translation timeout. Included as a secondary hypothesis only as it likely explains the checkout errors in the same window.",
+              "recommendedAction": "Fix the orders schema: restore orders.status_v2 (rename status_v2_old back or finish migration) and make future migrations transactional or split."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.85,
+              "evidenceLines": [
+                2524,
+                2672,
+                2675,
+                2902,
+                2903,
+                3052,
+                3053
+              ],
+              "reasoning": "GET /search failures originate in catalog-svc's call to the external translation API (api.translate.example). Latency first degraded to a slow call at 02:54:30 (#2524, 4.8s vs 2s soft threshold), then calls began hanging to the 30s timeout (#2672, #2902, #3052). Those hangs propagate to search-api, which gets ReadTimeout/context deadline on catalog-svc (#2675, #2903, #3053), pool checkout timeouts (#3405), and finally web-bff returns 503 on /search (#2998, #3055, #3408). The translation hang is the origin; the search-api pool and web-bff 503s are downstream amplification. The postgres status_v2 failures (#2904, #2979, #3012) come from a half-applied order-service migration 0097 (#2841) and affect /checkout, not /search, so they are a separate incident.",
+              "recommendedAction": "Mitigate the translation dependency: add shorter timeouts, a circuit breaker, or a fallback in catalog-svc for the translation API, and check the provider's status; consider bypassing translation for search. Separately, roll back or complete order-service migration 0097 (orders.status_v2 was renamed to status_v2_old and step 2 failed, leaving the schema broken) to fix the checkout 500s."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.15,
+              "evidenceLines": [
+                2798,
+                2807,
+                2841,
+                2904,
+                2979
+              ],
+              "reasoning": "The half-applied migration 0097 (non-transactional rename, step 2 lock timeout) breaks orders queries and causes checkout 500s. It is real and urgent, but it does not touch the GET /search path, which fails through catalog-svc and the translation timeout. Listed only as a secondary, separate issue.",
+              "recommendedAction": "Fix the orders schema: restore orders.status_v2 (rename status_v2_old back or finish migration 0097) and make future migrations transactional or split into safe steps."
+            }
+          ]
+        },
+        "output": "invalid triage: recommendedAction: Invalid input: expected string, received undefined. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "dependency_timeout",
+              "confidence": 0.85,
+              "evidenceLines": [
+                2524,
+                2672,
+                2675,
+                2902,
+                2903,
+                3052,
+                3053
+              ],
+              "reasoning": "GET /search failures originate in catalog-svc's call to the external translation API (api.translate.example). Latency first degraded to a slow call at 02:54:30 (#2524, 4.8s vs 2s soft threshold), then calls began hanging to the 30s timeout (#2672, #2902, #3052). Those hangs propagate to search-api, which gets ReadTimeout/context deadline on catalog-svc (#2675, #2903, #3053), pool checkout timeouts (#3405), and finally web-bff returns 503 on /search (#2998, #3055, #3408). The translation hang is the origin; the search-api pool and web-bff 503s are downstream amplification. The postgres status_v2 failures (#2904, #2979, #3012) come from a half-applied order-service migration 0097 (#2841) and affect /checkout, not /search, so they are a separate incident."
+            },
+            {
+              "rootCause": "data_integrity",
+              "confidence": 0.15,
+              "evidenceLines": [
+                2798,
+                2807,
+                2841,
+                2904,
+                2979
+              ],
+              "reasoning": "The half-applied migration 0097 (non-transactional rename, step 2 lock timeout) breaks orders queries and causes checkout 500s. It is real and urgent, but it does not touch the GET /search path, which fails through catalog-svc and the translation timeout. Listed only as a secondary, separate issue."
+            }
+          ],
+          "recommendedAction": "Mitigate the translation dependency: add shorter timeouts, a circuit breaker, or a fallback in catalog-svc for the translation API, and check the provider's status; consider bypassing translation for search. Separately, roll back or complete order-service migration 0097 (orders.status_v2 was renamed to status_v2_old and step 2 failed, leaving the schema broken) to fix the checkout 500s."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 6,
+    "toolCalls": 5,
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 3103,
+      "cacheReadTokens": 39790,
+      "cacheWriteTokens": 10835
+    },
+    "durationMs": 14560,
+    "stopReason": "tool_use"
+  }
+}

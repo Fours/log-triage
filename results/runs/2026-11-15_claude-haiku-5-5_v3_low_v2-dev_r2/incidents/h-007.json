@@ -1,0 +1,216 @@
+{
+  "score": {
+    "incidentId": "h-007",
+    "difficulty": "medium",
+    "scenario": "resource_exhaustion/memory-leak-oom",
+    "truth": "resource_exhaustion",
+    "acceptable": [],
+    "outcome": "submitted",
+    "predicted": "resource_exhaustion",
+    "confidence": 0.85,
+    "top1": true,
+    "top1Lenient": true,
+    "top3": true,
+    "rank": 1,
+    "evidence": {
+      "cited": 7,
+      "correct": 5,
+      "precision": 0.7142857142857143,
+      "recall": 0.7142857142857143,
+      "f1": 0.7142857142857143
+    },
+    "herringsCited": 3,
+    "secondaryCited": 0,
+    "costUsd": 0.004231265,
+    "durationMs": 15152,
+    "iterations": 8,
+    "toolCalls": 10,
+    "tokens": {
+      "input": 18,
+      "output": 3040,
+      "cacheRead": 73584,
+      "cacheWrite": 15789
+    }
+  },
+  "result": {
+    "incidentId": "h-007",
+    "model": "claude-haiku-5-5",
+    "prompt": "v3",
+    "outcome": "submitted",
+    "verdict": {
+      "hypotheses": [
+        {
+          "rootCause": "resource_exhaustion",
+          "confidence": 0.85,
+          "evidenceLines": [
+            851,
+            1142,
+            1146,
+            1734,
+            1736,
+            1164,
+            1373
+          ],
+          "reasoning": "The origin is order-service heap exhaustion. At 02:23:34 (#851) heap reached 78% after full GC with old gen not reclaimed and GC overhead at 20%, which points to a leak or unbounded growth, most likely in orderCache. Young-gen GC readings stay normal, so the old gen was filling steadily. The heap then hit OutOfMemoryError at orderCache.put (#1142), and the pod was OOM-killed at its 2Gi limit (#1146). More OOM kills followed (#1446, #1448, #1734, #1736). Each restart drops in-flight connections, so api-gateway returns 502 'upstream order-service connection reset' (#1164, #1373), which is the alert. The 502 bursts track the restart cycle. The search-api v3.21.0 deploy (#1482) and its 'region' TypeError (#1564, #1644) cause search 500s but do not touch checkout, so they are a separate issue. analytics-forwarder 429s are unrelated noise."
+        },
+        {
+          "rootCause": "cascading_failure",
+          "confidence": 0.1,
+          "evidenceLines": [
+            1094,
+            1181,
+            1329
+          ],
+          "reasoning": "Less likely: analytics-forwarder retries against 429s and drops batches, but that path does not feed order-service and does not explain the OOMs. Listed only to rule out amplification as the trigger."
+        }
+      ],
+      "recommendedAction": "Restart or roll back order-service to clear the heap, then fix the orderCache leak: add a size bound or TTL and check for entries never evicted. Raising the memory limit is only a temporary measure. Separately, roll back search-api to v3.20.9 to fix the 'region' undefined TypeError in product-formatter.ts:216. Analytics 429 throttling can be handled separately."
+    },
+    "trace": [
+      {
+        "tool": "search_logs",
+        "input": {
+          "level": "WARN",
+          "limit": 60
+        },
+        "output": "37 match(es):\n#89 2026-10-05T02:17:41Z WARN order-service circuit breaker for payment-svc OPEN: 5 failures in 10s, shedding calls for 15s\n#1094 2026-10-05T02:25:30Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 61 events (attempt 1/5, then dropped)\n#1142 2026-10-05T02:25:55Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#1146 2026-10-05T02:25:56Z ERROR order-service pod order-service-0 exceeded its 2Gi memory limit and was killed (restart #1)\n#1164 2026-10-05T02:26:07Z ERROR api-gateway [t-7048] POST /checkout 502 9088ms: upstream order-service connection reset (no healthy upstream)\n#1181 2026-10-05T02:26:17Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 124 events (attempt 2/5, then dropped)\n#1329 2026-10-05T02:27:39Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 255 events (attempt 3/5, then dropped)\n#1340 2026-10-05T02:27:48Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 127 events (attempt 4/5, then dropped)\n#1373 2026-10-05T02:28:03Z ERROR api-gateway [t-7159] POST /checkout 502 28169ms: upstream order-service connection reset (no healthy upstream)\n#1446 2026-10-05T02:28:40Z FATAL order-service Exception in thread \"worker-3\" java.lang.OutOfMemoryError: Java heap space\n#1448 2026-10-05T02:28:41Z ERROR order-service container order-service-2 killed: OOMKilled (memory limit 2Gi), restart count 2\n#1460 2026-10-05T02:28:49Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 184 events (attempt 5/5, then dropped)\n#1506 2026-10-05T02:29:16Z ERROR api-gateway [t-7235] POST /checkout 502 19324ms: upstream order-service connection reset (no healthy upstream)\n#1564 2026-10-05T02:29:50Z ERROR search-api [t-7278] request p-7474 failed in v3.21.0: cannot access 'region' of undefined, stack: format @ product-formatter.ts:216\n#1574 2026-10-05T02:29:54Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 201 events (attempt 1/5, then dropped)\n#1588 2026-10-05T02:30:05Z ERROR web-bff [t-7292] GET /search 500 26498ms: upstream search-api returned 500 Internal Server Error\n#1595 2026-10-05T02:30:13Z ERROR api-gateway [t-7298] POST /checkout 502 9877ms: upstream order-service connection reset (no healthy upstream)\n#1609 2026-10-05T02:30:23Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 224 events (attempt 2/5, then dropped)\n#1632 2026-10-05T02:30:36Z ERROR web-bff [t-7315] GET /search 500 6481ms: upstream search-api returned 500 Internal Server Error\n#1644 2026-10-05T02:30:43Z ERROR search-api [t-7323] unhandled error in GET /search (p-7500): TypeError: Cannot read properties of undefined (reading 'region') at format (product-formatter.ts:216) [v3.21.0]\n#1669 2026-10-05T02:31:04Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 50 events (attempt 3/5, then dropped)\n#1682 2026-10-05T02:31:15Z ERROR web-bff [t-7333] GET /search 500 10301ms: upstream search-api returned 500 Internal Server Error\n#1694 2026-10-05T02:31:21Z ERROR api-gateway [t-7346] POST /checkout 502 24982ms: upstream order-service connection reset (no healthy upstream)\n#1734 2026-10-05T02:31:48Z FATAL order-service fatal: heap exhausted while growing orderCache (requested 64MB, max 1536MB)\n#1736 2026-10-05T02:31:49Z ERROR order-service kubelet: order-service-1 terminated (reason OOMKilled, exit code 137), restarts=3\n#1738 2026-10-05T02:31:52Z ERROR search-api [t-7364] [v3.21.0] GET /search p-7537 -> 500: TypeError: undefined has no property 'region'\n#1786 2026-10-05T02:32:24Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 114 events (attempt 4/5, then dropped)\n#1791 2026-10-05T02:32:26Z ERROR web-bff [t-7387] GET /search 500 21432ms: upstream search-api returned 500 Internal Server Error\n#1808 2026-10-05T02:32:36Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 213 events (attempt 5/5, then dropped)\n#1830 2026-10-05T02:32:54Z ERROR search-api [t-7405] request p-7572 failed in v3.21.0: cannot access 'region' of undefined, stack: format @ product-formatter.ts:216\n#1845 2026-10-05T02:33:08Z ERROR web-bff [t-7409] GET /search 500 20664ms: upstream search-api returned 500 Internal Server Error\n#1862 2026-10-05T02:33:18Z ERROR api-gateway [t-7422] POST /checkout 502 25761ms: upstream order-service connection reset (no healthy upstream)\n#1884 2026-10-05T02:33:34Z ERROR web-bff [t-7442] GET /search 500 18607ms: upstream search-api returned 500 Internal Server Error\n#1896 2026-10-05T02:33:41Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 293 events (attempt 1/5, then dropped)\n#1912 2026-10-05T02:33:59Z ERROR api-gateway [t-7451] POST /checkout 502 19426ms: upstream order-service connection reset (no healthy upstream)\n#1954 2026-10-05T02:34:27Z ERROR analytics-forwarder analytics-ingest returned 429, retrying batch of 369 events (attempt 2/5, then dropped)\n#1969 2026-10-05T02:34:37Z ERROR web-bff [t-7476] GET /search 500 29495ms: upstream search-api returned 500 Internal Server Error"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "order-service",
+          "level": "ERROR"
+        },
+        "output": "6 match(es):\n#1142 2026-10-05T02:25:55Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#1146 2026-10-05T02:25:56Z ERROR order-service pod order-service-0 exceeded its 2Gi memory limit and was killed (restart #1)\n#1446 2026-10-05T02:28:40Z FATAL order-service Exception in thread \"worker-3\" java.lang.OutOfMemoryError: Java heap space\n#1448 2026-10-05T02:28:41Z ERROR order-service container order-service-2 killed: OOMKilled (memory limit 2Gi), restart count 2\n#1734 2026-10-05T02:31:48Z FATAL order-service fatal: heap exhausted while growing orderCache (requested 64MB, max 1536MB)\n#1736 2026-10-05T02:31:49Z ERROR order-service kubelet: order-service-1 terminated (reason OOMKilled, exit code 137), restarts=3"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "order-service",
+          "since": "02:17:00",
+          "until": "02:25:56",
+          "limit": 60
+        },
+        "output": "166 match(es), showing first 60:\n#1 2026-10-05T02:17:00Z DEBUG order-service GC pause 22ms (young), heap 39%\n#5 2026-10-05T02:17:02Z INFO order-service [t-6327] order o-6753 accepted, calling payment-svc POST /charge\n#12 2026-10-05T02:17:07Z INFO order-service [t-6329] order o-6758 accepted, calling payment-svc POST /charge\n#19 2026-10-05T02:17:10Z INFO order-service [t-6334] order o-6763 accepted, calling payment-svc POST /charge\n#26 2026-10-05T02:17:13Z INFO order-service [t-6338] order o-6767 accepted, calling payment-svc POST /charge\n#34 2026-10-05T02:17:17Z INFO order-service [t-6343] order o-6772 accepted, calling payment-svc POST /charge\n#38 2026-10-05T02:17:20Z DEBUG order-service GC pause 16ms (young), heap 39%\n#43 2026-10-05T02:17:22Z INFO order-service [t-6350] order o-6776 accepted, calling payment-svc POST /charge\n#54 2026-10-05T02:17:26Z INFO order-service [t-6356] order o-6781 accepted, calling payment-svc POST /charge\n#62 2026-10-05T02:17:29Z INFO order-service [t-6358] order o-6784 accepted, calling payment-svc POST /charge\n#69 2026-10-05T02:17:32Z INFO order-service [t-6363] order o-6786 accepted, calling payment-svc POST /charge\n#76 2026-10-05T02:17:36Z INFO order-service [t-6370] order o-6789 accepted, calling payment-svc POST /charge\n#86 2026-10-05T02:17:40Z INFO order-service [t-6374] order o-6794 accepted, calling payment-svc POST /charge\n#89 2026-10-05T02:17:41Z WARN order-service circuit breaker for payment-svc OPEN: 5 failures in 10s, shedding calls for 15s\n#96 2026-10-05T02:17:44Z INFO order-service [t-6381] order o-6799 accepted, calling payment-svc POST /charge\n#105 2026-10-05T02:17:49Z INFO order-service [t-6384] order o-6802 accepted, calling payment-svc POST /charge\n#111 2026-10-05T02:17:53Z INFO order-service [t-6391] order o-6808 accepted, calling payment-svc POST /charge\n#120 2026-10-05T02:17:55Z DEBUG order-service GC pause 24ms (young), heap 39%\n#127 2026-10-05T02:17:58Z INFO order-service [t-6395] order o-6810 accepted, calling payment-svc POST /charge\n#131 2026-10-05T02:17:58Z INFO order-service circuit breaker for payment-svc CLOSED: half-open probe ok (39ms)\n#135 2026-10-05T02:18:03Z INFO order-service [t-6401] order o-6814 accepted, calling payment-svc POST /charge\n#142 2026-10-05T02:18:06Z INFO order-service [t-6403] order o-6820 accepted, calling payment-svc POST /charge\n#149 2026-10-05T02:18:09Z INFO order-service [t-6407] order o-6822 accepted, calling payment-svc POST /charge\n#157 2026-10-05T02:18:12Z INFO order-service [t-6410] order o-6826 accepted, calling payment-svc POST /charge\n#160 2026-10-05T02:18:14Z INFO order-service [t-6412] order o-6827 accepted, calling payment-svc POST /charge\n#167 2026-10-05T02:18:16Z INFO order-service [t-6416] order o-6830 accepted, calling payment-svc POST /charge\n#170 2026-10-05T02:18:17Z DEBUG order-service GC pause 11ms (young), heap 43%\n#174 2026-10-05T02:18:19Z INFO order-service [t-6417] order o-6833 accepted, calling payment-svc POST /charge\n#187 2026-10-05T02:18:24Z INFO order-service [t-6427] order o-6836 accepted, calling payment-svc POST /charge\n#193 2026-10-05T02:18:27Z INFO order-service [t-6431] order o-6838 accepted, calling payment-svc POST /charge\n#201 2026-10-05T02:18:31Z INFO order-service [t-6437] order o-6840 accepted, calling payment-svc POST /charge\n#209 2026-10-05T02:18:36Z INFO order-service [t-6442] order o-6846 accepted, calling payment-svc POST /charge\n#218 2026-10-05T02:18:40Z INFO order-service [t-6446] order o-6850 accepted, calling payment-svc POST /charge\n#224 2026-10-05T02:18:43Z DEBUG order-service GC pause 21ms (young), heap 43%\n#228 2026-10-05T02:18:45Z INFO order-service [t-6449] order o-6854 accepted, calling payment-svc POST /charge\n#240 2026-10-05T02:18:48Z INFO order-service [t-6457] order o-6861 accepted, calling payment-svc POST /charge\n#248 2026-10-05T02:18:53Z INFO order-service [t-6460] order o-6864 accepted, calling payment-svc POST /charge\n#257 2026-10-05T02:18:58Z INFO order-service [t-6463] order o-6870 accepted, calling payment-svc POST /charge\n#266 2026-10-05T02:19:01Z INFO order-service [t-6467] order o-6876 accepted, calling payment-svc POST /charge\n#272 2026-10-05T02:19:06Z INFO order-service [t-6475] order o-6880 accepted, calling payment-svc POST /charge\n#288 2026-10-05T02:19:11Z INFO order-service [t-6484] order o-6887 accepted, calling payment-svc POST /charge\n#296 2026-10-05T02:19:15Z DEBUG order-service GC pause 4ms (young), heap 46%\n#297 2026-10-05T02:19:15Z INFO order-service [t-6489] order o-6889 accepted, calling payment-svc POST /charge\n#302 2026-10-05T02:19:18Z INFO order-service [t-6493] order o-6890 accepted, calling payment-svc POST /charge\n#308 2026-10-05T02:19:20Z INFO order-service [t-6501] order o-6895 accepted, calling payment-svc POST /charge\n#316 2026-10-05T02:19:23Z INFO order-service [t-6505] order o-6899 accepted, calling payment-svc POST /charge\n#319 2026-10-05T02:19:26Z INFO order-service [t-6509] order o-6902 accepted, calling payment-svc POST /charge\n#325 2026-10-05T02:19:31Z INFO order-service [t-6515] order o-6904 accepted, calling payment-svc POST /charge\n#332 2026-10-05T02:19:35Z DEBUG order-service GC pause 17ms (young), heap 32%\n#334 2026-10-05T02:19:35Z INFO order-service [t-6523] order o-6909 accepted, calling payment-svc POST /charge\n#347 2026-10-05T02:19:40Z INFO order-service [t-6533] order o-6915 accepted, calling payment-svc POST /charge\n#355 2026-10-05T02:19:45Z INFO order-service [t-6535] order o-6920 accepted, calling payment-svc POST /charge\n#362 2026-10-05T02:19:47Z INFO order-service [t-6540] order o-6923 accepted, calling payment-svc POST /charge\n#369 2026-10-05T02:19:51Z INFO order-service [t-6544] order o-6924 accepted, calling payment-svc POST /charge\n#378 2026-10-05T02:19:54Z INFO order-service [t-6551] order o-6927 accepted, calling payment-svc POST /charge\n#385 2026-10-05T02:19:58Z INFO order-service [t-6555] order o-6933 accepted, calling payment-svc POST /charge\n#394 2026-10-05T02:20:03Z INFO order-service [t-6561] order o-6935 accepted, calling payment-svc POST /charge\n#396 2026-10-05T02:20:03Z DEBUG order-service GC pause 14ms (young), heap 39%\n#403 2026-10-05T02:20:05Z INFO order-service [t-6567] order o-6939 accepted, calling payment-svc POST /charge\n#412 2026-10-05T02:20:08Z INFO order-service [t-6574] order o-6945 accepted, calling payment-svc POST /charge"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "order-service",
+          "query": "orderCache",
+          "since": "02:17:00",
+          "until": "02:25:56",
+          "limit": 50
+        },
+        "output": "1 match(es):\n#1142 2026-10-05T02:25:55Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "service": "order-service",
+          "level": "WARN",
+          "limit": 50
+        },
+        "output": "7 match(es):\n#89 2026-10-05T02:17:41Z WARN order-service circuit breaker for payment-svc OPEN: 5 failures in 10s, shedding calls for 15s\n#1142 2026-10-05T02:25:55Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#1146 2026-10-05T02:25:56Z ERROR order-service pod order-service-0 exceeded its 2Gi memory limit and was killed (restart #1)\n#1446 2026-10-05T02:28:40Z FATAL order-service Exception in thread \"worker-3\" java.lang.OutOfMemoryError: Java heap space\n#1448 2026-10-05T02:28:41Z ERROR order-service container order-service-2 killed: OOMKilled (memory limit 2Gi), restart count 2\n#1734 2026-10-05T02:31:48Z FATAL order-service fatal: heap exhausted while growing orderCache (requested 64MB, max 1536MB)\n#1736 2026-10-05T02:31:49Z ERROR order-service kubelet: order-service-1 terminated (reason OOMKilled, exit code 137), restarts=3"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 1142,
+          "before": 15,
+          "after": 3
+        },
+        "output": "#1127 2026-10-05T02:25:48Z INFO redis-cache stats: hits=10772 misses=345 evicted=0 connected_clients=34\n#1128 2026-10-05T02:25:48Z INFO redis stats: hits=14689 misses=460 evicted=0 connected_clients=45\n#1129 2026-10-05T02:25:49Z INFO order-service [t-7033] order o-7284 accepted, calling payment-svc POST /charge\n#1130 2026-10-05T02:25:49Z INFO payment-svc [t-7033] POST /charge o-7284 ok 30ms\n#1131 2026-10-05T02:25:49Z INFO api-gateway [t-7033] POST /checkout 200 144ms\n#1132 2026-10-05T02:25:49Z INFO search-api [t-7035] product p-7285 accepted, calling catalog-svc GET /products/batch\n#1133 2026-10-05T02:25:50Z INFO web-bff [t-7035] GET /search 200 112ms\n#1134 2026-10-05T02:25:50Z DEBUG order-service GC pause 6ms (young), heap 33%\n#1135 2026-10-05T02:25:51Z INFO order-consumer processed batch of 89 messages from orders.events (lag 257ms)\n#1136 2026-10-05T02:25:51Z DEBUG api-gateway upstream health: order-service ok, payment-svc ok\n#1137 2026-10-05T02:25:52Z DEBUG search-api GC pause 16ms (young), heap 33%\n#1138 2026-10-05T02:25:52Z INFO order-service [t-7036] order o-7288 accepted, calling payment-svc POST /charge\n#1139 2026-10-05T02:25:53Z INFO api-gateway [t-7036] POST /checkout 200 224ms\n#1140 2026-10-05T02:25:53Z INFO index-worker processed batch of 32 messages from catalog.updates (lag 258ms)\n#1141 2026-10-05T02:25:53Z DEBUG web-bff upstream health: search-api ok, catalog-svc ok\n#1142 2026-10-05T02:25:55Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#1143 2026-10-05T02:25:55Z INFO search-api [t-7039] product p-7289 accepted, calling catalog-svc GET /products/batch\n#1144 2026-10-05T02:25:55Z INFO catalog-svc [t-7039] GET /products/batch p-7289 ok 69ms\n#1145 2026-10-05T02:25:55Z INFO web-bff [t-7039] GET /search 200 76ms"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "cache",
+          "since": "02:17:00",
+          "until": "02:25:56",
+          "limit": 40
+        },
+        "output": "1 match(es):\n#1142 2026-10-05T02:25:55Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "heap",
+          "service": "order-service",
+          "since": "02:20:00",
+          "limit": 40
+        },
+        "output": "37 match(es):\n#396 2026-10-05T02:20:03Z DEBUG order-service GC pause 14ms (young), heap 39%\n#445 2026-10-05T02:20:25Z DEBUG order-service GC pause 13ms (young), heap 33%\n#510 2026-10-05T02:20:58Z DEBUG order-service GC pause 25ms (young), heap 37%\n#564 2026-10-05T02:21:22Z DEBUG order-service GC pause 14ms (young), heap 45%\n#609 2026-10-05T02:21:40Z DEBUG order-service GC pause 15ms (young), heap 38%\n#669 2026-10-05T02:22:09Z DEBUG order-service GC pause 9ms (young), heap 30%\n#741 2026-10-05T02:22:42Z DEBUG order-service GC pause 6ms (young), heap 46%\n#802 2026-10-05T02:23:10Z DEBUG order-service GC pause 23ms (young), heap 39%\n#851 2026-10-05T02:23:34Z INFO order-service heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#866 2026-10-05T02:23:40Z DEBUG order-service GC pause 8ms (young), heap 33%\n#927 2026-10-05T02:24:10Z DEBUG order-service GC pause 24ms (young), heap 35%\n#985 2026-10-05T02:24:39Z DEBUG order-service GC pause 13ms (young), heap 42%\n#1060 2026-10-05T02:25:15Z DEBUG order-service GC pause 9ms (young), heap 36%\n#1134 2026-10-05T02:25:50Z DEBUG order-service GC pause 6ms (young), heap 33%\n#1142 2026-10-05T02:25:55Z FATAL order-service java.lang.OutOfMemoryError: Java heap space (at orderCache.put)\n#1173 2026-10-05T02:26:11Z DEBUG order-service GC pause 5ms (young), heap 30%\n#1227 2026-10-05T02:26:36Z DEBUG order-service GC pause 12ms (young), heap 39%\n#1281 2026-10-05T02:27:10Z DEBUG order-service GC pause 8ms (young), heap 37%\n#1325 2026-10-05T02:27:38Z DEBUG order-service GC pause 14ms (young), heap 39%\n#1366 2026-10-05T02:27:59Z DEBUG order-service GC pause 17ms (young), heap 38%\n#1397 2026-10-05T02:28:18Z DEBUG order-service GC pause 9ms (young), heap 40%\n#1446 2026-10-05T02:28:40Z FATAL order-service Exception in thread \"worker-3\" java.lang.OutOfMemoryError: Java heap space\n#1459 2026-10-05T02:28:47Z DEBUG order-service GC pause 14ms (young), heap 39%\n#1503 2026-10-05T02:29:15Z DEBUG order-service GC pause 17ms (young), heap 37%\n#1536 2026-10-05T02:29:33Z DEBUG order-service GC pause 11ms (young), heap 48%\n#1581 2026-10-05T02:30:03Z DEBUG order-service GC pause 20ms (young), heap 34%\n#1619 2026-10-05T02:30:26Z DEBUG order-service GC pause 10ms (young), heap 35%\n#1656 2026-10-05T02:30:52Z DEBUG order-service GC pause 7ms (young), heap 36%\n#1679 2026-10-05T02:31:13Z DEBUG order-service GC pause 7ms (young), heap 36%\n#1729 2026-10-05T02:31:45Z DEBUG order-service GC pause 12ms (young), heap 44%\n#1734 2026-10-05T02:31:48Z FATAL order-service fatal: heap exhausted while growing orderCache (requested 64MB, max 1536MB)\n#1756 2026-10-05T02:32:05Z DEBUG order-service GC pause 23ms (young), heap 42%\n#1814 2026-10-05T02:32:40Z DEBUG order-service GC pause 10ms (young), heap 38%\n#1850 2026-10-05T02:33:09Z DEBUG order-service GC pause 20ms (young), heap 44%\n#1887 2026-10-05T02:33:35Z DEBUG order-service GC pause 9ms (young), heap 34%\n#1917 2026-10-05T02:34:06Z DEBUG order-service GC pause 18ms (young), heap 47%\n#1959 2026-10-05T02:34:33Z DEBUG order-service GC pause 4ms (young), heap 39%"
+      },
+      {
+        "tool": "search_logs",
+        "input": {
+          "query": "deploy",
+          "limit": 20
+        },
+        "output": "1 match(es):\n#1482 2026-10-05T02:29:03Z INFO search-api deploy: rolling out search-api v3.21.0 (build bc1759d), replacing v3.20.9"
+      },
+      {
+        "tool": "get_context",
+        "input": {
+          "line": 851,
+          "before": 4,
+          "after": 4
+        },
+        "output": "#847 2026-10-05T02:23:32Z INFO order-service [t-6845] order o-7144 accepted, calling payment-svc POST /charge\n#848 2026-10-05T02:23:32Z INFO payment-svc [t-6845] POST /charge o-7144 ok 57ms\n#849 2026-10-05T02:23:32Z INFO api-gateway [t-6845] POST /checkout 200 229ms\n#850 2026-10-05T02:23:32Z INFO index-worker processed batch of 88 messages from catalog.updates (lag 287ms)\n#851 2026-10-05T02:23:34Z INFO order-service heap usage 78% after full GC (old gen not reclaimed), GC overhead 20%\n#852 2026-10-05T02:23:35Z INFO search-api [t-6848] product p-7145 accepted, calling catalog-svc GET /products/batch\n#853 2026-10-05T02:23:35Z DEBUG search-api GC pause 25ms (young), heap 36%\n#854 2026-10-05T02:23:35Z INFO web-bff [t-6848] GET /search 200 112ms\n#855 2026-10-05T02:23:35Z INFO status-poller poll cycle complete: 28 targets checked in 769ms"
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": "[{\"rootCause\":\"resource_exhaustion\",\"confidence\":0.85,\"evidenceLines\":[851,1142,1146,1734,1736,1164,1373],\"reasoning\":\"The origin is order-service heap exhaustion. Around 02:23:34 (#851) heap reached 78% after full GC with old gen not reclaimed and GC overhead at 20%, which points to a leak or unbounded growth, most likely in orderCache. Young-gen GC readings look normal, so the old gen was filling steadily. The heap then hit OutOfMemoryError at orderCache.put (#1142), and the pod was OOM-killed at its 2Gi limit (#1146). Further OOM kills followed (#1446, #1448, #1734, #1736). Each restart drops in-flight connections, so api-gateway returns 502 'upstream order-service connection reset' (#1164, #1373), which is the alert. The 502 bursts track the restart cycle. The search-api v3.21.0 deploy (#1482) and its 'region' TypeError (#1564, #1644) cause search 500s but do not touch checkout, so they are a separate red herring. analytics-forwarder 429s are unrelated noise.\",\"}, {\"rootCause\":\"cascading_failure\",\"confidence\":0.1,\"evidenceLines\":[1094,1181,1329],\"reasoning\":\"Less likely: analytics-forwarder retries against 429s and drops batches, but that path does not feed order-service and does not explain the OOMs. Listed only to rule out amplification as the trigger.\"}]",
+          "recommendedAction": "Roll back or restart order-service to clear the heap, then fix the orderCache leak: add a size bound or TTL and check for entries never evicted. Raise the memory limit only as a temporary measure. Separately, roll back search-api to v3.20.9 to fix the 'region' undefined TypeError in product-formatter.ts:216. Analytics 429 throttling can be addressed separately."
+        },
+        "output": "invalid triage: hypotheses: Invalid input: expected array, received string. Fix it and call submit_triage again.",
+        "isError": true
+      },
+      {
+        "tool": "submit_triage",
+        "input": {
+          "hypotheses": [
+            {
+              "rootCause": "resource_exhaustion",
+              "confidence": 0.85,
+              "evidenceLines": [
+                851,
+                1142,
+                1146,
+                1734,
+                1736,
+                1164,
+                1373
+              ],
+              "reasoning": "The origin is order-service heap exhaustion. At 02:23:34 (#851) heap reached 78% after full GC with old gen not reclaimed and GC overhead at 20%, which points to a leak or unbounded growth, most likely in orderCache. Young-gen GC readings stay normal, so the old gen was filling steadily. The heap then hit OutOfMemoryError at orderCache.put (#1142), and the pod was OOM-killed at its 2Gi limit (#1146). More OOM kills followed (#1446, #1448, #1734, #1736). Each restart drops in-flight connections, so api-gateway returns 502 'upstream order-service connection reset' (#1164, #1373), which is the alert. The 502 bursts track the restart cycle. The search-api v3.21.0 deploy (#1482) and its 'region' TypeError (#1564, #1644) cause search 500s but do not touch checkout, so they are a separate issue. analytics-forwarder 429s are unrelated noise."
+            },
+            {
+              "rootCause": "cascading_failure",
+              "confidence": 0.1,
+              "evidenceLines": [
+                1094,
+                1181,
+                1329
+              ],
+              "reasoning": "Less likely: analytics-forwarder retries against 429s and drops batches, but that path does not feed order-service and does not explain the OOMs. Listed only to rule out amplification as the trigger."
+            }
+          ],
+          "recommendedAction": "Restart or roll back order-service to clear the heap, then fix the orderCache leak: add a size bound or TTL and check for entries never evicted. Raising the memory limit is only a temporary measure. Separately, roll back search-api to v3.20.9 to fix the 'region' undefined TypeError in product-formatter.ts:216. Analytics 429 throttling can be handled separately."
+        },
+        "output": "triage recorded"
+      }
+    ],
+    "iterations": 8,
+    "toolCalls": 10,
+    "usage": {
+      "inputTokens": 18,
+      "outputTokens": 3040,
+      "cacheReadTokens": 73584,
+      "cacheWriteTokens": 15789
+    },
+    "durationMs": 15152,
+    "stopReason": "tool_use"
+  }
+}

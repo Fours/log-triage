@@ -1,7 +1,8 @@
 import { ROOT_CAUSE_CATEGORIES, Incident, type RootCauseCategory } from "../types.js";
 import { IncidentBuilder, type BuildInfo } from "./builder.js";
 import { plantDecoys, type PlantedDecoys } from "./decoys.js";
-import { createHardness } from "./hardness.js";
+import { CONCURRENT, createHardness, lookalikeOn } from "./hardness.js";
+import { plantLookalike, type PlantedLookalike } from "./lookalikes.js";
 import type { Ctx, Difficulty, GeneratorVersion, Scenario } from "./context.js";
 import { backgroundTraffic, plantHerrings } from "./noise.js";
 import { createRng } from "./rng.js";
@@ -36,6 +37,11 @@ export const SCENARIOS: Record<RootCauseCategory, readonly [Scenario, Scenario]>
   cascading_failure: [retryStorm, cacheStampede],
   external_outage: [provider5xx, cloudStorage],
 };
+
+/** Every scenario key. */
+export const SCENARIO_KEYS: readonly string[] = Object.values(SCENARIOS)
+  .flat()
+  .map((s) => s.key);
 
 /** Keys of the scenarios whose originating cause lines v2 can quiet. */
 export const QUIETABLE: readonly string[] = Object.values(SCENARIOS)
@@ -95,11 +101,17 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
 
   const result = spec.scenario.run(c);
   const herrings = plantHerrings({ ...c, rng: rng.fork("herrings") }, spec.scenario.rootCause, spec.scenario.confusableWith);
-  // Generator v2, hard: a second, unrelated fault on another product's services, at about the same time.
-  const second = spec.version >= 2 && spec.difficulty === "hard" ? concurrentIncident(spec, c, result.acceptableCauses ?? [], rng) : null;
+  const v2 = spec.version >= 2;
+  // Generator v2, medium and hard: a second, unrelated fault on another product's services, at about the same time.
+  const second = v2 && CONCURRENT[spec.difficulty] ? concurrentIncident(spec, c, result.acceptableCauses ?? [], rng) : null;
+  // Generator v2, medium (half) and hard: a harmless on-path event that looks like a confusable category's cause.
+  const lookalike: PlantedLookalike | null =
+    v2 && lookalikeOn(spec.difficulty, spec.scenario.key, SCENARIO_KEYS)
+      ? plantLookalike(c, spec.scenario.rootCause, spec.scenario.confusableWith, result.acceptableCauses ?? [])
+      : null;
   // Generator v2: loud decoys sized to out-shout every other service, plus a healthy auxiliary service.
   const decoys: PlantedDecoys | null =
-    spec.version >= 2 ? plantDecoys(c, spec.scenario.rootCause, spec.scenario.confusableWith, b.maxErrorsPerService()) : null;
+    v2 ? plantDecoys(c, spec.scenario.rootCause, spec.scenario.confusableWith, b.maxErrorsPerService()) : null;
   backgroundTraffic(
     { ...c, rng: rng.fork("noise") },
     {
@@ -114,6 +126,8 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
   const info = {
     ...built.info,
     decoyServices: decoys?.decoyServices ?? [],
+    timedDecoyServices: decoys?.timedDecoyServices ?? [],
+    lookalike: lookalike ? { key: lookalike.key, mimics: lookalike.mimics, service: lookalike.service, lines: lookalike.refs.map((x) => x.n) } : null,
     onsets: { primary: c.onset, ...(second ? { secondary: second.onset } : {}) },
   };
   const services = decoys
@@ -135,7 +149,7 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
     label: {
       rootCause: spec.scenario.rootCause,
       evidenceLines: evidence,
-      explanation: b.resolve(result.explain() + herrings.note() + (decoys?.note() ?? "") + secondNote),
+      explanation: b.resolve(result.explain() + herrings.note() + (lookalike?.note() ?? "") + (decoys?.note() ?? "") + secondNote),
       difficulty: spec.difficulty,
       acceptableCauses: result.acceptableCauses ?? [],
       herringLines: logs.filter((_, i) => roles[i] === "herring").map((l) => l.n),
@@ -159,7 +173,7 @@ export function generateIncident(spec: IncidentSpec): GeneratedIncident {
 }
 
 /**
- * Generator v2, hard: a second, real fault that does not explain the alert. It
+ * Generator v2, medium and hard: a second, real fault that does not explain the alert. It
  * runs on a different topology (another product, sharing no service with this
  * one), from a different category that isn't one of this incident's acceptable
  * answers, starting within ±5 minutes of onset, at medium difficulty. Its cause
