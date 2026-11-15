@@ -124,7 +124,7 @@ Do these in order. Each one ends with `npm test` and `npm run typecheck` passing
 | T5. Long haystacks, fairness checks, baseline ceiling | Done | 6a25997 |
 | T6. Pilot and calibrate on the v2 dev set | Done (band missed) | 9e5db7a |
 | T7. Model matrix and repeats on the v2 test set | Done | f8d85d6 |
-| T8. Write-up, site update, deploy | Done | |
+| T8. Write-up, site update, deploy | Done | 4fb09d8 |
 
 ### T1. Dataset plumbing for generator v2
 
